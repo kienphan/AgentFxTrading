@@ -1,0 +1,1 @@
+"""News calendar module."""
