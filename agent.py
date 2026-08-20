@@ -96,9 +96,9 @@ async def main_async(args: argparse.Namespace) -> int:
 
     log.info("=" * 60)
     log.info("  AgentFxTrading Starting")
-    log.info("  Symbols: %s", settings.symbol_list)
-    log.info("  Timeframe: %s", settings.TIMEFRAME)
-    log.info("  LLM: %s (%s)", settings.LLM_PROVIDER.value, settings.LLM_MODEL)
+    log.info("  Symbols: {}", settings.symbol_list)
+    log.info("  Timeframe: {}", settings.TIMEFRAME)
+    log.info("  LLM: {} ({})", settings.LLM_PROVIDER.value, settings.LLM_MODEL)
     log.info("=" * 60)
 
     # Validate config

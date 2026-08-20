@@ -2,7 +2,7 @@
 
 **Autonomous AI Trading Agent** for Forex and Commodities.
 
-Combines **TMS (Traders Dynamic Index)** strategy with **ORB (Opening Range Breakout)** confirmation, powered by LLM (Qwen/DeepSeek/OpenAI/Anthropic/Gemini) for autonomous trading via cTrader Remote MCP.
+Combines **TMS (Trading Maid Simple)** strategy with **ORB (Opening Range Breakout)** confirmation, powered by LLM (Qwen/DeepSeek/OpenAI/Anthropic/Gemini) for autonomous trading via cTrader Remote MCP.
 
 ## Features
 
@@ -99,7 +99,7 @@ Bias is **locked** at the last TDI cross and stays until the next cross in the o
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/AgentFxTrading.git
+git clone https://github.com/kienphan/AgentFxTrading.git
 cd AgentFxTrading
 
 # Create virtual environment
