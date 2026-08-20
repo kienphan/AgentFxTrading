@@ -166,6 +166,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = Field(default="")
     LLM_MAX_TOKENS: int = Field(default=2048, ge=1, le=32000)
     LLM_TEMPERATURE: float = Field(default=0.1, ge=0.0, le=2.0)
+    FALLBACK_TO_TMS_ON_AI_ERROR: bool = Field(default=True, description="Fallback to pure TMS strategy when LLM call fails or hits quota")
 
     # Cycle
     CYCLE_MINUTES: int = Field(default=5, ge=1, le=1440, description="Minutes between cycles (max 1440 = 24h)")

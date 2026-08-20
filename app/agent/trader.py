@@ -259,16 +259,25 @@ class AgentTrader:
                 snapshot.get("action"),
             )
 
-            # Get LLM decision
+            # Get LLM decision with auto-fallback to Rule-Based TMS Strategy
             user_prompt = build_user_prompt(snapshot)
             logger.info("Calling LLM for %s...", symbol)
 
-            decision = await self.llm_client.analyze(SYSTEM_PROMPT, user_prompt)
+            decision = None
+            try:
+                decision = await self.llm_client.analyze(SYSTEM_PROMPT, user_prompt)
+            except Exception as e_llm:
+                if getattr(self.settings, "FALLBACK_TO_TMS_ON_AI_ERROR", True):
+                    logger.warning("⚠️ LLM call failed for %s (%s). Auto-falling back to Rule-Based TMS Strategy!", symbol, e_llm)
+                    decision = self._create_tms_fallback_decision(snapshot, candles, str(e_llm))
+                else:
+                    raise
+
             action = decision.get("action", "HOLD")
             confidence = decision.get("confidence", 0)
             reason = decision.get("reason", "")
 
-            logger.info("%s LLM decision: %s (confidence: %.2f) - %s", symbol, action, confidence, reason)
+            logger.info("%s Decision: %s (confidence: %.2f) - %s", symbol, action, confidence, reason)
 
             # Process decision
             equity = float(account_info.get("equity", 0))
@@ -531,6 +540,69 @@ class AgentTrader:
             "executed": True,
             "closed_positions": closed,
             "reason": reason,
+        }
+
+    def _create_tms_fallback_decision(
+        self,
+        snapshot: Dict[str, Any],
+        candles: List[Dict[str, Any]],
+        error_msg: str,
+    ) -> Dict[str, Any]:
+        """
+        Generate a rule-based fallback decision directly from TMS & ORB technical snapshot
+        when LLM is unavailable, hitting quota, or failing API calls.
+        """
+        action = snapshot.get("action", "HOLD").upper()
+        price = float(snapshot.get("price", 0.0) or 0.0)
+
+        # Calculate ATR from candles for SL & TP
+        atr = 0.0
+        if len(candles) >= 14:
+            import pandas as pd
+            from app.agent.snapshot import candles_to_dataframe
+            df = candles_to_dataframe(candles)
+            if not df.empty and len(df) >= 14:
+                high_low = df["high"] - df["low"]
+                high_close = (df["high"] - df["close"].shift(1)).abs()
+                low_close = (df["low"] - df["close"].shift(1)).abs()
+                tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+                atr = float(tr.rolling(14).mean().iloc[-1])
+
+        if atr <= 0 and price > 0:
+            atr = price * 0.002  # Fallback: 0.2% price
+
+        risk_cfg = getattr(self.risk_manager, "config", None)
+        sl_multiplier = getattr(risk_cfg, "min_sl_atr_multiple", 1.5) if risk_cfg else 1.5
+        rr_ratio = getattr(risk_cfg, "min_rr_ratio", 1.5) if risk_cfg else 1.5
+        sl_dist = max(atr * sl_multiplier, price * 0.0005)
+        tp_dist = sl_dist * rr_ratio
+
+        sl = None
+        tp = None
+        digits = 5 if price < 100 else 2
+        if action == "BUY" and price > 0:
+            sl = round(price - sl_dist, digits)
+            tp = round(price + tp_dist, digits)
+        elif action == "SELL" and price > 0:
+            sl = round(price + sl_dist, digits)
+            tp = round(price - tp_dist, digits)
+
+        reason = (
+            f"[Pure TMS Fallback] Signal: {action} (Price: {price}, SL: {sl}, TP: {tp}) | "
+            f"HA: {snapshot.get('ha', {}).get('color')} ({snapshot.get('ha', {}).get('trend')}) | "
+            f"TDI: Green {snapshot.get('tdi', {}).get('green')} / Red {snapshot.get('tdi', {}).get('red')} | "
+            f"Stoch: %K {snapshot.get('stoch', {}).get('k')} | "
+            f"Reason: AI Offline ({error_msg[:120]})"
+        )
+
+        return {
+            "action": action,
+            "confidence": 0.85 if action in ("BUY", "SELL") else 0.5,
+            "entry": price,
+            "sl": sl,
+            "tp": tp,
+            "reason": reason,
+            "fallback": True,
         }
 
     async def run_once(self) -> Dict[str, Any]:
