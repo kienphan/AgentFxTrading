@@ -1,19 +1,29 @@
 import os
+import sys
+from pathlib import Path
 import uvicorn
 import json
 import logging
+from dotenv import load_dotenv
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load environment variables from .env
+load_dotenv(PROJECT_ROOT / ".env")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
-from dotenv import load_dotenv
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
-from app.dashboard import router as dashboard_router
+from app.dashboard import router as dashboard_router, broadcast_update
 from app.accounts import init_account_registry, get_account_registry
-
 app = FastAPI(title="TMS+ORB Agent Server")
 
 # Mount dashboard router
@@ -308,6 +318,10 @@ async def report_position(request: dict):
             
             if success:
                 logger.info(f"[{account_id}/{bot_id}] Position registered: {symbol} {side}")
+                try:
+                    await broadcast_update()
+                except Exception:
+                    pass
                 return {"status": "success", "message": "Position registered"}
             else:
                 return {"status": "error", "message": "Failed to register position"}
@@ -326,6 +340,10 @@ async def report_position(request: dict):
             
             if success:
                 logger.info(f"[{account_id}/{bot_id}] Position closed: {symbol}, PnL: {pnl}")
+                try:
+                    await broadcast_update()
+                except Exception:
+                    pass
                 return {"status": "success", "message": "Position closed"}
             else:
                 return {"status": "error", "message": "Failed to close position"}
@@ -471,4 +489,6 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.getenv("SERVER_HOST", "127.0.0.1")
+    port = int(os.getenv("SERVER_PORT", "8000"))
+    uvicorn.run("app.server:app", host=host, port=port, reload=True)

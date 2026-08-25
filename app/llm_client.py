@@ -10,9 +10,11 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
-
 
 class LLMClient(ABC):
     """Abstract base class for LLM clients."""
@@ -34,7 +36,7 @@ class OpenAICompatibleClient(LLMClient):
         **kwargs
     ):
         from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.client = AsyncOpenAI(api_key=api_key or "sk-placeholder", base_url=base_url)
         self.model = model
         self.default_kwargs = kwargs
 
@@ -59,7 +61,7 @@ class AnthropicClient(LLMClient):
         **kwargs
     ):
         from anthropic import AsyncAnthropic
-        self.client = AsyncAnthropic(api_key=api_key)
+        self.client = AsyncAnthropic(api_key=api_key or "sk-placeholder")
         self.model = model
         self.max_tokens = max_tokens
         self.default_kwargs = kwargs
@@ -95,8 +97,8 @@ class GeminiClient(LLMClient):
         **kwargs
     ):
         import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        if api_key:
+            genai.configure(api_key=api_key)
         self.default_kwargs = kwargs
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:

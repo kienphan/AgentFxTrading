@@ -4,7 +4,7 @@ Provides real-time visualization of positions, P&L, and bot status.
 """
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Database path
-DB_PATH = Path("portfolio.db")
-
+# Project paths
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = PROJECT_ROOT / "portfolio.db"
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 def get_db():
     """Get database connection."""
@@ -185,11 +187,15 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
     conn.close()
     return list(reversed(history))  # Reverse to chronological order
 
+@router.get("/", response_class=HTMLResponse)
+async def root_redirect(request: Request):
+    """Redirect root to dashboard."""
+    return RedirectResponse(url="/dashboard")
+
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     """Render dashboard HTML page."""
-    templates = Jinja2Templates(directory="templates")
     
     summary = get_portfolio_summary()
     positions = get_active_positions()
@@ -200,9 +206,9 @@ async def dashboard_page(request: Request):
     accounts = registry.list_accounts()
     
     return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
+        request=request,
+        name="dashboard.html",
+        context={
             "summary": summary,
             "positions": positions,
             "history": history,

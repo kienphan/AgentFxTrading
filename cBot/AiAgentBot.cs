@@ -785,6 +785,14 @@ namespace cAlgo.Robots
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
 
+                if (giveback >= MaxGivebackPips)
+                {
+                    pos.Close();
+                    if (ShowLogs) Print($"[Giveback] Pos#{pos.Id} closed: gave back {giveback:F1}pips (MFE={mfe:F1}p, now={pnlPips:F1}p)");
+                }
+            }
+        }
+
         private SessionInfo GetSessionInfo()
         {
             var now = Server.TimeInUtc;  // Use explicit UTC
@@ -853,26 +861,6 @@ namespace cAlgo.Robots
 
         private void UpdateLossStreak()
         {
-            int today = Server.TimeInUtc.DayOfYear;
-            int nowMinutes = now.Hour * 60 + now.Minute;
-            int sessionEnd = SessionEndHour * 60 + SessionEndMinute;
-
-            if (nowMinutes >= sessionEnd)
-            {
-                foreach (var pos in Positions)
-                {
-                    pos.Close();
-                    if (ShowLogs) Print($"[EOD] Pos#{pos.Id} closed at session end");
-                }
-            }
-        }
-
-        // ==========================================
-        // LOSS STREAK TRACKING
-        // ==========================================
-
-        private void UpdateLossStreak()
-        {
             int today = Server.Time.DayOfYear;
             if (_lastClosedTradeDay != today && _lastClosedTradeDay != -1)
             {
@@ -885,7 +873,7 @@ namespace cAlgo.Robots
 
         protected override void OnPositionClosed(PositionClosedEventArgs args)
         {
-            double pnl = args.NetProfit;
+            double pnl = args.Position.NetProfit;
             _dayPnl += pnl;
             _tradesToday++;
 
@@ -900,7 +888,7 @@ namespace cAlgo.Robots
             }
 
             // Report to portfolio manager
-            _ = ReportPositionClosed(args.SymbolName, pnl);
+            _ = ReportPositionClosed(args.Position, pnl);
         }
 
         // ==========================================
