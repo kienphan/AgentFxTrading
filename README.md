@@ -410,11 +410,6 @@ elif provider == "newprovider":
 
 Edit `SYSTEM_PROMPT` in `app/server.py` to adjust trading logic.
 
-### Running Tests
-
-```bash
-pytest tests/
-```
 
 ---
 
