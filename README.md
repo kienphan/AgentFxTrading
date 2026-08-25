@@ -110,6 +110,36 @@ graph LR
 
 ---
 
+## 📊 Dashboard
+
+Monitor your trading system in real-time through the web dashboard.
+
+### Access Dashboard
+
+After starting the server, open your browser:
+```
+http://127.0.0.1:8000/dashboard
+```
+
+### Features
+
+- **Real-time Updates**: WebSocket connection for live position tracking
+- **Portfolio Overview**: Open positions, daily P&L, win rate, loss streak
+- **Active Positions Table**: Bot ID, symbol, side, volume, entry price, SL/TP
+- **Trade History**: Recent closed trades with P&L
+- **P&L Chart**: Visual representation of daily performance
+
+### API Endpoints
+
+```
+GET /dashboard              # Web interface
+GET /api/dashboard/summary  # Portfolio summary (JSON)
+GET /api/dashboard/positions # Active positions (JSON)
+GET /api/dashboard/history  # Trade history (JSON)
+WS  /ws/dashboard           # WebSocket for real-time updates
+```
+---
+
 ## ⚡ Quick Start
 
 ### Prerequisites

@@ -3,16 +3,18 @@ import uvicorn
 import json
 import logging
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 from dotenv import load_dotenv
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
+from app.dashboard import router as dashboard_router
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("AgentServer")
 app = FastAPI(title="TMS+ORB Agent Server")
 
+# Mount dashboard router
+app.include_router(dashboard_router)
 # Initialize Portfolio Manager
 portfolio_manager = init_portfolio("portfolio.db")
 
