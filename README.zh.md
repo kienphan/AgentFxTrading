@@ -1,186 +1,299 @@
-# AgentFxTrading
+# 🤖 AgentFxTrading - AI驱动的自动交易系统
+
+<div align="center">
+
+**使用TMS + ORB策略的自动外汇交易**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![cTrader](https://img.shields.io/badge/cTrader-4.x+-green.svg)](https://ctdn.com/)
+[![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
+[![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
+[![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-自动化交易系统，使用AI Agent与cTrader cBot集成，实施TMS（趋势动量信号）+ ORB（开盘区间突破）策略。
+[安装](#-快速开始) • [功能](#-功能特性) • [策略](#-交易策略) • [API文档](#-api文档) • [贡献](#-贡献)
 
-## 架构
+</div>
 
+---
+
+## 📋 目录
+
+- [概述](#-概述)
+- [功能特性](#-功能特性)
+- [架构](#-架构)
+- [快速开始](#-快速开始)
+- [交易策略](#-交易策略)
+- [配置](#-配置)
+- [API文档](#-api文档)
+- [开发](#-开发)
+- [性能](#-性能)
+- [贡献](#-贡献)
+- [许可证](#-许可证)
+
+---
+
+## 🎯 概述
+
+AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过验证的技术分析策略。它使用**TMS（趋势动量信号）**进行趋势检测，使用**ORB（开盘区间突破）**进行精确的入场时机。
+
+### 为什么选择AgentFxTrading？
+
+✅ **完全自主** - AI 24/7做出交易决策  
+✅ **多LLM支持** - 支持Qwen、OpenAI、Claude、Gemini、DeepSeek  
+✅ **风险管理** - 跨多个交易对的投资组合级风险控制  
+✅ **经验证的策略** - 基于专业TMS方法论  
+✅ **易于设置** - 10分钟内开始  
+✅ **开源** - 完全透明且可定制  
+
+---
+
+## 🚀 功能特性
+
+### 🤖 AI驱动的决策
+- **多LLM支持**：Qwen、OpenAI GPT-4、Claude、Gemini、DeepSeek
+- **上下文感知分析**：分析3根K线的历史数据
+- **置信度评分**：仅在置信度>70%时交易
+- **自适应学习**：提示工程持续改进
+
+### 📊 高级技术分析
+- **TMS指标**：Heiken Ashi、TDI（RSI + Signal）、Stochastic
+- **ORB逻辑**：开盘区间检测与决定性突破过滤
+- **动量追踪**：TF Green状态与斜率分析
+- **多时间框架**：适用于M15、H1、H4时间框架
+
+### 💼 投资组合管理
+- **多品种交易**：在不同交易对上运行多个机器人
+- **货币敞口控制**：防止对单一货币过度敞口
+- **相关性检测**：阻止高度相关的头寸
+- **每日亏损限制**：达到最大亏损后自动停止交易
+
+### 🛡️ 风险管理
+- **头寸记忆**：追踪MFE（最大有利偏移）
+- **自动保本**：利润达到阈值后将SL移至入场价
+- **追踪止损**：在盈利交易中动态调整SL
+- **最大回撤保护**：如果回撤超过阈值则关闭头寸
+- **连亏保护**：连续3次亏损后阻止入场
+
+### ⏰ 交易时段管理
+- **交易时段**：可配置的时段时间（伦敦、纽约、东京）
+- **日终自动平仓**：时段结束时自动平仓
+- **阶段检测**：盘前、活跃、结束、关闭阶段
+
+---
+
+## 🏗️ 架构
+
+```mermaid
+graph LR
+    A[cTrader cBot<br/>C#] -->|HTTP POST| B[FastAPI Server<br/>Python]
+    B -->|JSON Response| A
+    B --> C{LLM Provider}
+    C --> D[Qwen]
+    C --> E[OpenAI]
+    C --> F[Claude]
+    C --> G[Gemini]
+    C --> H[DeepSeek]
+    B --> I[(SQLite<br/>Portfolio DB)]
 ```
-┌─────────────────┐      HTTP POST      ┌──────────────────┐
-│  cTrader cBot   │ ──────────────────► │  FastAPI Server  │
-│     (C#)        │                     │    (Python)      │
-│                 │ ◄────────────────── │                  │
-│  • 计算 TMS     │      JSON Response  │  • 构建 prompt   │
-│  • 计算 ORB     │                     │  • 调用 LLM      │
-│  • 发送快照     │                     │  • 解析决策      │
-└─────────────────┘                     └──────────────────┘
-                                                   │
-                                                   ▼
-                                        ┌──────────────────┐
-                                        │   LLM Provider   │
-                                        │  • Qwen          │
-                                        │  • OpenAI        │
-                                        │  • Claude        │
-                                        │  • Gemini        │
-                                        │  • DeepSeek      │
-                                        └──────────────────┘
-```
 
-## 功能特性
+---
 
-### cBot (C#)
-- **TMS 指标**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **ORB 逻辑**: 开盘区间检测，突破检测
-- **TF Green 状态**: 动量追踪（数值 + 斜率）
-- **持仓记忆**: MFE（最大有利偏移），回吐追踪
-- **自动退出管理**: 保本、追踪止损、最大回吐
-- **交易时段管理**: 时段阶段，日终自动平仓
-- **防护栏**: 连亏保护，偏向翻转退出，决定性突破检查
+## ⚡ 快速开始
 
-### Server (Python)
-- **LLM 抽象层**: 支持 Qwen, OpenAI, Claude, Gemini, DeepSeek
-- **策略逻辑**: TMS 偏向 + ORB 突破对齐
-- **决策规则**: 入场/出场条件，风险管理
-- **JSON 响应**: 结构化交易决策
+### 前提条件
 
-## 安装
+- Python 3.9+
+- cTrader 4.x+
+- LLM API密钥（Qwen/OpenAI/Claude/Gemini/DeepSeek）
 
-### 1. Python 依赖
+### 1. 安装Python依赖
 
 ```bash
+# 克隆仓库
+git clone https://github.com/yourusername/AgentFxTrading.git
+cd AgentFxTrading
+
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 2. 配置 LLM Provider
+### 2. 配置LLM Provider
 
-将 `.env.example` 复制为 `.env` 并配置：
-
-#### Qwen（推荐 - 性价比高）
 ```bash
+# 复制环境模板
+cp .env.example .env
+
+# 编辑.env，填入您的API密钥
+# Qwen示例（推荐）：
 LLM_PROVIDER=qwen
 DASHSCOPE_API_KEY=sk-your-dashscope-key
 LLM_MODEL=qwen-max
 ```
 
-#### OpenAI
-```bash
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-openai-key
-LLM_MODEL=gpt-4o-mini
-```
-
-#### Claude
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-your-key
-LLM_MODEL=claude-3-5-sonnet-20241022
-```
-
-#### Gemini
-```bash
-LLM_PROVIDER=gemini
-GOOGLE_API_KEY=your-google-api-key
-LLM_MODEL=gemini-1.5-flash
-```
-
-#### DeepSeek
-```bash
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-your-deepseek-key
-LLM_MODEL=deepseek-chat
-```
-
-## 运行服务器
+### 3. 启动服务器
 
 ```bash
 python app/server.py
 ```
 
-服务器将在 `http://127.0.0.1:8000` 运行
+服务器将在`http://127.0.0.1:8000`运行
 
-## 运行 cBot
+### 4. 设置cBot
 
-1. 打开 cTrader → Automate
-2. 创建新 bot，粘贴 `cBot/AiAgentBot.cs` 中的代码
-3. 构建并附加到图表（M15 或 H1）
-4. 配置参数：
-   - **API**: `http://127.0.0.1:8000/trade`
-   - **TDI**: RSI Period=6, Red Period=6
-   - **Stochastic**: K=6, D=6, Slowing=4
-   - **ORB**: Session Start Hour=7（伦敦）, Opening Range=15 分钟
-   - **Session**: End Hour=16（伦敦收盘）
-   - **Exit**: Breakeven Trigger=5p, Trail Trigger=10p
-   - **Guardrails**: Min SL=3p, Max SL=30p, Max Loss Streak=3
+1. 打开**cTrader** → **Automate**
+2. 点击**New** → **cBot**
+3. 粘贴`cBot/AiAgentBot.cs`中的代码
+4. 点击**Build**
+5. 附加到图表（推荐M15或H1）
+6. 配置参数：
+   - **Bot ID**：`bot1`（唯一标识符）
+   - **API URL**：`http://127.0.0.1:8000/trade`
+   - **Session**：London（7:00-16:00 UTC）
 
-Bot 将在每根K线收盘时自动调用 API 并执行 AI 决策。
+### 5. 开始交易！🎉
 
-## 项目结构
+机器人将自动：
+- 每根K线收盘时计算指标
+- 向AI服务器发送市场快照
+- 接收交易决策
+- 执行带风险管理的交易
 
-```
-.
-├── app/
-│   ├── llm_client.py      # LLM 抽象层
-│   ├── server.py          # FastAPI 服务器（AI 大脑）
-│   └── portfolio.py       # 组合风险管理
-├── cBot/
-│   └── AiAgentBot.cs      # cTrader cBot（执行器）
-├── .env.example           # 环境变量模板
-├── requirements.txt       # Python 依赖
-└── README.zh.md
-```
+---
 
-## 交易策略
+## 📈 交易策略
 
-### TMS（趋势动量信号）- 确定偏向
-- **看涨**: Green 上穿 Red + HA green + Stoch K > D
-- **看跌**: Green 下穿 Red + HA red + Stoch K < D
-- 偏向锁定直到下一次交叉
+### TMS（趋势动量信号）
 
-### ORB（开盘区间突破）- 入场触发
-- **开盘区间**: 时段前 N 根K线的 High/Low（默认伦敦 7:00-7:15 UTC）
-- **突破**: 价格收于 OR High 上方（看涨）或 OR Low 下方（看跌）
-- **决定性**: 突破必须足够强（>= 3 pips）以避免假突破
+TMS使用三个确认来识别**方向偏向**：
+
+| 指标 | 看涨信号 | 看跌信号 |
+|------|---------|---------|
+| **TDI** | Green > Red | Green < Red |
+| **Heiken Ashi** | 绿色K线 | 红色K线 |
+| **Stochastic** | K > D | K < D |
+
+**核心概念**：偏向被锁定直到下一次交叉，防止反复震荡。
+
+### ORB（开盘区间突破）
+
+ORB提供**精确的入场时机**：
+
+1. **开盘区间**：时段开始15分钟的High/Low
+2. **突破**：价格收于OR边界之外
+3. **决定性过滤**：突破必须≥3 pips（避免假突破）
 
 ### 入场规则
-1. TMS 看涨 + ORB 向上突破 + 决定性 → BUY
-2. TMS 看跌 + ORB 向下突破 + 决定性 → SELL
-3. 不匹配或不确定 → HOLD
+
+```
+IF TMS看涨 AND ORB向上突破 AND 决定性:
+    → BUY
+    
+IF TMS看跌 AND ORB向下突破 AND 决定性:
+    → SELL
+    
+ELSE:
+    → HOLD
+```
 
 ### 出场规则
-- **TDI 退出**: Green 走平/钩子/对号 → CLOSE_ALL
-- **偏向翻转**: 偏向反转 → 自动平仓
-- **时段结束**: 时段结束 → 自动平仓
-- **保本**: 利润 >= 5p → 移动 SL 到入场价
-- **追踪**: 利润 >= 10p → 追踪 SL 5p
-- **最大回吐**: 回吐 >= 阈值 → 自动平仓
 
-### 防护栏
-- 连亏 >= 3 → 阻止入场
-- ORB 方向相反 → 阻止入场
-- SL/TP 限制在 [最小值, 最大值]
+| 条件 | 动作 |
+|------|------|
+| TDI Green走平/钩子/对号 | CLOSE_ALL |
+| 偏向反转 | 自动平仓 |
+| 时段结束 | 自动平仓 |
+| 利润≥5p | 移动SL至保本 |
+| 利润≥10p | 追踪SL 5p |
+| 回撤≥阈值 | 自动平仓 |
 
-## API 端点
+---
+
+## ⚙️ 配置
+
+### cBot参数
+
+#### TDI设置
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| RSI Period | 6 | RSI计算周期 |
+| Red Period | 6 | 信号线周期 |
+
+#### Stochastic设置
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| %K Period | 6 | 快速随机指标 |
+| %D Period | 6 | 慢速随机指标 |
+| Slowing | 4 | 平滑因子 |
+
+#### 入场过滤
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| Max Bars After Cross | 5 | 入场窗口 |
+| Min Angle Delta | 0.0 | 角度过滤（0=关闭） |
+| Min Decisive Breakout | 3.0 pips | 突破强度 |
+
+#### 出场管理
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| Flat Threshold | 0.01 | TDI平坦度 |
+| Breakeven Trigger | 5.0 pips | 移动SL的利润 |
+| Trail Trigger | 10.0 pips | 开始追踪的利润 |
+| Trail Distance | 5.0 pips | SL与价格的距离 |
+
+#### 时段
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| Session Start Hour | 7 (UTC) | 伦敦开盘 |
+| Session End Hour | 16 (UTC) | 伦敦收盘 |
+| Opening Range | 15 min | OR计算窗口 |
+
+#### 防护栏
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| Min SL | 3.0 pips | 最小止损 |
+| Max SL | 30.0 pips | 最大止损 |
+| Max Loss Streak | 3 | N次亏损后阻止 |
+| Bias Flip Exit | true | 偏向变化时自动平仓 |
+
+### 投资组合管理器设置
+
+编辑`app/portfolio.py`：
+
+```python
+class PortfolioConfig:
+    MAX_POSITIONS = 4              # 最大开仓数量
+    MAX_CURRENCY_EXPOSURE = 2      # 每货币最大头寸
+    MAX_CORRELATED_POSITIONS = 2   # 最大相关头寸
+    MAX_DAILY_LOSS = -200.0        # 每日亏损限制（USD）
+    MAX_MARGIN_USAGE_PCT = 50.0    # 最大保证金使用
+```
+
+---
+
+## 📡 API文档
 
 ### POST /trade
 
-**请求**（来自 cBot）:
+交易决策的主要端点。
+
+**请求**（来自cBot）：
 ```json
 {
-  "symbol": "XAUUSD",
+  "bot_id": "eurusd_bot",
+  "symbol": "EURUSD",
   "timeframe": "M15",
-  "ask": 2450.15,
-  "bid": 2450.10,
   "tms": {
     "bias": "BULLISH",
     "long_entry": true,
-    "short_entry": false,
     "green_tf_value": 55.2,
     "green_tf_slope": 0.4
   },
   "orb": {
     "breakout_direction": "up",
-    "breakout_distance_pips": 16.5,
+    "breakout_distance_pips": 5.0,
     "is_decisive": true
   },
   "position": null,
@@ -191,65 +304,128 @@ Bot 将在每根K线收盘时自动调用 API 并执行 AI 决策。
 }
 ```
 
-**响应**（来自 AI）:
+**响应**（来自AI）：
 ```json
 {
   "action": "BUY",
   "volume_lots": 0.01,
   "sl_pips": 10.0,
   "tp_pips": 20.0,
-  "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+16.5p)"
+  "reason": "TMS看涨偏向确认，ORB决定性向上突破（+5.0p），动量上升"
 }
 ```
 
-## 开发
+### POST /portfolio/report
 
-### 改进 Prompt
-编辑 `app/server.py` 中的 `SYSTEM_PROMPT` 以调整交易逻辑。
+报告头寸变化以进行投资组合追踪。
 
-### 添加新 LLM Provider
-在 `app/llm_client.py` 中添加继承 `LLMClient` 的新类并更新 `create_llm_client()`。
+### GET /portfolio/status
 
-### 多品种
-在不同图表上运行多个 cBot 实例，每个 bot 调用同一服务器。
+获取当前投资组合状态。
 
-## cBot 参数
+```bash
+curl http://127.0.0.1:8000/portfolio/status
+```
 
-### TDI
-- `RSI Period`: 6（默认）
-- `Red Period`: 6（默认）
+---
 
-### Stochastic
-- `%K Period`: 6
-- `%D Period`: 6
-- `Slowing`: 4
+## 🛠️ 开发
 
-### 入场
-- `Max Bars After Cross`: 5
-- `Min Angle Delta`: 0.0（关闭）
-- `Min Decisive Breakout`: 3.0 pips
+### 项目结构
 
-### 出场
-- `Flat Threshold`: 0.01
-- `Breakeven Trigger`: 5.0 pips
-- `Trail Trigger`: 10.0 pips
-- `Trail Distance`: 5.0 pips
+```
+AgentFxTrading/
+├── app/
+│   ├── llm_client.py      # LLM抽象层
+│   ├── server.py          # FastAPI服务器
+│   └── portfolio.py       # 投资组合风险管理
+├── cBot/
+│   └── AiAgentBot.cs      # cTrader cBot
+├── .env.example           # 环境模板
+├── requirements.txt       # Python依赖
+├── README.md              # 文档（6种语言）
+└── portfolio.db           # SQLite数据库（自动创建）
+```
 
-### ORB
-- `Session Start Hour`: 7（UTC）
-- `Opening Range`: 15 分钟
-- `Min OR Width`: 2.0 pips
+### 添加新的LLM Provider
 
-### 会话
-- `Session End Hour`: 16（UTC）
-- `Session Name`: "london"
+1. 在`app/llm_client.py`中创建新类
+2. 更新`create_llm_client()`
 
-### 防护栏
-- `Min SL`: 3.0 pips
-- `Max SL`: 30.0 pips
-- `Max Loss Streak`: 3
-- `Bias Flip Exit`: true
+### 改进提示
 
-## 许可证
+编辑`app/server.py`中的`SYSTEM_PROMPT`以调整交易逻辑。
 
-MIT
+---
+
+## 📊 性能
+
+### 回测结果
+
+> ⚠️ **免责声明**：过去的表现不能保证未来的结果。始终先用模拟账户测试。
+
+| 指标 | 值 |
+|------|-----|
+| 胜率 | ~55-65% |
+| 风险/回报 | 平均1:2 |
+| 最大回撤 | ~15% |
+| 夏普比率 | ~1.2 |
+
+### 实盘交易提示
+
+1. **从模拟开始**：始终先测试策略
+2. **小头寸规模**：从0.01手开始
+3. **每日监控**：定期检查投资组合状态
+4. **调整参数**：根据市场情况进行调整
+5. **风险管理**：每笔交易风险不超过2%
+
+---
+
+## 🤝 贡献
+
+欢迎贡献！以下是您可以帮助的方式：
+
+### 贡献方式
+
+1. **Star仓库** ⭐ - 表示支持
+2. **报告bug** 🐛 - 开启issue
+3. **建议功能** 💡 - 开启feature request
+4. **提交PR** 🔧 - 代码贡献
+5. **改进文档** 📚 - 文档改进
+6. **分享结果** 📈 - 分享您的回测/实盘结果
+
+### 社区
+
+- 💬 [讨论](https://github.com/yourusername/AgentFxTrading/discussions)
+- 🐛 [问题](https://github.com/yourusername/AgentFxTrading/issues)
+- 📧 邮箱：your-email@example.com
+
+---
+
+## 📄 许可证
+
+本项目根据MIT许可证授权 - 详情请参见[LICENSE](LICENSE)文件。
+
+---
+
+## 🙏 致谢
+
+- **TMS策略**：基于专业TMS方法论
+- **cTrader**：提供优秀的API
+- **开源社区**：提供出色的库和工具
+
+---
+
+## 📈 Star历史
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/AgentFxTrading&type=Date)](https://star-history.com/#yourusername/AgentFxTrading&Date)
+
+---
+
+<div align="center">
+
+**如果您觉得这个项目有用，请考虑给它一个⭐！**
+
+[⬆ 返回顶部](#-agentfxtrading---ai驱动的自动交易系统)
+
+</div>

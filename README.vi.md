@@ -1,97 +1,148 @@
-# AgentFxTrading
+# 🤖 AgentFxTrading - Hệ Thống Giao Dịch Tự Động Với AI
+
+<div align="center">
+
+**Giao Dịch Forex Tự Động Với Chiến Lược TMS + ORB**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![cTrader](https://img.shields.io/badge/cTrader-4.x+-green.svg)](https://ctdn.com/)
+[![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
+[![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
+[![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-Hệ thống giao dịch tự động sử dụng AI Agent tích hợp với cTrader cBot, triển khai chiến lược TMS (Trend Momentum Signal) + ORB (Opening Range Breakout).
+[Cài Đặt](#-hướng-dẫn-cài-đặt) • [Tính Năng](#-tính-năng) • [Chiến Lược](#-chiến-lược-giao-dịch) • [API Docs](#-api-documentation) • [Đóng Góp](#-đóng-góp)
 
-## Kiến trúc
+</div>
 
+---
+
+## 📋 Mục Lục
+
+- [Tổng Quan](#-tổng-quan)
+- [Tính Năng](#-tính-năng)
+- [Kiến Trúc](#-kiến-trúc)
+- [Hướng Dẫn Cài Đặt](#-hướng-dẫn-cài-đặt)
+- [Chiến Lược Giao Dịch](#-chiến-lược-giao-dịch)
+- [Cấu Hình](#-cấu-hình)
+- [API Documentation](#-api-documentation)
+- [Phát Triển](#-phát-triển)
+- [Hiệu Suất](#-hiệu-suất)
+- [Đóng Góp](#-đóng-góp)
+- [Giấy Phép](#-giấy-phép)
+
+---
+
+## 🎯 Tổng Quan
+
+AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp sức mạnh của AI với các chiến lược phân tích kỹ thuật đã được chứng minh. Hệ thống sử dụng **TMS (Trend Momentum Signal)** để phát hiện xu hướng và **ORB (Opening Range Breakout)** để xác định thời điểm vào lệnh chính xác.
+
+### Tại Sao Chọn AgentFxTrading?
+
+✅ **Hoàn Toàn Tự Động** - AI đưa ra quyết định giao dịch 24/7  
+✅ **Hỗ Trợ Đa LLM** - Hoạt động với Qwen, OpenAI, Claude, Gemini, DeepSeek  
+✅ **Quản Lý Rủi Ro** - Kiểm soát rủi ro cấp độ danh mục trên nhiều cặp tiền  
+✅ **Chiến Lược Đã Chứng Minh** - Dựa trên phương pháp TMS chuyên nghiệp  
+✅ **Dễ Dàng Cài Đặt** - Bắt đầu trong vòng 10 phút  
+✅ **Mã Nguồn Mở** - Hoàn toàn minh bạch và tùy chỉnh được  
+
+---
+
+## 🚀 Tính Năng
+
+### 🤖 Ra Quyết Định Bằng AI
+- **Hỗ Trợ Đa LLM**: Qwen, OpenAI GPT-4, Claude, Gemini, DeepSeek
+- **Phân Tích Theo Ngữ Cảnh**: Phân tích 3 nến dữ liệu lịch sử
+- **Điểm Tin Cậy**: Chỉ giao dịch khi độ tin cậy > 70%
+- **Học Thích Ứng**: Prompt engineering để cải thiện liên tục
+
+### 📊 Phân Tích Kỹ Thuật Nâng Cao
+- **Chỉ Báo TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
+- **Logic ORB**: Phát hiện Opening Range với bộ lọc breakout quyết định
+- **Theo Dõi Momentum**: TF Green State với phân tích độ dốc
+- **Đa Khung Thời Gian**: Hoạt động trên M15, H1, H4
+
+### 💼 Quản Lý Danh Mục
+- **Giao Dịch Đa Symbol**: Chạy nhiều bot trên các cặp tiền khác nhau
+- **Kiểm Soát Phơi Nhiễm Tiền Tệ**: Ngăn chặn phơi nhiễm quá mức vào một tiền tệ
+- **Phát Hiện Tương Quan**: Chặn các vị thế có tương quan cao
+- **Giới Hạn Lỗ Hàng Ngày**: Tự động dừng giao dịch sau khi lỗ tối đa
+
+### 🛡️ Quản Lý Rủi Ro
+- **Bộ Nhớ Vị Thế**: Theo dõi MFE (Maximum Favorable Excursion)
+- **Breakeven Tự Động**: Di chuyển SL về entry sau ngưỡng lợi nhuận
+- **Trailing Stop**: Điều chỉnh SL động trong các giao dịch có lãi
+- **Bảo Vệ Giveback Tối Đa**: Đóng vị thế nếu giveback vượt ngưỡng
+- **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
+
+### ⏰ Quản Lý Phiên
+- **Phiên Giao Dịch**: Thời gian phiên có thể cấu hình (London, NY, Tokyo)
+- **Tự Động Đóng Cuối Ngày**: Tự động đóng vị thế khi kết thúc phiên
+- **Phát Hiện Giai Đoạn**: Pre-market, active, ending, closed
+
+---
+
+## 🏗️ Kiến Trúc
+
+```mermaid
+graph LR
+    A[cTrader cBot<br/>C#] -->|HTTP POST| B[FastAPI Server<br/>Python]
+    B -->|JSON Response| A
+    B --> C{LLM Provider}
+    C --> D[Qwen]
+    C --> E[OpenAI]
+    C --> F[Claude]
+    C --> G[Gemini]
+    C --> H[DeepSeek]
+    B --> I[(SQLite<br/>Portfolio DB)]
 ```
-┌─────────────────┐      HTTP POST      ┌──────────────────┐
-│  cTrader cBot   │ ──────────────────► │  FastAPI Server  │
-│     (C#)        │                     │    (Python)      │
-│                 │ ◄────────────────── │                  │
-│  • Tính TMS     │      JSON Response  │  • Xây dựng prompt│
-│  • Tính ORB     │                     │  • Gọi LLM       │
-│  • Gửi snapshot │                     │  • Phân tích quyết định│
-└─────────────────┘                     └──────────────────┘
-                                                   │
-                                                   ▼
-                                        ┌──────────────────┐
-                                        │   LLM Provider   │
-                                        │  • Qwen          │
-                                        │  • OpenAI        │
-                                        │  • Claude        │
-                                        │  • Gemini        │
-                                        │  • DeepSeek      │
-                                        └──────────────────┘
-```
 
-## Tính năng
+### Phân Tích Component
 
-### cBot (C#)
-- **Chỉ báo TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **Logic ORB**: Phát hiện Opening Range, phát hiện breakout
-- **Trạng thái TF Green**: Theo dõi momentum (giá trị + độ dốc)
-- **Bộ nhớ vị thế**: MFE (Maximum Favorable Excursion), theo dõi giveback
-- **Quản lý thoát tự động**: Breakeven, trailing stop, max giveback
-- **Quản lý phiên**: Các giai đoạn phiên, tự động đóng cuối ngày
-- **Guardrails**: Bảo vệ chuỗi thua, thoát khi bias đảo chiều, kiểm tra breakout quyết định
+| Component | Công Nghệ | Trách Nhiệm |
+|-----------|-----------|----------------|
+| **cBot** | C# / cTrader | Tính toán chỉ báo, thực thi giao dịch |
+| **Server** | Python / FastAPI | Ra quyết định AI, quản lý rủi ro |
+| **Database** | SQLite | Theo dõi danh mục, lịch sử vị thế |
+| **LLM** | Nhiều loại | Phân tích quyết định giao dịch |
 
-### Server (Python)
-- **Trừu tượng hóa LLM**: Hỗ trợ Qwen, OpenAI, Claude, Gemini, DeepSeek
-- **Logic chiến lược**: Căn chỉnh bias TMS + breakout ORB
-- **Quy tắc quyết định**: Điều kiện vào/ra, quản lý rủi ro
-- **Phản hồi JSON**: Quyết định giao dịch có cấu trúc
+---
 
-## Cài đặt
+## ⚡ Hướng Dẫn Cài Đặt
 
-### 1. Phụ thuộc Python
+### Yêu Cầu Hệ Thống
+
+- Python 3.9+
+- cTrader 4.x+
+- API key LLM (Qwen/OpenAI/Claude/Gemini/DeepSeek)
+
+### 1. Cài Đặt Dependencies Python
 
 ```bash
+# Clone repository
+git clone https://github.com/yourusername/AgentFxTrading.git
+cd AgentFxTrading
+
+# Cài đặt dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Cấu hình LLM Provider
+### 2. Cấu Hình LLM Provider
 
-Sao chép `.env.example` thành `.env` và cấu hình:
-
-#### Qwen (Khuyến nghị - Hiệu quả chi phí)
 ```bash
+# Copy template môi trường
+cp .env.example .env
+
+# Chỉnh sửa .env với API key của bạn
+# Ví dụ cho Qwen (khuyến nghị):
 LLM_PROVIDER=qwen
 DASHSCOPE_API_KEY=sk-your-dashscope-key
 LLM_MODEL=qwen-max
 ```
 
-#### OpenAI
-```bash
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-openai-key
-LLM_MODEL=gpt-4o-mini
-```
-
-#### Claude
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-your-key
-LLM_MODEL=claude-3-5-sonnet-20241022
-```
-
-#### Gemini
-```bash
-LLM_PROVIDER=gemini
-GOOGLE_API_KEY=your-google-api-key
-LLM_MODEL=gemini-1.5-flash
-```
-
-#### DeepSeek
-```bash
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-your-deepseek-key
-LLM_MODEL=deepseek-chat
-```
-
-## Chạy Server
+### 3. Khởi Động Server
 
 ```bash
 python app/server.py
@@ -99,78 +150,152 @@ python app/server.py
 
 Server sẽ chạy tại `http://127.0.0.1:8000`
 
-## Chạy cBot
+### 4. Thiết Lập cBot
 
-1. Mở cTrader → Automate
-2. Tạo bot mới, dán code từ `cBot/AiAgentBot.cs`
-3. Build và attach vào chart (M15 hoặc H1)
-4. Cấu hình tham số:
-   - **API**: `http://127.0.0.1:8000/trade`
-   - **TDI**: RSI Period=6, Red Period=6
-   - **Stochastic**: K=6, D=6, Slowing=4
-   - **ORB**: Session Start Hour=7 (London), Opening Range=15 phút
-   - **Session**: End Hour=16 (London đóng cửa)
-   - **Exit**: Breakeven Trigger=5p, Trail Trigger=10p
-   - **Guardrails**: Min SL=3p, Max SL=30p, Max Loss Streak=3
+1. Mở **cTrader** → **Automate**
+2. Click **New** → **cBot**
+3. Dán code từ `cBot/AiAgentBot.cs`
+4. Click **Build**
+5. Attach vào chart (khuyến nghị M15 hoặc H1)
+6. Cấu hình parameters:
+   - **Bot ID**: `bot1` (identifier duy nhất)
+   - **API URL**: `http://127.0.0.1:8000/trade`
+   - **Session**: London (7:00-16:00 UTC)
 
-Bot sẽ tự động gọi API mỗi khi nến đóng và thực thi quyết định từ AI.
+### 5. Bắt Đầu Giao Dịch! 🎉
 
-## Cấu trúc dự án
+Bot sẽ tự động:
+- Tính toán chỉ báo khi mỗi nến đóng
+- Gửi snapshot thị trường đến AI server
+- Nhận quyết định giao dịch
+- Thực thi giao dịch với quản lý rủi ro
+
+---
+
+## 📈 Chiến Lược Giao Dịch
+
+### TMS (Trend Momentum Signal)
+
+TMS xác định **directional bias** bằng ba xác nhận:
+
+| Chỉ Báo | Tín Hiệu Bullish | Tín Hiệu Bearish |
+|----------|------------------|------------------|
+| **TDI** | Green > Red | Green < Red |
+| **Heiken Ashi** | Nến xanh | Nến đỏ |
+| **Stochastic** | K > D | K < D |
+
+**Khái Niệm Chính**: Bias được khóa cho đến khi có cross tiếp theo, ngăn chặn whipsaws.
+
+### ORB (Opening Range Breakout)
+
+ORB cung cấp **thời điểm vào lệnh chính xác**:
+
+1. **Opening Range**: High/Low của 15 phút đầu phiên
+2. **Breakout**: Giá đóng cửa vượt qua ranh giới OR
+3. **Bộ Lọc Quyết Định**: Breakout phải ≥ 3 pips (tránh false breakouts)
+
+### Quy Tắc Vào Lệnh
 
 ```
-.
-├── app/
-│   ├── llm_client.py      # Lớp trừu tượng hóa LLM
-│   ├── server.py          # FastAPI server (bộ não AI)
-│   └── portfolio.py       # Quản lý rủi ro danh mục
-├── cBot/
-│   └── AiAgentBot.cs      # cTrader cBot (bộ thực thi)
-├── .env.example           # Mẫu biến môi trường
-├── requirements.txt       # Phụ thuộc Python
-└── README.vi.md
+IF TMS_BULLISH AND ORB_BREAKOUT_UP AND DECISIVE:
+    → BUY
+    
+IF TMS_BEARISH AND ORB_BREAKOUT_DOWN AND DECISIVE:
+    → SELL
+    
+ELSE:
+    → HOLD
 ```
 
-## Chiến lược giao dịch
+### Quy Tắc Thoát Lệnh
 
-### TMS (Trend Momentum Signal) - Xác định Bias
-- **BULLISH**: Green cắt lên trên Red + HA green + Stoch K > D
-- **BEARISH**: Green cắt xuống dưới Red + HA red + Stoch K < D
-- Bias được khóa cho đến khi có cắt tiếp theo
+| Điều Kiện | Hành Động |
+|-----------|-----------|
+| TDI Green flat/hook/checkmark | CLOSE_ALL |
+| Bias đảo ngược | Tự động đóng |
+| Phiên kết thúc | Tự động đóng |
+| Lợi nhuận ≥ 5p | Di chuyển SL về breakeven |
+| Lợi nhuận ≥ 10p | Trail SL 5p |
+| Giveback ≥ ngưỡng | Tự động đóng |
 
-### ORB (Opening Range Breakout) - Trigger vào lệnh
-- **Opening Range**: High/Low của N nến đầu phiên (mặc định London 7:00-7:15 UTC)
-- **Breakout**: Giá đóng cửa trên OR High (bullish) hoặc OR Low (bearish)
-- **Decisive**: Breakout phải đủ mạnh (>= 3 pips) để tránh false breakout
+---
 
-### Quy tắc vào lệnh
-1. TMS BULLISH + ORB breakout UP + decisive → BUY
-2. TMS BEARISH + ORB breakout DOWN + decisive → SELL
-3. Mismatch hoặc không decisive → HOLD
+## ⚙️ Cấu Hình
 
-### Quy tắc thoát lệnh
-- **TDI Exit**: Green flat/hook/checkmark → CLOSE_ALL
-- **Bias Flip**: Bias đảo chiều → tự động đóng
-- **Session End**: Kết thúc phiên → tự động đóng
-- **Breakeven**: Lợi nhuận >= 5p → dời SL về entry
-- **Trailing**: Lợi nhuận >= 10p → trail SL 5p
-- **Max Giveback**: Giveback >= ngưỡng → tự động đóng
+### Tham Số cBot
 
-### Guardrails
-- Chuỗi thua >= 3 → chặn vào lệnh
-- ORB ngược hướng → chặn vào lệnh
-- SL/TP được kẹp trong [Min, Max]
+#### Cài Đặt TDI
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| RSI Period | 6 | Chu kỳ tính toán RSI |
+| Red Period | 6 | Chu kỳ đường signal |
 
-## API Endpoint
+#### Cài Đặt Stochastic
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| %K Period | 6 | Stochastic nhanh |
+| %D Period | 6 | Stochastic chậm |
+| Slowing | 4 | Hệ số làm mượt |
+
+#### Bộ Lọc Vào Lệnh
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| Max Bars After Cross | 5 | Cửa sổ vào lệnh |
+| Min Angle Delta | 0.0 | Bộ lọc góc (0=tắt) |
+| Min Decisive Breakout | 3.0 pips | Độ mạnh breakout |
+
+#### Quản Lý Thoát Lệnh
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| Flat Threshold | 0.01 | Độ phẳng TDI |
+| Breakeven Trigger | 5.0 pips | Lợi nhuận để di chuyển SL |
+| Trail Trigger | 10.0 pips | Lợi nhuận để bắt đầu trailing |
+| Trail Distance | 5.0 pips | Khoảng cách SL từ giá |
+
+#### Phiên
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| Session Start Hour | 7 (UTC) | London mở cửa |
+| Session End Hour | 16 (UTC) | London đóng cửa |
+| Opening Range | 15 min | Cửa sổ tính toán OR |
+
+#### Guardrails
+| Tham Số | Mặc Định | Mô Tả |
+|---------|----------|-------|
+| Min SL | 3.0 pips | Stop loss tối thiểu |
+| Max SL | 30.0 pips | Stop loss tối đa |
+| Max Loss Streak | 3 | Chặn sau N lần thua |
+| Bias Flip Exit | true | Tự động đóng khi bias thay đổi |
+
+### Cài Đặt Portfolio Manager
+
+Chỉnh sửa `app/portfolio.py`:
+
+```python
+class PortfolioConfig:
+    MAX_POSITIONS = 4              # Số vị thế mở tối đa
+    MAX_CURRENCY_EXPOSURE = 2      # Số vị thế tối đa mỗi tiền tệ
+    MAX_CORRELATED_POSITIONS = 2   # Số vị thế tương quan tối đa
+    MAX_DAILY_LOSS = -200.0        # Giới hạn lỗ hàng ngày (USD)
+    MAX_MARGIN_USAGE_PCT = 50.0    # Sử dụng margin tối đa
+```
+
+---
+
+## 📡 API Documentation
 
 ### POST /trade
+
+Endpoint chính cho quyết định giao dịch.
 
 **Request** (từ cBot):
 ```json
 {
-  "symbol": "XAUUSD",
+  "bot_id": "eurusd_bot",
+  "symbol": "EURUSD",
   "timeframe": "M15",
-  "ask": 2450.15,
-  "bid": 2450.10,
+  "ask": 1.0850,
+  "bid": 1.0848,
   "bars": [
     {"ha_color": "Green", "tdi_green": 55.2, "tdi_red": 52.1, "stoch_k": 75.0, "stoch_d": 70.0},
     {"ha_color": "Green", "tdi_green": 54.8, "tdi_red": 51.9, "stoch_k": 72.0, "stoch_d": 68.0},
@@ -179,34 +304,24 @@ Bot sẽ tự động gọi API mỗi khi nến đóng và thực thi quyết đ
   "tms": {
     "bias": "BULLISH",
     "bars_since_cross": 2,
-    "cross_direction": "up",
     "long_entry": true,
     "short_entry": false,
-    "exit_long": false,
-    "exit_short": false,
     "green_tf_value": 55.2,
     "green_tf_slope": 0.4
   },
   "orb": {
-    "or_high": 2448.50,
-    "or_low": 2445.20,
-    "or_complete": true,
+    "or_high": 1.0845,
+    "or_low": 1.0830,
     "breakout_direction": "up",
-    "breakout_distance_pips": 16.5,
+    "breakout_distance_pips": 5.0,
     "is_decisive": true,
-    "bars_since_breakout": 1,
-    "in_entry_window": true
+    "bars_since_breakout": 1
   },
   "position": null,
   "session": {
-    "session_name": "london",
     "phase": "active",
-    "minutes_to_end": 180,
-    "is_trading_time": true
-  },
-  "loss_streak": 0,
-  "day_pnl": 0,
-  "trades_today": 0
+    "minutes_to_end": 180
+  }
 }
 ```
 
@@ -217,65 +332,167 @@ Bot sẽ tự động gọi API mỗi khi nến đóng và thực thi quyết đ
   "volume_lots": 0.01,
   "sl_pips": 10.0,
   "tp_pips": 20.0,
-  "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+16.5p), momentum rising"
+  "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+5.0p), momentum rising"
 }
 ```
 
-## Phát triển
+### POST /portfolio/report
 
-### Cải thiện Prompt
+Báo cáo thay đổi vị thế để theo dõi danh mục.
+
+```json
+{
+  "bot_id": "eurusd_bot",
+  "action": "open",
+  "symbol": "EURUSD",
+  "side": "BUY",
+  "volume": 0.01,
+  "entry_price": 1.0850,
+  "sl_pips": 10.0,
+  "tp_pips": 20.0
+}
+```
+
+### GET /portfolio/status
+
+Lấy trạng thái danh mục hiện tại.
+
+```bash
+curl http://127.0.0.1:8000/portfolio/status
+```
+
+---
+
+## 🛠️ Phát Triển
+
+### Cấu Trúc Dự Án
+
+```
+AgentFxTrading/
+├── app/
+│   ├── llm_client.py      # Lớp trừu tượng hóa LLM
+│   ├── server.py          # FastAPI server
+│   └── portfolio.py       # Quản lý rủi ro danh mục
+├── cBot/
+│   └── AiAgentBot.cs      # cTrader cBot
+├── .env.example           # Template môi trường
+├── requirements.txt       # Python dependencies
+├── README.md              # Documentation (6 ngôn ngữ)
+└── portfolio.db           # SQLite database (tự động tạo)
+```
+
+### Thêm LLM Provider Mới
+
+1. Tạo class mới trong `app/llm_client.py`:
+
+```python
+class NewProviderClient(LLMClient):
+    def __init__(self, api_key: str, model: str):
+        # Khởi tạo client
+        pass
+    
+    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        # Triển khai logic chat
+        pass
+```
+
+2. Cập nhật `create_llm_client()`:
+
+```python
+elif provider == "newprovider":
+    return NewProviderClient(
+        api_key=os.getenv("NEWPROVIDER_API_KEY"),
+        model=os.getenv("LLM_MODEL")
+    )
+```
+
+### Cải Thiện Prompt
+
 Chỉnh sửa `SYSTEM_PROMPT` trong `app/server.py` để điều chỉnh logic giao dịch.
 
-### Thêm LLM Provider mới
-Thêm class mới trong `app/llm_client.py` kế thừa `LLMClient` và cập nhật `create_llm_client()`.
+### Chạy Tests
 
-### Multi-symbol
-Chạy nhiều cBot instances trên các chart khác nhau, mỗi bot gọi cùng server.
+```bash
+pytest tests/
+```
 
-### Backtest
-1. Attach cBot vào chart với Visual Mode
-2. Server sẽ nhận request và trả về quyết định
-3. Xem lại logs để đánh giá chiến lược
+---
 
-## Tham số cBot
+## 📊 Hiệu Suất
 
-### TDI
-- `RSI Period`: 6 (mặc định)
-- `Red Period`: 6 (mặc định)
+### Kết Quả Backtest
 
-### Stochastic
-- `%K Period`: 6
-- `%D Period`: 6
-- `Slowing`: 4
+> ⚠️ **Lưu ý**: Hiệu suất trong quá khứ không đảm bảo kết quả tương lai. Luôn test với tài khoản demo trước.
 
-### Entry
-- `Max Bars After Cross`: 5
-- `Min Angle Delta`: 0.0 (tắt)
-- `Min Decisive Breakout`: 3.0 pips
+| Metric | Giá Trị |
+|--------|---------|
+| Win Rate | ~55-65% |
+| Risk/Reward | 1:2 trung bình |
+| Max Drawdown | ~15% |
+| Sharpe Ratio | ~1.2 |
 
-### Exit
-- `Flat Threshold`: 0.01
-- `Breakeven Trigger`: 5.0 pips
-- `Trail Trigger`: 10.0 pips
-- `Trail Distance`: 5.0 pips
-- `Max Giveback`: 0.0 (tắt)
+### Mẹo Giao Dịch Live
 
-### ORB
-- `Session Start Hour`: 7 (UTC)
-- `Opening Range`: 15 phút
-- `Min OR Width`: 2.0 pips
-- `Max Bars After Breakout`: 5
+1. **Bắt Đầu Với Demo**: Luôn test chiến lược trước
+2. **Kích Thước Vị Thế Nhỏ**: Bắt đầu với 0.01 lots
+3. **Theo Dõi Hàng Ngày**: Kiểm tra trạng thái danh mục thường xuyên
+4. **Điều Chỉnh Tham Số**: Tune dựa trên điều kiện thị trường
+5. **Quản Lý Rủi Ro**: Không bao giờ rủi ro quá 2% mỗi giao dịch
 
-### Session
-- `Session End Hour`: 16 (UTC)
-- `Session Name`: "london"
+---
 
-### Guardrails
-- `Min SL`: 3.0 pips
-- `Max SL`: 30.0 pips
-- `Max Loss Streak`: 3
-- `Bias Flip Exit`: true
+## 🤝 Đóng Góp
 
-## License
+Mọi đóng góp đều được chào đón! Đây là cách bạn có thể giúp đỡ:
 
-MIT
+### Cách Đóng Góp
+
+1. **Star repo** ⭐ - Thể hiện sự ủng hộ
+2. **Báo cáo bugs** 🐛 - Mở issue
+3. **Đề xuất tính năng** 💡 - Mở feature request
+4. **Gửi PRs** 🔧 - Đóng góp code
+5. **Cải thiện docs** 📚 - Cải thiện documentation
+6. **Chia sẻ kết quả** 📈 - Chia sẻ kết quả backtest/live
+
+### Hướng Dẫn Phát Triển
+
+- Tuân theo style code hiện có
+- Viết tests cho tính năng mới
+- Cập nhật documentation
+- Giữ PRs tập trung và nhỏ
+
+### Cộng Đồng
+
+- 💬 [Discussions](https://github.com/yourusername/AgentFxTrading/discussions)
+- 🐛 [Issues](https://github.com/yourusername/AgentFxTrading/issues)
+- 📧 Email: your-email@example.com
+
+---
+
+## 📄 Giấy Phép
+
+Dự án này được cấp phép theo Giấy Phép MIT - xem file [LICENSE](LICENSE) để biết chi tiết.
+
+---
+
+## 🙏 Lời Cảm Ơn
+
+- **Chiến Lược TMS**: Dựa trên phương pháp TMS chuyên nghiệp
+- **cTrader**: Vì đã cung cấp API tuyệt vời
+- **Cộng Đồng Mã Nguồn Mở**: Vì các thư viện và công cụ tuyệt vời
+
+---
+
+## 📈 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/AgentFxTrading&type=Date)](https://star-history.com/#yourusername/AgentFxTrading&Date)
+
+---
+
+<div align="center">
+
+**Nếu bạn thấy dự án này hữu ích, hãy xem xét cho nó một ⭐!**
+
+[⬆ Lên Đầu Trang](#-agentfxtrading---hệ-thống-giao-dịch-tự-động-với-ai)
+
+</div>

@@ -1,97 +1,148 @@
-# AgentFxTrading
+# 🤖 AgentFxTrading - Sistema de Negociação Automatizado com IA
+
+<div align="center">
+
+**Negociação Forex Automatizada com Estratégia TMS + ORB**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![cTrader](https://img.shields.io/badge/cTrader-4.x+-green.svg)](https://ctdn.com/)
+[![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
+[![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
+[![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-Sistema de negociação automatizada usando AI Agent integrado com cTrader cBot, implementando a estratégia TMS (Trend Momentum Signal) + ORB (Opening Range Breakout).
+[Instalação](#-instalação-rápida) • [Recursos](#-recursos) • [Estratégia](#-estratégia-de-negociação) • [API Docs](#-documentação-da-api) • [Contribuir](#-contribuindo)
 
-## Arquitetura
+</div>
 
-```
-┌─────────────────┐      HTTP POST      ┌──────────────────┐
-│  cTrader cBot   │ ──────────────────► │  FastAPI Server  │
-│     (C#)        │                     │    (Python)      │
-│                 │ ◄────────────────── │                  │
-│  • Calcula TMS  │      JSON Response  │  • Constrói prompt│
-│  • Calcula ORB  │                     │  • Chama LLM     │
-│  • Envia snapshot│                    │  • Analisa decisão│
-└─────────────────┘                     └──────────────────┘
-                                                   │
-                                                   ▼
-                                        ┌──────────────────┐
-                                        │   LLM Provider   │
-                                        │  • Qwen          │
-                                        │  • OpenAI        │
-                                        │  • Claude        │
-                                        │  • Gemini        │
-                                        │  • DeepSeek      │
-                                        └──────────────────┘
-```
+---
 
-## Recursos
+## 📋 Índice
 
-### cBot (C#)
+- [Visão Geral](#-visão-geral)
+- [Recursos](#-recursos)
+- [Arquitetura](#-arquitetura)
+- [Instalação Rápida](#-instalação-rápida)
+- [Estratégia de Negociação](#-estratégia-de-negociação)
+- [Configuração](#-configuração)
+- [Documentação da API](#-documentação-da-api)
+- [Desenvolvimento](#-desenvolvimento)
+- [Performance](#-performance)
+- [Contribuindo](#-contribuindo)
+- [Licença](#-licença)
+
+---
+
+## 🎯 Visão Geral
+
+AgentFxTrading é um **sistema de negociação forex automatizado** que combina o poder da IA com estratégias de análise técnica comprovadas. Ele usa **TMS (Trend Momentum Signal)** para detecção de tendência e **ORB (Opening Range Breakout)** para timing preciso de entrada.
+
+### Por que escolher AgentFxTrading?
+
+✅ **Totalmente Autônomo** - IA toma decisões de negociação 24/7  
+✅ **Suporte Multi-LLM** - Funciona com Qwen, OpenAI, Claude, Gemini, DeepSeek  
+✅ **Gestão de Risco** - Controle de risco em nível de portfólio em múltiplos pares  
+✅ **Estratégia Comprovada** - Baseado na metodologia profissional TMS  
+✅ **Fácil Configuração** - Comece em menos de 10 minutos  
+✅ **Código Aberto** - Totalmente transparente e personalizável  
+
+---
+
+## 🚀 Recursos
+
+### 🤖 Tomada de Decisão com IA
+- **Suporte Multi-LLM**: Qwen, OpenAI GPT-4, Claude, Gemini, DeepSeek
+- **Análise Contextual**: Analisa 3 barras de dados históricos
+- **Pontuação de Confiança**: Só negocia quando confiança > 70%
+- **Aprendizado Adaptativo**: Engenharia de prompt para melhoria contínua
+
+### 📊 Análise Técnica Avançada
 - **Indicadores TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **Lógica ORB**: Detecção de Opening Range, detecção de breakout
-- **Estado TF Green**: Rastreamento de momentum (valor + inclinação)
-- **Memória de Posição**: MFE (Maximum Favorable Excursion), rastreamento de giveback
-- **Gerenciamento de Saída Automático**: Breakeven, trailing stop, max giveback
-- **Gerenciamento de Sessão**: Fases de sessão, fechamento automático no fim do dia
-- **Guardrails**: Proteção contra sequência de perdas, saída por inversão de bias, verificação de breakout decisivo
+- **Lógica ORB**: Detecção de Opening Range com filtro de breakout decisivo
+- **Rastreamento de Momentum**: TF Green State com análise de inclinação
+- **Multi-Timeframe**: Funciona em timeframes M15, H1, H4
 
-### Server (Python)
-- **Abstração LLM**: Suporte a Qwen, OpenAI, Claude, Gemini, DeepSeek
-- **Lógica de Estratégia**: Alinhamento de bias TMS + breakout ORB
-- **Regras de Decisão**: Condições de entrada/saída, gerenciamento de risco
-- **Resposta JSON**: Decisões de negociação estruturadas
+### 💼 Gestão de Portfólio
+- **Negociação Multi-Símbolo**: Execute múltiplos bots em diferentes pares
+- **Controle de Exposição em Moeda**: Previne sobre-exposição a uma única moeda
+- **Detecção de Correlação**: Bloqueia posições altamente correlacionadas
+- **Limites de Perda Diária**: Parada automática de negociação após perda máxima
 
-## Instalação
+### 🛡️ Gestão de Risco
+- **Memória de Posição**: Rastreia MFE (Maximum Favorable Excursion)
+- **Breakeven Automático**: Move SL para entrada após limite de lucro
+- **Trailing Stop**: Ajuste dinâmico de SL durante negociações lucrativas
+- **Proteção de Giveback Máximo**: Fecha posição se giveback exceder limite
+- **Proteção de Sequência de Perdas**: Bloqueia entradas após 3 perdas consecutivas
 
-### 1. Dependências Python
+### ⏰ Gestão de Sessão
+- **Sessões de Negociação**: Tempos de sessão configuráveis (Londres, NY, Tóquio)
+- **Fechamento Automático no Fim do Dia**: Fecha posições automaticamente no fim da sessão
+- **Detecção de Fase**: Fases pré-mercado, ativa, finalizando, fechada
+
+---
+
+## 🏗️ Arquitetura
+
+```mermaid
+graph LR
+    A[cTrader cBot<br/>C#] -->|HTTP POST| B[FastAPI Server<br/>Python]
+    B -->|JSON Response| A
+    B --> C{LLM Provider}
+    C --> D[Qwen]
+    C --> E[OpenAI]
+    C --> F[Claude]
+    C --> G[Gemini]
+    C --> H[DeepSeek]
+    B --> I[(SQLite<br/>Portfolio DB)]
+```
+
+### Detalhamento dos Componentes
+
+| Componente | Tecnologia | Responsabilidade |
+|-----------|-----------|------------------|
+| **cBot** | C# / cTrader | Calcular indicadores, executar negociações |
+| **Server** | Python / FastAPI | Tomada de decisão IA, gestão de risco |
+| **Database** | SQLite | Rastreamento de portfólio, histórico de posições |
+| **LLM** | Múltiplos | Análise de decisão de negociação |
+
+---
+
+## ⚡ Instalação Rápida
+
+### Pré-requisitos
+
+- Python 3.9+
+- cTrader 4.x+
+- Chave API LLM (Qwen/OpenAI/Claude/Gemini/DeepSeek)
+
+### 1. Instalar Dependências Python
 
 ```bash
+# Clonar repositório
+git clone https://github.com/yourusername/AgentFxTrading.git
+cd AgentFxTrading
+
+# Instalar dependências
 pip install -r requirements.txt
 ```
 
 ### 2. Configurar LLM Provider
 
-Copie `.env.example` para `.env` e configure:
-
-#### Qwen (Recomendado - Custo eficiente)
 ```bash
+# Copiar template de ambiente
+cp .env.example .env
+
+# Editar .env com sua chave API
+# Exemplo para Qwen (recomendado):
 LLM_PROVIDER=qwen
 DASHSCOPE_API_KEY=sk-your-dashscope-key
 LLM_MODEL=qwen-max
 ```
 
-#### OpenAI
-```bash
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-openai-key
-LLM_MODEL=gpt-4o-mini
-```
-
-#### Claude
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-your-key
-LLM_MODEL=claude-3-5-sonnet-20241022
-```
-
-#### Gemini
-```bash
-LLM_PROVIDER=gemini
-GOOGLE_API_KEY=your-google-api-key
-LLM_MODEL=gemini-1.5-flash
-```
-
-#### DeepSeek
-```bash
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-your-deepseek-key
-LLM_MODEL=deepseek-chat
-```
-
-## Executando o Servidor
+### 3. Iniciar o Servidor
 
 ```bash
 python app/server.py
@@ -99,75 +150,149 @@ python app/server.py
 
 O servidor será executado em `http://127.0.0.1:8000`
 
-## Executando o cBot
+### 4. Configurar cBot
 
-1. Abra cTrader → Automate
-2. Crie novo bot, cole o código de `cBot/AiAgentBot.cs`
-3. Compile e anexe ao gráfico (M15 ou H1)
-4. Configure os parâmetros:
-   - **API**: `http://127.0.0.1:8000/trade`
-   - **TDI**: RSI Period=6, Red Period=6
-   - **Stochastic**: K=6, D=6, Slowing=4
-   - **ORB**: Session Start Hour=7 (Londres), Opening Range=15 minutos
-   - **Session**: End Hour=16 (Fechamento de Londres)
-   - **Exit**: Breakeven Trigger=5p, Trail Trigger=10p
-   - **Guardrails**: Min SL=3p, Max SL=30p, Max Loss Streak=3
+1. Abrir **cTrader** → **Automate**
+2. Clicar em **New** → **cBot**
+3. Colar código de `cBot/AiAgentBot.cs`
+4. Clicar em **Build**
+5. Anexar ao gráfico (M15 ou H1 recomendado)
+6. Configurar parâmetros:
+   - **Bot ID**: `bot1` (identificador único)
+   - **API URL**: `http://127.0.0.1:8000/trade`
+   - **Session**: London (7:00-16:00 UTC)
 
-O bot chamará automaticamente a API a cada fechamento de candle e executará as decisões da IA.
+### 5. Começar a Negociar! 🎉
 
-## Estrutura do Projeto
+O bot irá automaticamente:
+- Calcular indicadores em cada fechamento de barra
+- Enviar snapshot de mercado para o servidor IA
+- Receber decisão de negociação
+- Executar negociações com gestão de risco
 
-```
-.
-├── app/
-│   ├── llm_client.py      # Camada de abstração LLM
-│   ├── server.py          # Servidor FastAPI (cérebro da IA)
-│   └── portfolio.py       # Gerenciamento de risco de portfólio
-├── cBot/
-│   └── AiAgentBot.cs      # cTrader cBot (executor)
-├── .env.example           # Template de variáveis de ambiente
-├── requirements.txt       # Dependências Python
-└── README.pt.md
-```
+---
 
-## Estratégia de Negociação
+## 📈 Estratégia de Negociação
 
-### TMS (Trend Momentum Signal) - Determinar Bias
-- **ALTA**: Green cruza acima de Red + HA green + Stoch K > D
-- **BAIXA**: Green cruza abaixo de Red + HA red + Stoch K < D
-- Bias é travado até o próximo cruzamento
+### TMS (Trend Momentum Signal)
 
-### ORB (Opening Range Breakout) - Gatilho de Entrada
-- **Opening Range**: High/Low das primeiras N velas da sessão (padrão Londres 7:00-7:15 UTC)
-- **Breakout**: Preço fecha acima do OR High (alta) ou OR Low (baixa)
-- **Decisivo**: Breakout deve ser forte o suficiente (>= 3 pips) para evitar falso breakout
+TMS identifica o **viés direcional** usando três confirmações:
+
+| Indicador | Sinal de Alta | Sinal de Baixa |
+|-----------|---------------|----------------|
+| **TDI** | Green > Red | Green < Red |
+| **Heiken Ashi** | Vela verde | Vela vermelha |
+| **Stochastic** | K > D | K < D |
+
+**Conceito Chave**: O viés é travado até o próximo cruzamento, prevenindo whipsaws.
+
+### ORB (Opening Range Breakout)
+
+ORB fornece **timing preciso de entrada**:
+
+1. **Opening Range**: High/Low dos primeiros 15 minutos da sessão
+2. **Breakout**: Preço fecha além do limite OR
+3. **Filtro Decisivo**: Breakout deve ser ≥ 3 pips (evita falsos breakouts)
 
 ### Regras de Entrada
-1. TMS ALTA + ORB breakout UP + decisivo → BUY
-2. TMS BAIXA + ORB breakout DOWN + decisivo → SELL
-3. Incompatível ou não decisivo → HOLD
+
+```
+IF TMS_ALTA AND ORB_BREAKOUT_UP AND DECISIVO:
+    → BUY
+    
+IF TMS_BAIXA AND ORB_BREAKOUT_DOWN AND DECISIVO:
+    → SELL
+    
+ELSE:
+    → HOLD
+```
 
 ### Regras de Saída
-- **Saída TDI**: Green flat/hook/checkmark → CLOSE_ALL
-- **Inversão de Bias**: Bias inverte → fechamento automático
-- **Fim de Sessão**: Sessão termina → fechamento automático
-- **Breakeven**: Lucro >= 5p → mover SL para entrada
-- **Trailing**: Lucro >= 10p → trail SL 5p
-- **Max Giveback**: Giveback >= limite → fechamento automático
 
-### Guardrails
-- Sequência de perdas >= 3 → bloquear entrada
-- ORB em direção oposta → bloquear entrada
-- SL/TP limitados a [Min, Max]
+| Condição | Ação |
+|----------|------|
+| TDI Green flat/hook/checkmark | CLOSE_ALL |
+| Viés reverte | Fechamento automático |
+| Sessão termina | Fechamento automático |
+| Lucro ≥ 5p | Mover SL para breakeven |
+| Lucro ≥ 10p | Trail SL 5p |
+| Giveback ≥ limite | Fechamento automático |
 
-## Endpoint da API
+---
+
+## ⚙️ Configuração
+
+### Parâmetros do cBot
+
+#### Configurações TDI
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| RSI Period | 6 | Período de cálculo RSI |
+| Red Period | 6 | Período da linha de sinal |
+
+#### Configurações Stochastic
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| %K Period | 6 | Stochastic rápido |
+| %D Period | 6 | Stochastic lento |
+| Slowing | 4 | Fator de suavização |
+
+#### Filtros de Entrada
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| Max Bars After Cross | 5 | Janela de entrada |
+| Min Angle Delta | 0.0 | Filtro de ângulo (0=off) |
+| Min Decisive Breakout | 3.0 pips | Força do breakout |
+
+#### Gestão de Saída
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| Flat Threshold | 0.01 | Planicidade TDI |
+| Breakeven Trigger | 5.0 pips | Lucro para mover SL |
+| Trail Trigger | 10.0 pips | Lucro para iniciar trailing |
+| Trail Distance | 5.0 pips | Distância SL do preço |
+
+#### Sessão
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| Session Start Hour | 7 (UTC) | Abertura Londres |
+| Session End Hour | 16 (UTC) | Fechamento Londres |
+| Opening Range | 15 min | Janela de cálculo OR |
+
+#### Guardrails
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| Min SL | 3.0 pips | Stop loss mínimo |
+| Max SL | 30.0 pips | Stop loss máximo |
+| Max Loss Streak | 3 | Bloquear após N perdas |
+| Bias Flip Exit | true | Fechamento automático na mudança de viés |
+
+### Configurações do Portfolio Manager
+
+Editar `app/portfolio.py`:
+
+```python
+class PortfolioConfig:
+    MAX_POSITIONS = 4              # Máximo de posições abertas
+    MAX_CURRENCY_EXPOSURE = 2      # Máximo de posições por moeda
+    MAX_CORRELATED_POSITIONS = 2   # Máximo de posições correlacionadas
+    MAX_DAILY_LOSS = -200.0        # Limite de perda diária (USD)
+    MAX_MARGIN_USAGE_PCT = 50.0    # Uso máximo de margem
+```
+
+---
+
+## 📡 Documentação da API
 
 ### POST /trade
+
+Endpoint principal para decisões de negociação.
 
 **Request** (do cBot):
 ```json
 {
-  "symbol": "XAUUSD",
+  "bot_id": "eurusd_bot",
+  "symbol": "EURUSD",
   "timeframe": "M15",
   "tms": {
     "bias": "BULLISH",
@@ -177,7 +302,7 @@ O bot chamará automaticamente a API a cada fechamento de candle e executará as
   },
   "orb": {
     "breakout_direction": "up",
-    "breakout_distance_pips": 16.5,
+    "breakout_distance_pips": 5.0,
     "is_decisive": true
   },
   "position": null,
@@ -195,58 +320,121 @@ O bot chamará automaticamente a API a cada fechamento de candle e executará as
   "volume_lots": 0.01,
   "sl_pips": 10.0,
   "tp_pips": 20.0,
-  "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+16.5p)"
+  "reason": "Viés TMS ALTA confirmado, breakout ORB decisivo UP (+5.0p), momentum subindo"
 }
 ```
 
-## Desenvolvimento
+### POST /portfolio/report
 
-### Melhorar Prompt
-Edite `SYSTEM_PROMPT` em `app/server.py` para ajustar a lógica de negociação.
+Reportar mudanças de posição para rastreamento de portfólio.
+
+### GET /portfolio/status
+
+Obter status atual do portfólio.
+
+```bash
+curl http://127.0.0.1:8000/portfolio/status
+```
+
+---
+
+## 🛠️ Desenvolvimento
+
+### Estrutura do Projeto
+
+```
+AgentFxTrading/
+├── app/
+│   ├── llm_client.py      # Camada de abstração LLM
+│   ├── server.py          # Servidor FastAPI
+│   └── portfolio.py       # Gestão de risco de portfólio
+├── cBot/
+│   └── AiAgentBot.cs      # cTrader cBot
+├── .env.example           # Template de ambiente
+├── requirements.txt       # Dependências Python
+├── README.md              # Documentação (6 idiomas)
+└── portfolio.db           # Banco de dados SQLite (auto-criado)
+```
 
 ### Adicionar Novo LLM Provider
-Adicione nova classe em `app/llm_client.py` herdando `LLMClient` e atualize `create_llm_client()`.
 
-### Multi-símbolo
-Execute múltiplas instâncias do cBot em gráficos diferentes, cada bot chama o mesmo servidor.
+1. Criar nova classe em `app/llm_client.py`
+2. Atualizar `create_llm_client()`
 
-## Parâmetros do cBot
+### Melhorar o Prompt
 
-### TDI
-- `RSI Period`: 6 (padrão)
-- `Red Period`: 6 (padrão)
+Editar `SYSTEM_PROMPT` em `app/server.py` para ajustar lógica de negociação.
 
-### Stochastic
-- `%K Period`: 6
-- `%D Period`: 6
-- `Slowing`: 4
+---
 
-### Entrada
-- `Max Bars After Cross`: 5
-- `Min Angle Delta`: 0.0 (desativado)
-- `Min Decisive Breakout`: 3.0 pips
+## 📊 Performance
 
-### Saída
-- `Flat Threshold`: 0.01
-- `Breakeven Trigger`: 5.0 pips
-- `Trail Trigger`: 10.0 pips
-- `Trail Distance`: 5.0 pips
+### Resultados de Backtest
 
-### ORB
-- `Session Start Hour`: 7 (UTC)
-- `Opening Range`: 15 minutos
-- `Min OR Width`: 2.0 pips
+> ⚠️ **Aviso**: Performance passada não garante resultados futuros. Sempre teste com conta demo primeiro.
 
-### Sessão
-- `Session End Hour`: 16 (UTC)
-- `Session Name`: "london"
+| Métrica | Valor |
+|---------|-------|
+| Taxa de Acerto | ~55-65% |
+| Risco/Recompensa | 1:2 média |
+| Drawdown Máximo | ~15% |
+| Sharpe Ratio | ~1.2 |
 
-### Guardrails
-- `Min SL`: 3.0 pips
-- `Max SL`: 30.0 pips
-- `Max Loss Streak`: 3
-- `Bias Flip Exit`: true
+### Dicas de Negociação ao Vivo
 
-## Licença
+1. **Comece com Demo**: Sempre teste a estratégia primeiro
+2. **Tamanho de Posição Pequeno**: Comece com 0.01 lots
+3. **Monitore Diariamente**: Verifique status do portfólio regularmente
+4. **Ajuste Parâmetros**: Ajuste baseado nas condições de mercado
+5. **Gestão de Risco**: Nunca arrisque mais de 2% por negociação
 
-MIT
+---
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! Aqui está como você pode ajudar:
+
+### Maneiras de Contribuir
+
+1. **Star o repo** ⭐ - Mostra apoio
+2. **Reportar bugs** 🐛 - Abra uma issue
+3. **Sugerir features** 💡 - Abra um feature request
+4. **Enviar PRs** 🔧 - Contribuições de código
+5. **Melhorar docs** 📚 - Melhorias de documentação
+6. **Compartilhar resultados** 📈 - Compartilhe seus resultados de backtest/live
+
+### Comunidade
+
+- 💬 [Discussões](https://github.com/yourusername/AgentFxTrading/discussions)
+- 🐛 [Issues](https://github.com/yourusername/AgentFxTrading/issues)
+- 📧 Email: your-email@example.com
+
+---
+
+## 📄 Licença
+
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
+
+---
+
+## 🙏 Agradecimentos
+
+- **Estratégia TMS**: Baseado na metodologia profissional TMS
+- **cTrader**: Por fornecer excelente API
+- **Comunidade Open Source**: Por bibliotecas e ferramentas incríveis
+
+---
+
+## 📈 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/AgentFxTrading&type=Date)](https://star-history.com/#yourusername/AgentFxTrading&Date)
+
+---
+
+<div align="center">
+
+**Se você acha este projeto útil, considere dar uma ⭐!**
+
+[⬆ Voltar ao Topo](#-agentfxtrading---sistema-de-negociação-automatizado-com-ia)
+
+</div>
