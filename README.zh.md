@@ -62,6 +62,7 @@ AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过
 - **TMS指标**：Heiken Ashi、TDI（RSI + Signal）、Stochastic
 - **ORB逻辑**：开盘区间检测与决定性突破过滤
 - **动量追踪**：TF Green状态与斜率分析
+- **市场状态识别 (Market Regime)**：Kaufman效率比率 (`er_session`, `er_recent`) 与假突破计数器 (`or_flips`)，分类 `trending`, `choppy`, `mixed`, `forming`
 - **多时间框架**：适用于M15、H1、H4时间框架
 
 ### 💼 投资组合管理
@@ -76,6 +77,8 @@ AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过
 - **追踪止损**：在盈利交易中动态调整SL
 - **最大回撤保护**：如果回撤超过阈值则关闭头寸
 - **连亏保护**：连续3次亏损后阻止入场
+- **周期门控 (Cost Gate)**：在时段外、开盘区间内或连亏时自动跳过LLM调用——节省80-90%的API费用
+- **趋势取消固定止盈 (Trend TP Disabled)**：在强趋势 (`trending`) 状态下自动移除固定TP，配合追踪止损与回撤底线充分捕获单边行情
 
 ### ⏰ 交易时段管理
 - **交易时段**：可配置的时段时间（伦敦、纽约、东京）
@@ -185,6 +188,22 @@ ORB提供**精确的入场时机**：
 2. **突破**：价格收于OR边界之外
 3. **决定性过滤**：突破必须具备决定性（≥ MinDecisiveBreakoutPips，XAUUSD默认10.0 pips）
 
+### 市场状态识别 (Market Regime)
+
+系统计算实时资金效率指标以动态调整交易与出场行为：
+- **`er_session` 与 `er_recent`**：Kaufman效率比率 ($ER = \frac{|\text{净位移}|}{\sum |\text{K线波动}|}$)。$1.0$ 代表单边强趋势，$\approx 0.0$ 代表无序震荡。
+- **`or_flips`**：记录价格假突破开盘区间后又收回区间的次数（代表震荡陷阱）。
+- **四种市场状态**：
+  - **`trending`** ($ER \ge 0.35$)：自动取消固定TP (`TrendTpDisabled = true`)，依托追踪止损与回撤底线充分捕获大波段利润。
+  - **`choppy`** (`or_flips \ge 5`)：假突破陷阱频发 → 周期门控 (Cycle Gate) 强制选择 `HOLD`。
+  - **`mixed`**：标准交易纪律 ($R:R \ge 1.5$)。
+  - **`forming`**：开盘初期区间形成阶段 ($< 6$ 根K线)。
+
+### 实战量化特殊规则 (Edge-Case Rules)
+- **BIAS-FRESH 新偏向例外**：当TDI交叉刚刚发生（$\le 1$ 根K线前），早期的突破冲力被视为**新趋势浪的起点**而非追高 → 优先顺势入场。
+- **ANTI-CHASE 防追高规则**：当价格已在旧偏向中突破 $\ge 4$ 根K线且未出现回调时，**严禁在极值位追单** → 保持 `HOLD` 等待回调。
+- **头寸记忆与回撤底线 (Position Memory & Giveback Floor)**：逐Tick追踪最高浮盈 ($MFE$)。一旦盈利从最高点回撤超过阈值，系统自动平仓锁定战果。
+
 ### 入场规则
 
 ```
@@ -264,6 +283,7 @@ ELSE:
 | Max Giveback | 30.0 pips | 利润回撤强制平仓阈值 |
 | Max Loss Streak | 3 | N次亏损后阻止 |
 | Bias Flip Exit | true | 偏向变化时自动平仓 |
+| Trend TP Disabled | true | 强趋势行情下自动取消固定TP |
 
 ### 📊 推荐交易品种预设参数
 

@@ -62,6 +62,7 @@ AgentFxTrading é um **sistema de negociação forex automatizado** que combina 
 - **Indicadores TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
 - **Lógica ORB**: Detecção de Opening Range com filtro de breakout decisivo
 - **Rastreamento de Momentum**: TF Green State com análise de inclinação
+- **Detecção de Regime de Mercado (Market Regime)**: Razão de Eficiência de Kaufman (`er_session`, `er_recent`) e contador de rompimentos falsos (`or_flips`) para classificar `trending`, `choppy`, `mixed`, `forming`
 - **Multi-Timeframe**: Funciona em timeframes M15, H1, H4
 
 ### 💼 Gestão de Portfólio
@@ -76,6 +77,8 @@ AgentFxTrading é um **sistema de negociação forex automatizado** que combina 
 - **Trailing Stop**: Ajuste dinâmico de SL durante negociações lucrativas
 - **Proteção de Giveback Máximo**: Fecha posição se giveback exceder limite
 - **Proteção de Sequência de Perdas**: Bloqueia entradas após 3 perdas consecutivas
+- **Cycle Gating (Cost Gate)**: Ignora automaticamente chamadas LLM fora da sessão, dentro do OR ou em sequência de perdas — economizando 80-90% de custos de API
+- **Trend TP Disabled**: Desativa automaticamente o TP fixo em regimes de forte tendência (`trending`) para maximizar ganhos com Trailing SL & Giveback Floor
 
 ### ⏰ Gestão de Sessão
 - **Sessões de Negociação**: Tempos de sessão configuráveis (Londres, NY, Tóquio)
@@ -194,6 +197,22 @@ ORB fornece **timing preciso de entrada**:
 2. **Breakout**: Preço fecha além do limite OR
 3. **Filtro Decisivo**: Breakout deve ser decisivo (≥ MinDecisiveBreakoutPips, padrão 10.0 pips no XAUUSD)
 
+### Detecção de Regime de Mercado (Market Regime)
+
+O sistema calcula métricas de eficiência em tempo real para adaptar o comportamento de negociação e saída:
+- **`er_session` e `er_recent`**: Razão de Eficiência de Kaufman ($ER = \frac{|\text{Deslocamento Líquido}|}{\sum |\text{Variação dos Candles}|}$). $1.0$ representa uma tendência limpa e direcional, enquanto $\approx 0.0$ indica consolidação.
+- **`or_flips`**: Conta rompimentos falsos fora do Opening Range que fecharam de volta para dentro.
+- **4 Regimes de Mercado**:
+  - **`trending`** ($ER \ge 0.35$): Desativa o TP fixo (`TrendTpDisabled = true`), permitindo que o Trailing SL e o Giveback Floor capturem todo o movimento da tendência.
+  - **`choppy`** (`or_flips \ge 5`): Alto risco de armadilhas de rompimento falso → Cycle Gate força `HOLD`.
+  - **`mixed`**: Disciplina padrão de negociação ($R:R \ge 1.5$).
+  - **`forming`**: Fase inicial de formação do range ($< 6$ candles).
+
+### Regras Quantitativas para Casos Especiais (Edge-Case Rules)
+- **Exceção BIAS-FRESH**: Quando um cruzamento TDI acabou de ocorrer ($\le 1$ candle atrás), o impulso inicial de rompimento é tratado como o **início de uma nova onda de tendência**, e não como esticado → Favorece a entrada imediata.
+- **Regra ANTI-CHASE**: Quando o preço já rompeu há $\ge 4$ candles sob um viés antigo sem pullback, **NÃO persiga nos extremos** → Mantenha `HOLD` e aguarde uma retração.
+- **Memória de Posição e Giveback Floor**: Rastreia o lucro máximo flutuante ($MFE$) a cada tick. Se o lucro cair do pico além do limite de giveback, a posição é encerrada imediatamente para garantir os ganhos.
+
 ### Regras de Entrada
 
 ```
@@ -273,6 +292,7 @@ ELSE:
 | Max Giveback | 30.0 pips | Limite de giveback para fechar posição |
 | Max Loss Streak | 3 | Bloquear após N perdas |
 | Bias Flip Exit | true | Fechamento automático na mudança de viés |
+| Trend TP Disabled | true | Desativa TP fixo em regime de tendência |
 
 ### 📊 Predefinições Recomendadas por Par
 
