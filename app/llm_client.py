@@ -1,6 +1,6 @@
 """
 LLM Client abstraction layer.
-Supports: OpenAI, Qwen (DashScope), Claude (Anthropic), DeepSeek, and other OpenAI-compatible APIs.
+Supports: OpenAI, Qwen (DashScope), Claude (Anthropic), Gemini (Google), DeepSeek, and other OpenAI-compatible APIs.
 """
 
 from __future__ import annotations
@@ -85,6 +85,43 @@ class AnthropicClient(LLMClient):
         )
         return response.content[0].text
 
+class GeminiClient(LLMClient):
+    """Client for Google Gemini API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-1.5-flash",
+        **kwargs
+    ):
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(model)
+        self.default_kwargs = kwargs
+
+    async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        # Convert OpenAI format to Gemini format
+        # Gemini doesn't have separate system/user roles in the same way
+        # We'll combine system message with first user message
+        system_msg = ""
+        user_content = []
+        
+        for msg in messages:
+            if msg["role"] == "system":
+                system_msg = msg["content"]
+            elif msg["role"] == "user":
+                user_content.append(msg["content"])
+        
+        # Combine system and user messages
+        if system_msg:
+            prompt = f"{system_msg}\n\n{user_content[-1]}"
+        else:
+            prompt = user_content[-1]
+        
+        merged = {**self.default_kwargs, **kwargs}
+        response = await self.model.generate_content_async(prompt, **merged)
+        return response.text
+
 
 def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     """
@@ -100,6 +137,7 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     - "qwen" / "dashscope": Alibaba Qwen via DashScope
     - "deepseek": DeepSeek via OpenAI-compatible API
     - "anthropic" / "claude": Anthropic Claude models
+    - "gemini" / "google": Google Gemini models
     - "openai_compatible": Generic OpenAI-compatible endpoint
     """
     provider = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
@@ -127,12 +165,18 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
             model=os.getenv("LLM_MODEL", "deepseek-chat"),
             **kwargs
         )
-
     elif provider in ("anthropic", "claude"):
         return AnthropicClient(
             api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            **kwargs
+        )
+
+    elif provider in ("gemini", "google"):
+        return GeminiClient(
+            api_key=os.getenv("GOOGLE_API_KEY", ""),
+            model=os.getenv("LLM_MODEL", "gemini-1.5-flash"),
             **kwargs
         )
 

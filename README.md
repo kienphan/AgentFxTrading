@@ -15,11 +15,11 @@ Hệ thống giao dịch tự động sử dụng AI Agent kết hợp cTrader c
 └─────────────────┘                     └──────────────────┘
                                                    │
                                                    ▼
-                                        ┌──────────────────┐
                                         │   LLM Provider   │
                                         │  • Qwen (DashScope)│
                                         │  • OpenAI        │
                                         │  • Claude        │
+                                        │  • Gemini        │
                                         │  • DeepSeek      │
                                         └──────────────────┘
 ```
@@ -72,6 +72,13 @@ LLM_MODEL=gpt-4o-mini
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-your-key
 LLM_MODEL=claude-3-5-sonnet-20241022
+```
+
+#### Gemini
+```bash
+LLM_PROVIDER=gemini
+GOOGLE_API_KEY=your-google-api-key
+LLM_MODEL=gemini-1.5-flash
 ```
 
 #### DeepSeek
