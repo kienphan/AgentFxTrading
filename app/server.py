@@ -2,6 +2,8 @@ import os
 import uvicorn
 import json
 import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -10,11 +12,16 @@ from dotenv import load_dotenv
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
 from app.dashboard import router as dashboard_router
+from app.accounts import init_account_registry, get_account_registry
 
 app = FastAPI(title="TMS+ORB Agent Server")
 
 # Mount dashboard router
 app.include_router(dashboard_router)
+# Initialize Account Registry
+account_registry = init_account_registry("portfolio.db")
+account_registry.seed_from_env()
+
 # Initialize Portfolio Manager
 portfolio_manager = init_portfolio("portfolio.db")
 
@@ -108,7 +115,12 @@ class MarketSnapshot(BaseModel):
     loss_streak: int = 0
     day_pnl: float = 0
     trades_today: int = 0
-    account_balance: float = 10000.0  # For margin calculation
+    account_id: Optional[str] = None
+    account_number: str = "0"
+    account_type: str = "demo"
+    account_label: Optional[str] = None
+    account_balance: float = 10000.0
+    account_equity: float = 10000.0
 
 # ---- Output Format ----
 class AgentDecision(BaseModel):
@@ -177,13 +189,24 @@ SYSTEM_PROMPT = """You are an AUTONOMOUS trading agent using TMS for BIAS and OR
 """
 
 
+def _resolve_account(snapshot: MarketSnapshot) -> str:
+    registry = get_account_registry()
+    return registry.upsert_from_bot(
+        account_number=snapshot.account_number,
+        account_type=snapshot.account_type,
+        label=snapshot.account_label,
+        balance=snapshot.account_balance,
+        equity=snapshot.account_equity,
+    )
+
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
-    logger.info(f"[{snapshot.bot_id}] {snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
+    account_id = _resolve_account(snapshot)
+    logger.info(f"[{account_id}/{snapshot.bot_id}] {snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
 
     # Check portfolio risk before allowing new trades
     if snapshot.position is None:  # No open position, might want to open new one
-        portfolio_status = portfolio_manager.get_portfolio_status()
+        portfolio_status = portfolio_manager.get_portfolio_status(account_id=account_id)
         open_positions = portfolio_status['total_positions']
         
         # Check if we can open a new position
@@ -192,11 +215,12 @@ async def trade_decision(snapshot: MarketSnapshot):
             side="BUY",  # Will be determined by LLM, just checking capacity
             volume=0.01,  # Minimum volume
             sl_pips=10.0,  # Reasonable SL
-            account_balance=snapshot.account_balance
+            account_balance=snapshot.account_balance,
+            account_id=account_id
         )
         
         if not can_trade:
-            logger.warning(f"[{snapshot.bot_id}] Portfolio risk check failed: {reason}")
+            logger.warning(f"[{account_id}/{snapshot.bot_id}] Portfolio risk check failed: {reason}")
             return AgentDecision(
                 action="HOLD",
                 volume_lots=0.01,
@@ -224,11 +248,11 @@ async def trade_decision(snapshot: MarketSnapshot):
         # Parse JSON (handles markdown code blocks, etc.)
         decision_dict = JSONResponseParser.parse(result_str)
 
-        logger.info(f"[{snapshot.bot_id}] Decision: {decision_dict['action']} | {decision_dict.get('reason', '')[:50]}")
+        logger.info(f"[{account_id}/{snapshot.bot_id}] Decision: {decision_dict['action']} | {decision_dict.get('reason', '')[:50]}")
 
         return AgentDecision(**decision_dict)
     except Exception as e:
-        logger.error(f"[{snapshot.bot_id}] LLM Error: {e}")
+        logger.error(f"[{account_id}/{snapshot.bot_id}] LLM Error: {e}")
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
@@ -249,6 +273,21 @@ async def report_position(request: dict):
         action = request.get("action")
         symbol = request.get("symbol")
         
+        account_number = request.get("account_number", "0")
+        account_type = request.get("account_type", "demo")
+        account_label = request.get("account_label")
+        account_balance = request.get("account_balance", 0)
+        account_equity = request.get("account_equity", 0)
+        
+        registry = get_account_registry()
+        account_id = registry.upsert_from_bot(
+            account_number=account_number,
+            account_type=account_type,
+            label=account_label,
+            balance=account_balance,
+            equity=account_equity
+        )
+        
         if action == "open":
             side = request.get("side")
             volume = request.get("volume", 0.01)
@@ -263,11 +302,12 @@ async def report_position(request: dict):
                 volume=volume,
                 entry_price=entry_price,
                 sl_pips=sl_pips,
-                tp_pips=tp_pips
+                tp_pips=tp_pips,
+                account_id=account_id
             )
             
             if success:
-                logger.info(f"[{bot_id}] Position registered: {symbol} {side}")
+                logger.info(f"[{account_id}/{bot_id}] Position registered: {symbol} {side}")
                 return {"status": "success", "message": "Position registered"}
             else:
                 return {"status": "error", "message": "Failed to register position"}
@@ -280,11 +320,12 @@ async def report_position(request: dict):
                 bot_id=bot_id,
                 symbol=symbol,
                 exit_price=exit_price,
-                pnl=pnl
+                pnl=pnl,
+                account_id=account_id
             )
             
             if success:
-                logger.info(f"[{bot_id}] Position closed: {symbol}, PnL: {pnl}")
+                logger.info(f"[{account_id}/{bot_id}] Position closed: {symbol}, PnL: {pnl}")
                 return {"status": "success", "message": "Position closed"}
             else:
                 return {"status": "error", "message": "Failed to close position"}
@@ -298,13 +339,23 @@ async def report_position(request: dict):
 
 
 @app.get("/portfolio/status")
-async def get_portfolio_status():
+async def get_portfolio_status(account_id: Optional[str] = None):
     """Get current portfolio status."""
     try:
-        status = portfolio_manager.get_portfolio_status()
+        status = portfolio_manager.get_portfolio_status(account_id=account_id)
         return status
     except Exception as e:
         logger.error(f"Portfolio status error: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/dashboard/accounts")
+async def api_dashboard_accounts():
+    """List all accounts for dashboard selector."""
+    try:
+        registry = get_account_registry()
+        return {"accounts": registry.list_accounts()}
+    except Exception as e:
+        logger.error(f"Dashboard accounts error: {e}")
         return {"error": str(e)}
 
 

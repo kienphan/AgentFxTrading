@@ -9,7 +9,14 @@ using cAlgo.API.Indicators;
 
 namespace cAlgo.Robots
 {
-    [Robot(AccessRights = AccessRights.FullAccess)]
+    public enum DstRule
+    {
+        None,
+        Europe, // London: Lùi 1h từ Chủ Nhật cuối tháng 3 đến Chủ Nhật cuối tháng 10
+        US      // New York: Lùi 1h từ Chủ Nhật thứ 2 tháng 3 đến Chủ Nhật đầu tháng 11
+    }
+
+    [Robot(AccessRights = AccessRights.FullAccess, TimeZone = TimeZones.UTC)]
     public class AiAgentBot : Robot
     {
         #region Parameters
@@ -18,6 +25,9 @@ namespace cAlgo.Robots
 
         [Parameter("Agent API URL", Group = "API", DefaultValue = "http://127.0.0.1:8000/trade")]
         public string ApiUrl { get; set; }
+
+        [Parameter("Account Label (optional)", Group = "API", DefaultValue = "")]
+        public string AccountLabel { get; set; }
 
         // ---- TDI ----
         [Parameter("RSI Period", Group = "TDI", DefaultValue = 6, MinValue = 1)]
@@ -66,7 +76,7 @@ namespace cAlgo.Robots
         public double TrailDistancePips { get; set; }
 
         // ---- ORB ----
-        [Parameter("ORB Session Start Hour (UTC)", Group = "ORB", DefaultValue = 7)]
+        [Parameter("ORB Start Hour (Winter UTC)", Group = "ORB", DefaultValue = 8)]
         public int OrbStartHour { get; set; }
 
         [Parameter("ORB Opening Range (minutes)", Group = "ORB", DefaultValue = 15, MinValue = 1)]
@@ -80,9 +90,11 @@ namespace cAlgo.Robots
 
         [Parameter("Max Bars After Breakout", Group = "ORB", DefaultValue = 5, MinValue = 1)]
         public int MaxBarsAfterBreakout { get; set; }
-
         // ---- Session / EOD ----
-        [Parameter("Session End Hour (UTC, 0=off)", Group = "Session", DefaultValue = 16, MinValue = 0)]
+        [Parameter("DST Rule (Auto-adjust UTC)", Group = "Session", DefaultValue = DstRule.Europe)]
+        public DstRule SessionDstRule { get; set; }
+
+        [Parameter("Session End Hour (Winter UTC, 0=off)", Group = "Session", DefaultValue = 17, MinValue = 0)]
         public int SessionEndHour { get; set; }
 
         [Parameter("Session End Minute", Group = "Session", DefaultValue = 0, MinValue = 0)]
@@ -210,6 +222,12 @@ namespace cAlgo.Robots
             public int loss_streak { get; set; }
             public double day_pnl { get; set; }
             public int trades_today { get; set; }
+            
+            public string account_number { get; set; }
+            public string account_type { get; set; }
+            public string account_label { get; set; }
+            public double account_balance { get; set; }
+            public double account_equity { get; set; }
         }
 
         public class AgentDecision
@@ -255,6 +273,18 @@ namespace cAlgo.Robots
         // ---- Exit Management ----
         private HashSet<int> _breakevenApplied = new HashSet<int>();
         #endregion
+
+        private object GetAccountPayload()
+        {
+            return new
+            {
+                account_number = Account.Number.ToString(),
+                account_type = Account.IsLive ? "live" : "demo",
+                account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                account_balance = Account.Balance,
+                account_equity = Account.Equity
+            };
+        }
 
         protected override void OnStart()
         {
@@ -317,6 +347,11 @@ namespace cAlgo.Robots
                 loss_streak = _lossStreak,
                 day_pnl = Math.Round(_dayPnl, 2),
                 trades_today = _tradesToday,
+                account_number = Account.Number.ToString(),
+                account_type = Account.IsLive ? "live" : "demo",
+                account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                account_balance = Account.Balance,
+                account_equity = Account.Equity,
                 bars = new List<BarData>
                 {
                     GetBarData(index),
@@ -406,7 +441,7 @@ namespace cAlgo.Robots
 
             // TF Green State: current value + slope (momentum direction)
             double greenTfValue = Math.Round(g, 2);
-            double greenTfSlope = Math.Round(g - g1, 3);  // positive = rising, negative = falling
+            double greenTfSlope = Math.Round(g - g1, 3);
 
             return new TmsSignals
             {
@@ -433,6 +468,71 @@ namespace cAlgo.Robots
             };
         }
 
+        // ==========================================
+        // ORB LOGIC
+        // ==========================================
+
+        private void UpdateOrb(int index)
+        {
+            var barTime = Bars[index].OpenTime; // Note: cAlgo Bars.OpenTime is usually in the broker's time zone or UTC depending on platform settings. Assuming UTC.
+            string currentDate = barTime.ToString("yyyy-MM-dd");
+
+            if (_lastOrbDate != currentDate)
+            {
+                _orHigh = double.MinValue;
+                _orLow = double.MaxValue;
+                _orComplete = false;
+                _breakoutDir = null;
+                _breakoutPrice = 0;
+                _breakoutBar = -1;
+                _lastOrbDate = currentDate;
+            }
+
+            // Tự động điều chỉnh giờ mở cửa theo DST (Mùa hè/Mùa đông)
+            int adjustedStartHour = GetAdjustedHour(barTime, OrbStartHour, SessionDstRule);
+
+            int barHour = barTime.Hour;
+            int barMinute = barTime.Minute;
+            int orEndMinute = adjustedStartHour * 60 + OrbOpeningRangeMinutes;
+            int orEndHour = orEndMinute / 60;
+            orEndMinute = orEndMinute % 60;
+
+            int barTotalMinutes = barHour * 60 + barMinute;
+            int orStartMinutes = adjustedStartHour * 60;
+
+            if (barTotalMinutes >= orStartMinutes && barTotalMinutes < (adjustedStartHour * 60 + OrbOpeningRangeMinutes))
+            {
+                if (Bars[index].High > _orHigh) _orHigh = Bars[index].High;
+                if (Bars[index].Low < _orLow) _orLow = Bars[index].Low;
+            }
+
+            // Check if OR window has passed
+            if (barTotalMinutes >= (adjustedStartHour * 60 + OrbOpeningRangeMinutes) && !_orComplete && _orHigh > double.MinValue)
+            {
+                double orWidthPips = (_orHigh - _orLow) / Symbol.PipSize;
+                if (orWidthPips >= MinOrWidthPips)
+                    _orComplete = true;
+            }
+
+            if (_orComplete && _breakoutDir == null && _orHigh > double.MinValue)
+            {
+                double buffer = OrbBufferPips * Symbol.PipSize;
+                double currentClose = Bars[index].Close;
+
+                if (currentClose > _orHigh + buffer)
+                {
+                    _breakoutDir = "up";
+                    _breakoutPrice = currentClose;
+                    _breakoutBar = index;
+                }
+                else if (currentClose < _orLow - buffer)
+                {
+                    _breakoutDir = "down";
+                    _breakoutPrice = currentClose;
+                    _breakoutBar = index;
+                }
+            }
+        }
         private bool IsGoodAngle(double g, double g1, double g2, bool isLong)
         {
             if (MinAngleDelta <= 0) return true;
@@ -685,35 +785,34 @@ namespace cAlgo.Robots
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
 
-                if (giveback >= MaxGivebackPips)
-                {
-                    pos.Close();
-                    if (ShowLogs) Print($"[Giveback] Pos#{pos.Id} closed: gave back {giveback:F1}pips (MFE={mfe:F1}p, now={pnlPips:F1}p)");
-                }
-            }
-        }
-
-        // ==========================================
-        // SESSION MANAGEMENT
-        // ==========================================
-
         private SessionInfo GetSessionInfo()
         {
-            var now = Server.Time;  // cTrader server time (UTC)
+            var now = Server.TimeInUtc;  // Use explicit UTC
             int nowMinutes = now.Hour * 60 + now.Minute;
 
-            int sessionStart = OrbStartHour * 60;
-            int sessionEnd = SessionEndHour * 60 + SessionEndMinute;
+            int adjustedStartHour = GetAdjustedHour(now, OrbStartHour, SessionDstRule);
+            int adjustedEndHour = GetAdjustedHour(now, SessionEndHour, SessionDstRule);
+
+            int sessionStart = adjustedStartHour * 60;
+            int sessionEnd = adjustedEndHour * 60 + SessionEndMinute;
 
             // If session end is 0, use a default 9-hour session from start
             if (SessionEndHour == 0) sessionEnd = sessionStart + 540;
 
-            int minutesToEnd = sessionEnd - nowMinutes;
-            bool isActive = nowMinutes >= sessionStart && nowMinutes < sessionEnd;
+            // Handle overnight session crossing midnight
+            bool isOvernight = sessionStart > sessionEnd;
+            bool isActive;
+            
+            if (isOvernight)
+                isActive = nowMinutes >= sessionStart || nowMinutes < sessionEnd;
+            else
+                isActive = nowMinutes >= sessionStart && nowMinutes < sessionEnd;
+
+            int minutesToEnd = isActive ? (isOvernight && nowMinutes >= sessionStart ? (1440 - nowMinutes + sessionEnd) : sessionEnd - nowMinutes) : 0;
             bool isEnding = isActive && minutesToEnd <= 15;
 
             string phase;
-            if (!isActive && nowMinutes < sessionStart) phase = "pre";
+            if (!isActive && (isOvernight ? (nowMinutes >= sessionEnd && nowMinutes < sessionStart) : nowMinutes < sessionStart)) phase = "pre";
             else if (isActive && !isEnding) phase = "active";
             else if (isEnding) phase = "ending";
             else phase = "closed";
@@ -732,7 +831,29 @@ namespace cAlgo.Robots
             if (SessionEndHour == 0) return;
             if (Positions.Count == 0) return;
 
-            var now = Server.Time;
+            var now = Server.TimeInUtc;
+            int nowMinutes = now.Hour * 60 + now.Minute;
+            int adjustedEndHour = GetAdjustedHour(now, SessionEndHour, SessionDstRule);
+            int sessionEnd = adjustedEndHour * 60 + SessionEndMinute;
+
+            // Need a tolerance or exact check. If it's exactly session end or within 1 min after
+            if (nowMinutes == sessionEnd)
+            {
+                foreach (var pos in Positions)
+                {
+                    pos.Close();
+                    if (ShowLogs) Print($"[EOD] Pos#{pos.Id} closed at session end");
+                }
+            }
+        }
+
+        // ==========================================
+        // LOSS STREAK TRACKING
+        // ==========================================
+
+        private void UpdateLossStreak()
+        {
+            int today = Server.TimeInUtc.DayOfYear;
             int nowMinutes = now.Hour * 60 + now.Minute;
             int sessionEnd = SessionEndHour * 60 + SessionEndMinute;
 
@@ -824,7 +945,12 @@ namespace cAlgo.Robots
                     volume = position.VolumeInUnits / Symbol.LotSize,
                     entry_price = position.EntryPrice,
                     sl_pips = slPips,
-                    tp_pips = tpPips
+                    tp_pips = tpPips,
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
                 };
 
                 var json = JsonSerializer.Serialize(report);
@@ -850,7 +976,12 @@ namespace cAlgo.Robots
                     action = "close",
                     symbol = SymbolName,
                     exit_price = position.EntryPrice, // Will be updated with actual exit price
-                    pnl = pnl
+                    pnl = pnl,
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
                 };
 
                 var json = JsonSerializer.Serialize(report);
@@ -1048,6 +1179,56 @@ namespace cAlgo.Robots
                 _dSeries[index] = sum / StochDPeriod;
             }
             else _dSeries[index] = double.NaN;
+        }
+
+        // ==========================================
+        // DST (Daylight Saving Time) HELPERS
+        // ==========================================
+
+        private int GetAdjustedHour(DateTime timeUtc, int baseHour, DstRule rule)
+        {
+            if (rule == DstRule.None || baseHour == 0) return baseHour;
+
+            bool isDst = false;
+            int y = timeUtc.Year;
+
+            if (rule == DstRule.US)
+            {
+                // US: Từ Chủ nhật thứ 2 của tháng 3 đến Chủ nhật đầu tiên của tháng 11
+                DateTime start = GetNthSunday(y, 3, 2).AddHours(7); // 2:00 AM EST = 7:00 AM UTC
+                DateTime end = GetNthSunday(y, 11, 1).AddHours(6);  // 2:00 AM EDT = 6:00 AM UTC
+                isDst = timeUtc >= start && timeUtc < end;
+            }
+            else if (rule == DstRule.Europe)
+            {
+                // Europe: Từ Chủ nhật cuối cùng của tháng 3 đến Chủ nhật cuối cùng của tháng 10
+                DateTime start = GetLastSunday(y, 3).AddHours(1); // 1:00 AM UTC
+                DateTime end = GetLastSunday(y, 10).AddHours(1);  // 1:00 AM UTC
+                isDst = timeUtc >= start && timeUtc < end;
+            }
+
+            // Vào mùa hè (DST), giờ địa phương tiến lên 1 tiếng.
+            // Để giữ nguyên giờ mở cửa địa phương (vd 8:00 AM London), giờ UTC phải LÙI lại 1 tiếng (thành 7:00 AM UTC).
+            int adjustedHour = isDst ? baseHour - 1 : baseHour;
+            
+            // Handle negative hour (cross midnight backwards)
+            if (adjustedHour < 0) adjustedHour += 24;
+            
+            return adjustedHour;
+        }
+
+        private DateTime GetNthSunday(int year, int month, int n)
+        {
+            DateTime firstDay = new DateTime(year, month, 1);
+            int offset = (7 - (int)firstDay.DayOfWeek) % 7;
+            return firstDay.AddDays(offset + (n - 1) * 7);
+        }
+
+        private DateTime GetLastSunday(int year, int month)
+        {
+            DateTime lastDay = new DateTime(year, month, DateTime.DaysInMonth(year, month));
+            int offset = (int)lastDay.DayOfWeek;
+            return lastDay.AddDays(-offset);
         }
     }
 }

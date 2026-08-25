@@ -32,7 +32,28 @@
         </div>
 
         <!-- Summary Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+        <!-- Account Selector -->
+        <div class="mb-6 bg-gray-800 rounded-lg p-4 flex items-center justify-between">
+            <label for="account-selector" class="text-gray-400 font-bold mr-4">Account:</label>
+            <select id="account-selector" class="bg-gray-700 text-white rounded p-2 flex-grow focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="all">All Accounts</option>
+                {% for account in accounts %}
+                <option value="{{ account.account_id }}">
+                    {{ account.label }} ({{ account.account_number }}) - 
+                    {% if account.account_type == 'live' %}LIVE{% else %}DEMO{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-8">
+            <div id="account-balance-card" class="bg-gray-800 rounded-lg p-4 {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+                <div class="text-gray-400 text-xs mb-1">Balance</div>
+                <div id="account-balance" class="text-xl font-bold">${{ summary.account_balance or 0 }}</div>
+            </div>
+            <div id="account-equity-card" class="bg-gray-800 rounded-lg p-4 {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+                <div class="text-gray-400 text-xs mb-1">Equity</div>
+                <div id="account-equity" class="text-xl font-bold">${{ summary.account_equity or 0 }}</div>
+            </div>
             <div class="bg-gray-800 rounded-lg p-6">
                 <div class="text-gray-400 text-sm mb-1">Open Positions</div>
                 <div id="open-positions" class="text-3xl font-bold">{{ summary.open_positions }}</div>
@@ -78,6 +99,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-left text-gray-400 border-b border-gray-700">
+                            <th class="pb-3 col-account">Account</th>
                             <th class="pb-3">Bot ID</th>
                             <th class="pb-3">Symbol</th>
                             <th class="pb-3">Side</th>
@@ -91,6 +113,14 @@
                     <tbody id="positions-table">
                         {% for pos in positions %}
                         <tr class="border-b border-gray-700 hover:bg-gray-750">
+                            <td class="py-3 col-account text-sm">
+                                {% if pos.account_type == 'live' %}
+                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>
+                                {% else %}
+                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>
+                                {% endif %}
+                                <br/>{{ pos.account_label }}
+                            </td>
                             <td class="py-3">{{ pos.bot_id }}</td>
                             <td class="py-3 font-mono">{{ pos.symbol }}</td>
                             <td class="py-3">
@@ -106,7 +136,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="py-8 text-center text-gray-500">No active positions</td>
+                            <td colspan="9" class="py-8 text-center text-gray-500">No active positions</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -121,6 +151,7 @@
                 <table class="w-full">
                     <thead>
                         <tr class="text-left text-gray-400 border-b border-gray-700">
+                            <th class="pb-3 col-account">Account</th>
                             <th class="pb-3">Bot ID</th>
                             <th class="pb-3">Symbol</th>
                             <th class="pb-3">Side</th>
@@ -134,6 +165,14 @@
                     <tbody>
                         {% for trade in history %}
                         <tr class="border-b border-gray-700 hover:bg-gray-750">
+                            <td class="py-3 col-account text-sm">
+                                {% if trade.account_type == 'live' %}
+                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>
+                                {% else %}
+                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>
+                                {% endif %}
+                                <br/>{{ trade.account_label }}
+                            </td>
                             <td class="py-3">{{ trade.bot_id }}</td>
                             <td class="py-3 font-mono">{{ trade.symbol }}</td>
                             <td class="py-3">
@@ -151,7 +190,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="py-8 text-center text-gray-500">No trade history</td>
+                            <td colspan="9" class="py-8 text-center text-gray-500">No trade history</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -276,15 +315,43 @@
             
             // Update positions table
             const tbody = document.getElementById('positions-table');
+            
+            // Toggle columns
+            const accountCols = document.querySelectorAll('.col-account');
+            if (selectedAccountId === 'all') {
+                accountCols.forEach(el => el.classList.remove('hidden'));
+            } else {
+                accountCols.forEach(el => el.classList.add('hidden'));
+            }
+            
+            // Toggle balance/equity
+            const balCard = document.getElementById('account-balance-card');
+            const eqCard = document.getElementById('account-equity-card');
+            if (selectedAccountId === 'all') {
+                balCard.classList.add('hidden');
+                eqCard.classList.add('hidden');
+            } else {
+                balCard.classList.remove('hidden');
+                eqCard.classList.remove('hidden');
+                document.getElementById('account-balance').textContent = `$${summary.account_balance || 0}`;
+                document.getElementById('account-equity').textContent = `$${summary.account_equity || 0}`;
+            }
+            
             if (positions.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="py-8 text-center text-gray-500">No active positions</td>
+                        <td colspan="9" class="py-8 text-center text-gray-500">No active positions</td>
                     </tr>
                 `;
             } else {
                 tbody.innerHTML = positions.map(pos => `
                     <tr class="border-b border-gray-700 hover:bg-gray-750">
+                        <td class="py-3 col-account text-sm ${selectedAccountId === 'all' ? '' : 'hidden'}">
+                            ${pos.account_type === 'live' ? 
+                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>' : 
+                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>'}
+                            <br/>${pos.account_label || ''}
+                        </td>
                         <td class="py-3">${pos.bot_id}</td>
                         <td class="py-3 font-mono">${pos.symbol}</td>
                         <td class="py-3">
@@ -297,6 +364,42 @@
                         <td class="py-3">${pos.sl_pips}</td>
                         <td class="py-3">${pos.tp_pips}</td>
                         <td class="py-3 text-sm text-gray-400">${pos.entry_time}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+        
+        function updateTradeHistory(history) {
+            const tbody = document.getElementById('history-table');
+            if (!tbody) return;
+            
+            if (history.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="py-8 text-center text-gray-500">No trade history</td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = history.map(trade => `
+                    <tr class="border-b border-gray-700 hover:bg-gray-750">
+                        <td class="py-3 col-account text-sm ${selectedAccountId === 'all' ? '' : 'hidden'}">
+                            ${trade.account_type === 'live' ? 
+                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>' : 
+                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>'}
+                            <br/>${trade.account_label || ''}
+                        </td>
+                        <td class="py-3">${trade.bot_id}</td>
+                        <td class="py-3 font-mono">${trade.symbol}</td>
+                        <td class="py-3">
+                            <span class="px-2 py-1 rounded text-xs font-bold ${trade.side === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}">
+                                ${trade.side}
+                            </span>
+                        </td>
+                        <td class="py-3">${trade.volume}</td>
+                        <td class="py-3 font-mono text-sm">${trade.entry_price}</td>
+                        <td class="py-3 font-mono text-sm">${trade.exit_price}</td>
+                        <td class="py-3 font-bold ${trade.pnl >= 0 ? 'profit' : 'loss'}">$${trade.pnl}</td>
+                        <td class="py-3 text-sm text-gray-400">${trade.exit_time}</td>
                     </tr>
                 `).join('');
             }

@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, date
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
+from app.accounts import get_account_registry
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,16 @@ class PortfolioManager:
         """Initialize SQLite database with schema."""
         conn = sqlite3.connect(self.db_path)
         
+        # Setup accounts table
+        registry = get_account_registry()
+        registry._init_schema()
+
+        # Migrate positions table
+        try:
+            conn.execute("ALTER TABLE positions ADD COLUMN account_id TEXT NOT NULL DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass # column exists
+
         # Positions table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS positions (
@@ -58,26 +69,61 @@ class PortfolioManager:
                 exit_price REAL,
                 pnl REAL,
                 status TEXT DEFAULT 'open',
+                account_id TEXT NOT NULL DEFAULT 'default',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
-        # Daily stats table
+        # Daily stats table migration
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_stats (
-                date TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS daily_stats_v2 (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
                 total_pnl REAL DEFAULT 0,
                 trades_count INTEGER DEFAULT 0,
                 loss_streak INTEGER DEFAULT 0,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (account_id, date)
             )
+        """)
+        
+        # Copy legacy rows if daily_stats exists
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO daily_stats_v2 (account_id, date, total_pnl, trades_count, loss_streak, updated_at) 
+                SELECT 'default', date, total_pnl, trades_count, loss_streak, updated_at FROM daily_stats
+            """)
+            conn.execute("DROP TABLE daily_stats")
+            conn.execute("ALTER TABLE daily_stats_v2 RENAME TO daily_stats")
+        except sqlite3.OperationalError:
+            # table might not exist, or already renamed
+            pass
+
+        # Create normal daily_stats table if it doesn't exist (if not handled by rename)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                account_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                total_pnl REAL DEFAULT 0,
+                trades_count INTEGER DEFAULT 0,
+                loss_streak INTEGER DEFAULT 0,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (account_id, date)
+            )
+        """)
+
+        # Ensure default account row exists
+        conn.execute("""
+            INSERT OR IGNORE INTO accounts (account_id, account_number, account_type, label, is_configured)
+            VALUES ('default', '0', 'demo', 'Legacy Default', 0)
         """)
         
         # Create indexes for performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_bot_id ON positions(bot_id)")
-        
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_status ON positions(account_id, status)")
         conn.commit()
         conn.close()
         logger.info(f"Portfolio database initialized at {self.db_path}")
@@ -88,24 +134,24 @@ class PortfolioManager:
     
     def register_position(self, bot_id: str, symbol: str, side: str, 
                          volume: float, entry_price: float, 
-                         sl_pips: float, tp_pips: float) -> bool:
+                         sl_pips: float, tp_pips: float, account_id: str) -> bool:
         """Register new position after trade execution."""
         try:
             conn = self._get_conn()
             conn.execute("""
                 INSERT INTO positions (bot_id, symbol, side, volume, entry_price, 
-                                     sl_pips, tp_pips, entry_time, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open')
-            """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips))
+                                     sl_pips, tp_pips, entry_time, status, account_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?)
+            """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, account_id))
             conn.commit()
             conn.close()
-            logger.info(f"Position registered: {symbol} {side} {volume} lots by {bot_id}")
+            logger.info(f"Position registered: {symbol} {side} {volume} lots by {bot_id} for account {account_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to register position: {e}")
             return False
     
-    def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float) -> bool:
+    def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float, account_id: str) -> bool:
         """Mark position as closed and update daily stats."""
         try:
             conn = self._get_conn()
@@ -114,15 +160,15 @@ class PortfolioManager:
             conn.execute("""
                 UPDATE positions 
                 SET status = 'closed', exit_price = ?, pnl = ?, exit_time = datetime('now')
-                WHERE bot_id = ? AND symbol = ? AND status = 'open'
-            """, (exit_price, pnl, bot_id, symbol))
+                WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+            """, (exit_price, pnl, bot_id, symbol, account_id))
             
             # Update daily stats
             today = date.today().isoformat()
             conn.execute("""
-                INSERT INTO daily_stats (date, total_pnl, trades_count, loss_streak)
-                VALUES (?, ?, 1, CASE WHEN ? < 0 THEN 1 ELSE 0 END)
-                ON CONFLICT(date) DO UPDATE SET
+                INSERT INTO daily_stats (account_id, date, total_pnl, trades_count, loss_streak)
+                VALUES (?, ?, ?, 1, CASE WHEN ? < 0 THEN 1 ELSE 0 END)
+                ON CONFLICT(account_id, date) DO UPDATE SET
                     total_pnl = total_pnl + ?,
                     trades_count = trades_count + 1,
                     loss_streak = CASE 
@@ -130,18 +176,18 @@ class PortfolioManager:
                         ELSE 0
                     END,
                     updated_at = datetime('now')
-            """, (today, pnl, pnl, pnl, pnl))
+            """, (account_id, today, pnl, pnl, pnl, pnl))
             
             conn.commit()
             conn.close()
-            logger.info(f"Position closed: {symbol} by {bot_id}, PnL: {pnl}")
+            logger.info(f"Position closed: {symbol} by {bot_id}, PnL: {pnl} for account {account_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to close position: {e}")
             return False
     
     def check_risk(self, symbol: str, side: str, volume: float, sl_pips: float,
-                   account_balance: float = 10000.0) -> Tuple[bool, str]:
+                   account_balance: float = 10000.0, account_id: str = "default") -> Tuple[bool, str]:
         """
         Check if new trade is safe at portfolio level.
         Returns (allowed: bool, reason: str)
@@ -151,7 +197,7 @@ class PortfolioManager:
             
             # 1. Max positions check
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM positions WHERE status = 'open'"
+                "SELECT COUNT(*) FROM positions WHERE status = 'open' AND account_id = ?", (account_id,)
             )
             open_positions = cursor.fetchone()[0]
             if open_positions >= self.config.MAX_POSITIONS:
@@ -162,20 +208,20 @@ class PortfolioManager:
             base_currency = symbol[:3]
             cursor = conn.execute("""
                 SELECT COUNT(*) FROM positions 
-                WHERE status = 'open' AND (symbol LIKE ? OR symbol LIKE ?)
-            """, (f"{base_currency}%", f"%{base_currency}"))
+                WHERE status = 'open' AND (symbol LIKE ? OR symbol LIKE ?) AND account_id = ?
+            """, (f"{base_currency}%", f"%{base_currency}", account_id))
             currency_count = cursor.fetchone()[0]
             if currency_count >= self.config.MAX_CURRENCY_EXPOSURE:
                 conn.close()
                 return False, f"Max {base_currency} exposure ({self.config.MAX_CURRENCY_EXPOSURE})"
             
             # 3. Correlation check
-            for existing_symbol, _ in self._get_open_symbols(conn):
+            for existing_symbol, _ in self._get_open_symbols(conn, account_id):
                 if self._is_highly_correlated(symbol, existing_symbol):
                     cursor = conn.execute("""
                         SELECT COUNT(*) FROM positions 
-                        WHERE status = 'open' AND symbol = ?
-                    """, (existing_symbol,))
+                        WHERE status = 'open' AND symbol = ? AND account_id = ?
+                    """, (existing_symbol, account_id))
                     if cursor.fetchone()[0] >= self.config.MAX_CORRELATED_POSITIONS:
                         conn.close()
                         return False, f"High correlation with {existing_symbol}"
@@ -183,8 +229,8 @@ class PortfolioManager:
             # 4. Daily loss limit
             today = date.today().isoformat()
             cursor = conn.execute(
-                "SELECT total_pnl, loss_streak FROM daily_stats WHERE date = ?",
-                (today,)
+                "SELECT total_pnl, loss_streak FROM daily_stats WHERE date = ? AND account_id = ?",
+                (today, account_id)
             )
             row = cursor.fetchone()
             if row:
@@ -198,8 +244,8 @@ class PortfolioManager:
             
             # 5. Margin usage estimate (simplified)
             cursor = conn.execute("""
-                SELECT SUM(volume) FROM positions WHERE status = 'open'
-            """)
+                SELECT SUM(volume) FROM positions WHERE status = 'open' AND account_id = ?
+            """, (account_id,))
             total_volume = cursor.fetchone()[0] or 0
             estimated_margin = (total_volume + volume) * 1000  # rough estimate
             margin_pct = (estimated_margin / account_balance) * 100
@@ -214,11 +260,11 @@ class PortfolioManager:
             logger.error(f"Risk check failed: {e}")
             return False, f"Risk check error: {e}"
     
-    def _get_open_symbols(self, conn) -> List[Tuple[str, str]]:
+    def _get_open_symbols(self, conn, account_id: str) -> List[Tuple[str, str]]:
         """Get list of (symbol, side) for open positions."""
         cursor = conn.execute("""
-            SELECT symbol, side FROM positions WHERE status = 'open'
-        """)
+            SELECT symbol, side FROM positions WHERE status = 'open' AND account_id = ?
+        """, (account_id,))
         return cursor.fetchall()
     
     def _is_highly_correlated(self, symbol1: str, symbol2: str) -> bool:
@@ -236,17 +282,23 @@ class PortfolioManager:
         
         return correlation >= 0.7
     
-    def get_portfolio_status(self) -> Dict:
+    def get_portfolio_status(self, account_id: Optional[str] = None) -> Dict:
         """Get current portfolio status."""
         try:
             conn = self._get_conn()
             
             # Open positions
-            cursor = conn.execute("""
+            query = """
                 SELECT bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, entry_time
                 FROM positions WHERE status = 'open'
-                ORDER BY entry_time DESC
-            """)
+            """
+            params = []
+            if account_id and account_id != "all":
+                query += " AND account_id = ?"
+                params.append(account_id)
+            query += " ORDER BY entry_time DESC"
+            cursor = conn.execute(query, tuple(params))
+            
             open_positions = [
                 {
                     "bot_id": row[0],
@@ -263,20 +315,23 @@ class PortfolioManager:
             
             # Daily stats
             today = date.today().isoformat()
-            cursor = conn.execute(
-                "SELECT total_pnl, trades_count, loss_streak FROM daily_stats WHERE date = ?",
-                (today,)
-            )
+            query = "SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?"
+            params = [today]
+            if account_id and account_id != "all":
+                query += " AND account_id = ?"
+                params.append(account_id)
+            cursor = conn.execute(query, tuple(params))
+            
             row = cursor.fetchone()
             daily_stats = {
                 "date": today,
-                "total_pnl": row[0] if row else 0,
-                "trades_count": row[1] if row else 0,
-                "loss_streak": row[2] if row else 0
-            } if row else {"date": today, "total_pnl": 0, "trades_count": 0, "loss_streak": 0}
+                "total_pnl": row[0] if row and row[0] is not None else 0,
+                "trades_count": row[1] if row and row[1] is not None else 0,
+                "loss_streak": row[2] if row and row[2] is not None else 0
+            }
             
             # Currency exposure
-            cursor = conn.execute("""
+            query = """
                 SELECT 
                     CASE 
                         WHEN symbol LIKE 'EUR%' THEN 'EUR'
@@ -292,8 +347,14 @@ class PortfolioManager:
                     COUNT(*) as count
                 FROM positions 
                 WHERE status = 'open'
-                GROUP BY currency
-            """)
+            """
+            params = []
+            if account_id and account_id != "all":
+                query += " AND account_id = ?"
+                params.append(account_id)
+            query += " GROUP BY currency"
+            cursor = conn.execute(query, tuple(params))
+            
             currency_exposure = {row[0]: row[1] for row in cursor.fetchall()}
             
             conn.close()
@@ -309,25 +370,26 @@ class PortfolioManager:
             logger.error(f"Failed to get portfolio status: {e}")
             return {
                 "open_positions": [],
-                "daily_stats": {"date": today, "total_pnl": 0, "trades_count": 0, "loss_streak": 0},
+                "daily_stats": {"date": date.today().isoformat(), "total_pnl": 0, "trades_count": 0, "loss_streak": 0},
                 "currency_exposure": {},
                 "total_positions": 0,
                 "error": str(e)
             }
     
-    def get_position_count(self, symbol: Optional[str] = None) -> int:
+    def get_position_count(self, symbol: Optional[str] = None, account_id: Optional[str] = None) -> int:
         """Get count of open positions, optionally filtered by symbol."""
         try:
             conn = self._get_conn()
+            query = "SELECT COUNT(*) FROM positions WHERE status = 'open'"
+            params = []
             if symbol:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM positions WHERE status = 'open' AND symbol = ?",
-                    (symbol,)
-                )
-            else:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM positions WHERE status = 'open'"
-                )
+                query += " AND symbol = ?"
+                params.append(symbol)
+            if account_id and account_id != "all":
+                query += " AND account_id = ?"
+                params.append(account_id)
+                
+            cursor = conn.execute(query, tuple(params))
             count = cursor.fetchone()[0]
             conn.close()
             return count

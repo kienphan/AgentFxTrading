@@ -11,7 +11,8 @@ from pathlib import Path
 import sqlite3
 import json
 from datetime import datetime, date
-from typing import Dict, List
+from typing import Dict, List, Optional
+from app.accounts import get_account_registry
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,43 +28,60 @@ def get_db():
     return sqlite3.connect(DB_PATH)
 
 
-def get_portfolio_summary() -> Dict:
+def get_portfolio_summary(account_id: str = "all") -> Dict:
     """Get portfolio summary statistics."""
     conn = get_db()
     
+    params = []
+    account_filter = ""
+    if account_id and account_id != "all":
+        account_filter = " AND account_id = ?"
+        params.append(account_id)
+
     # Open positions count
-    cursor = conn.execute("SELECT COUNT(*) FROM positions WHERE status = 'open'")
+    cursor = conn.execute(f"SELECT COUNT(*) FROM positions WHERE status = 'open'{account_filter}", tuple(params))
     open_positions = cursor.fetchone()[0]
     
     # Today's stats
     today = date.today().isoformat()
     cursor = conn.execute(
-        "SELECT total_pnl, trades_count, loss_streak FROM daily_stats WHERE date = ?",
-        (today,)
+        f"SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?{account_filter}",
+        (today, *params)
     )
     row = cursor.fetchone()
-    daily_pnl = row[0] if row else 0
-    trades_today = row[1] if row else 0
-    loss_streak = row[2] if row else 0
+    daily_pnl = row[0] if row and row[0] is not None else 0
+    trades_today = row[1] if row and row[1] is not None else 0
+    loss_streak = row[2] if row and row[2] is not None else 0
     
     # Total P&L (all time)
     cursor = conn.execute(
-        "SELECT SUM(pnl) FROM positions WHERE status = 'closed'"
+        f"SELECT SUM(pnl) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
     )
-    total_pnl = cursor.fetchone()[0] or 0
+    row_pnl = cursor.fetchone()
+    total_pnl = row_pnl[0] if row_pnl and row_pnl[0] is not None else 0
     
     # Win rate
     cursor = conn.execute(
-        "SELECT COUNT(*) FROM positions WHERE status = 'closed' AND pnl > 0"
+        f"SELECT COUNT(*) FROM positions WHERE status = 'closed' AND pnl > 0{account_filter}", tuple(params)
     )
     wins = cursor.fetchone()[0]
     
     cursor = conn.execute(
-        "SELECT COUNT(*) FROM positions WHERE status = 'closed'"
+        f"SELECT COUNT(*) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
     )
     total_trades = cursor.fetchone()[0]
     win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
     
+    # Fetch account balance/equity if specific account
+    account_balance = None
+    account_equity = None
+    if account_id and account_id != "all":
+        cursor = conn.execute("SELECT last_balance, last_equity FROM accounts WHERE account_id = ?", (account_id,))
+        acc_row = cursor.fetchone()
+        if acc_row:
+            account_balance = acc_row[0]
+            account_equity = acc_row[1]
+
     conn.close()
     
     return {
@@ -72,82 +90,96 @@ def get_portfolio_summary() -> Dict:
         "trades_today": trades_today,
         "loss_streak": loss_streak,
         "total_pnl": round(total_pnl, 2),
-        "win_rate": round(win_rate, 1)
+        "win_rate": round(win_rate, 1),
+        "account_id": account_id,
+        "account_balance": account_balance,
+        "account_equity": account_equity
     }
 
 
-def get_active_positions() -> List[Dict]:
+def get_active_positions(account_id: str = "all") -> List[Dict]:
     """Get all active positions."""
     conn = get_db()
-    cursor = conn.execute("""
-        SELECT bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, entry_time
-        FROM positions 
-        WHERE status = 'open'
-        ORDER BY entry_time DESC
-    """)
+    conn.row_factory = sqlite3.Row
     
-    positions = []
-    for row in cursor.fetchall():
-        positions.append({
-            "bot_id": row[0],
-            "symbol": row[1],
-            "side": row[2],
-            "volume": row[3],
-            "entry_price": row[4],
-            "sl_pips": row[5],
-            "tp_pips": row[6],
-            "entry_time": row[7]
-        })
+    query = """
+        SELECT p.bot_id, p.symbol, p.side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
+               p.account_id, a.account_type, a.label as account_label
+        FROM positions p
+        LEFT JOIN accounts a ON p.account_id = a.account_id
+        WHERE p.status = 'open'
+    """
+    params = []
+    if account_id and account_id != "all":
+        query += " AND p.account_id = ?"
+        params.append(account_id)
+        
+    query += " ORDER BY p.entry_time DESC"
+    
+    cursor = conn.execute(query, tuple(params))
+    positions = [dict(row) for row in cursor.fetchall()]
     
     conn.close()
     return positions
 
 
-def get_trade_history(limit: int = 50) -> List[Dict]:
+def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
     """Get recent trade history."""
     conn = get_db()
-    cursor = conn.execute("""
-        SELECT bot_id, symbol, side, volume, entry_price, exit_price, pnl, entry_time, exit_time
-        FROM positions 
-        WHERE status = 'closed'
-        ORDER BY exit_time DESC
-        LIMIT ?
-    """, (limit,))
+    conn.row_factory = sqlite3.Row
+    
+    query = """
+        SELECT p.bot_id, p.symbol, p.side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
+               p.account_id, a.account_type, a.label as account_label
+        FROM positions p
+        LEFT JOIN accounts a ON p.account_id = a.account_id
+        WHERE p.status = 'closed'
+    """
+    params = []
+    if account_id and account_id != "all":
+        query += " AND p.account_id = ?"
+        params.append(account_id)
+        
+    query += " ORDER BY p.exit_time DESC LIMIT ?"
+    params.append(limit)
+    
+    cursor = conn.execute(query, tuple(params))
     
     trades = []
     for row in cursor.fetchall():
-        trades.append({
-            "bot_id": row[0],
-            "symbol": row[1],
-            "side": row[2],
-            "volume": row[3],
-            "entry_price": row[4],
-            "exit_price": row[5],
-            "pnl": round(row[6], 2),
-            "entry_time": row[7],
-            "exit_time": row[8]
-        })
+        d = dict(row)
+        d["pnl"] = round(d["pnl"], 2) if d["pnl"] is not None else 0
+        trades.append(d)
     
     conn.close()
     return trades
 
 
-def get_daily_pnl_history(days: int = 30) -> List[Dict]:
+def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]:
     """Get daily P&L for the last N days."""
     conn = get_db()
-    cursor = conn.execute("""
-        SELECT date, total_pnl, trades_count
+    conn.row_factory = sqlite3.Row
+    
+    query = """
+        SELECT date, SUM(total_pnl) as pnl, SUM(trades_count) as trades
         FROM daily_stats
-        ORDER BY date DESC
-        LIMIT ?
-    """, (days,))
+    """
+    params = []
+    if account_id and account_id != "all":
+        query += " WHERE account_id = ?"
+        params.append(account_id)
+        
+    query += " GROUP BY date ORDER BY date DESC LIMIT ?"
+    params.append(days)
+    
+    cursor = conn.execute(query, tuple(params))
     
     history = []
     for row in cursor.fetchall():
         history.append({
-            "date": row[0],
-            "pnl": round(row[1], 2),
-            "trades": row[2]
+            "date": row["date"],
+            "pnl": round(row["pnl"], 2) if row["pnl"] is not None else 0,
+            "trades": row["trades"]
         })
     
     conn.close()
@@ -164,6 +196,9 @@ async def dashboard_page(request: Request):
     history = get_trade_history(20)
     pnl_history = get_daily_pnl_history(30)
     
+    registry = get_account_registry()
+    accounts = registry.list_accounts()
+    
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -171,33 +206,34 @@ async def dashboard_page(request: Request):
             "summary": summary,
             "positions": positions,
             "history": history,
-            "pnl_history": pnl_history
+            "pnl_history": pnl_history,
+            "accounts": accounts
         }
     )
 
 
 @router.get("/api/dashboard/summary")
-async def api_dashboard_summary():
+async def api_dashboard_summary(account_id: str = "all"):
     """API endpoint for portfolio summary."""
-    return get_portfolio_summary()
+    return get_portfolio_summary(account_id)
 
 
 @router.get("/api/dashboard/positions")
-async def api_dashboard_positions():
+async def api_dashboard_positions(account_id: str = "all"):
     """API endpoint for active positions."""
-    return get_active_positions()
+    return get_active_positions(account_id)
 
 
 @router.get("/api/dashboard/history")
-async def api_dashboard_history(limit: int = 50):
+async def api_dashboard_history(limit: int = 50, account_id: str = "all"):
     """API endpoint for trade history."""
-    return get_trade_history(limit)
+    return get_trade_history(limit, account_id)
 
 
 @router.get("/api/dashboard/pnl-history")
-async def api_dashboard_pnl_history(days: int = 30):
+async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
     """API endpoint for daily P&L history."""
-    return get_daily_pnl_history(days)
+    return get_daily_pnl_history(days, account_id)
 
 
 # WebSocket for real-time updates
@@ -233,24 +269,46 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep connection alive and send updates every 5 seconds
             data = await websocket.receive_text()
-            if data == "ping":
-                summary = get_portfolio_summary()
-                positions = get_active_positions()
-                await websocket.send_json({
-                    "type": "update",
-                    "summary": summary,
-                    "positions": positions
-                })
+            
+            account_id = "all"
+            try:
+                if data.startswith("{"):
+                    msg = json.loads(data)
+                    if msg.get("type") == "ping":
+                        account_id = msg.get("account_id", "all")
+                elif data == "ping":
+                    account_id = "all"
+                else:
+                    continue
+            except:
+                if data == "ping":
+                    account_id = "all"
+                else:
+                    continue
+                    
+            summary = get_portfolio_summary(account_id)
+            positions = get_active_positions(account_id)
+            await websocket.send_json({
+                "type": "update",
+                "account_id": account_id,
+                "summary": summary,
+                "positions": positions
+            })
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 
 async def broadcast_update():
     """Broadcast dashboard update to all connected clients."""
-    summary = get_portfolio_summary()
-    positions = get_active_positions()
+    # With per-account views, broadcast sends the "all" view. 
+    # Clients on specific accounts will refetch or wait for their next ping.
+    summary = get_portfolio_summary("all")
+    positions = get_active_positions("all")
     await manager.broadcast({
         "type": "update",
+        "account_id": "all",
         "summary": summary,
         "positions": positions
     })
+
+
