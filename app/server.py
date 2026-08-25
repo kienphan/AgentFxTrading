@@ -83,6 +83,11 @@ class TmsSignals(BaseModel):
     green_tf_value: float = 50.0
     green_tf_slope: float = 0.0  # positive = rising, negative = falling
 
+class MarketRegimeInfo(BaseModel):
+    regime: str = "forming"  # "forming", "trending", "choppy", "mixed"
+    er_session: Optional[float] = None
+    er_recent: Optional[float] = None
+    or_flips: int = 0
 class OrbData(BaseModel):
     or_high: float
     or_low: float
@@ -124,6 +129,7 @@ class MarketSnapshot(BaseModel):
     tms: TmsSignals
     orb: Optional[OrbData] = None
     position: Optional[PositionInfo] = None
+    market: Optional[MarketRegimeInfo] = None
     session: Optional[SessionInfo] = None
     loss_streak: int = 0
     day_pnl: float = 0
@@ -143,62 +149,101 @@ class AgentDecision(BaseModel):
     tp_pips: float = 0.0
     reason: str
 
-# ---- System Prompt ----
-SYSTEM_PROMPT = """You are an AUTONOMOUS trading agent using TMS for BIAS and ORB for ENTRY.
+def build_system_prompt(snapshot: MarketSnapshot) -> str:
+    """
+    Dynamic System Prompt Factory (inspired by dnse-kash architecture).
+    Bakes live asset characteristics, market regime guidelines, and quantitative edge-case rules directly into context.
+    """
+    is_gold = "XAU" in snapshot.symbol.upper() or "GOLD" in snapshot.symbol.upper()
+    asset_type = "Gold (Commodity/Metals)" if is_gold else "Forex Major/Cross"
+    
+    # Pip scale guidelines based on asset
+    sl_guideline = "20.0 - 80.0 pips" if is_gold else "6.0 - 30.0 pips"
+    tp_guideline = "30.0 - 250.0 pips" if is_gold else "10.0 - 80.0 pips"
+    default_sl = 30.0 if is_gold else 10.0
+    default_tp = 60.0 if is_gold else 20.0
+
+    current_regime = snapshot.market.regime if snapshot.market else "mixed"
+    regime_guideline = ""
+    if current_regime == "trending":
+        regime_guideline = (
+            "• CURRENT REGIME IS TRENDING: The execution engine (cBot) automatically DISABLES fixed TP (Trend TP Disabled). "
+            "Your trade will ride the full momentum wave managed by dynamic Trailing Stop and Giveback Floor. "
+            "Declare ambitious TP or open target and focus on accurate entry timing & SL boundary."
+        )
+    elif current_regime == "choppy":
+        regime_guideline = (
+            "• CURRENT REGIME IS CHOPPY (High failed breakouts / OR flips): The market is oscillating and hunting stops. "
+            "The default and safest action is HOLD unless a fresh, extraordinary setup with strong momentum slope emerges. "
+            "Never chase extended moves in a choppy regime."
+        )
+    else:
+        regime_guideline = (
+            "• CURRENT REGIME IS MIXED/FORMING: Maintain standard trading discipline with R:R >= 1.5."
+        )
+
+    return f"""You are an AUTONOMOUS quantitative trading agent running the TMS (Trend Momentum Signal) + ORB (Opening Range Breakout) strategy for {snapshot.symbol} ({asset_type}).
+
+## Core Contract: "LLM proposes, Code disposes"
+You analyze market structure and propose trade actions. The deterministic execution harness (cBot + Portfolio Manager) enforces hard guardrails (spread checks, correlation limits, trailing stops, and EOD force-flatten). Always output valid structured JSON.
 
 ## Strategy Logic
 
-**TMS = DIRECTIONAL BIAS**
-- BULLISH: Green crossed above Red, HA green, Stoch K > D
-- BEARISH: Green crossed below Red, HA red, Stoch K < D
-- Bias is locked until next cross
+### 1. TMS (Trend Momentum Signal) = DIRECTIONAL BIAS
+- **BULLISH**: TDI Green crossed above Red, Heikin Ashi is Green, Stochastic K > D.
+- **BEARISH**: TDI Green crossed below Red, Heikin Ashi is Red, Stochastic K < D.
+- **NEUTRAL**: Lines intertwined or consolidating. NEVER enter when bias is NEUTRAL.
+- Bias is strictly locked until the next confirmed reverse cross. Entries MUST align with current TMS bias.
 
-**ORB = ENTRY TRIGGER**
-- Only enter when ORB breaks in direction of TMS bias
-- Breakout must be DECISIVE (breakout_distance_pips >= threshold)
-- Entry window: bars_since_breakout <= max_bars_after_breakout
+### 2. ORB (Opening Range Breakout) = ENTRY TRIGGER
+- Opening Range (OR) defines the high/low of the first 15 minutes of the active session.
+- Valid entry requires price closing beyond OR boundary in the direction of TMS bias.
+- Breakout must be DECISIVE (breakout_distance_pips >= threshold) and within entry window (bars_since_breakout <= 5).
 
-## Decision Rules
+### 3. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
+- **er_session / er_recent**: Kaufman Efficiency Ratio (|net move| / total path, 1.0 = pure directional trend, ~0 = pure oscillation).
+- **or_flips**: Number of times price broke outside OR and closed back inside (flips >= 5 indicates chop trap day).
+{regime_guideline}
 
-### Entry (TMS + ORB alignment)
-- TMS BULLISH + ORB breakout UP + is_decisive=true + in_entry_window → BUY
-- TMS BEARISH + ORB breakout DOWN + is_decisive=true + in_entry_window → SELL
-- Any mismatch → HOLD
+### 4. Quantitative Edge-Case Rules (Battle-Tested Discipline)
+- **BIAS-FRESH Exception**: When a TMS cross JUST occurred (bars_since_cross <= 1), treat early breakout momentum as the START of a new trend leg rather than an extended move. Entering in the fresh bias direction is strongly favored.
+- **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback, DO NOT chase at extremes. Declare HOLD and wait for a pullback or fresh cross.
+- **POSITION MEMORY & GIVEBACK FLOOR**:
+  - position.mfe_pips = PEAK floating profit reached.
+  - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
+  - **Golden Rule**: Never let a large winning trade turn into a losing trade without a deliberate technical reason. If giveback is high and momentum slope turns negative, declare CLOSE_ALL to protect capital.
+- **MOMENTUM SLOPE AS EARLIEST EXIT WARNING**:
+  - green_tf_slope turning negative for a BUY position (or positive for a SELL position) is the earliest warning that momentum is exhausting before full TDI cross confirms.
 
-### Exit (from TMS signals)
-- exit_long = true (TDI flat/hook/checkmark) → CLOSE_ALL
-- exit_short = true → CLOSE_ALL
-- green_tf_slope turning against position → consider CLOSE_ALL (early warning)
+### 5. Parameter Guidelines for {snapshot.symbol}
+- Realistic SL Distance: {sl_guideline} (Suggested: ~{default_sl} pips)
+- Realistic TP Distance: {tp_guideline} (Suggested: ~{default_tp} pips)
+- Minimum Risk-to-Reward: R:R >= 1.5
 
-### Position Management
-- If position exists and giveback_pips is high → consider tightening SL
-- If session.phase = "ending" → CLOSE_ALL (session end)
+## Decision Rules Summary
 
-## Green TF State (Momentum)
-- green_tf_value: current TDI Green value (0-100)
-- green_tf_slope: positive = rising momentum, negative = falling momentum
-- Use slope as early warning: if slope turns against position, momentum is fading
+### Entry Criteria (ALL must be satisfied):
+1. TMS Bias is clearly BULLISH (for BUY) or BEARISH (for SELL).
+2. ORB Breakout is aligned (UP for BUY, DOWN for SELL) and decisive (is_decisive = true).
+3. Inside entry window (in_entry_window = true).
+4. Session is active (not ending / not closed).
+5. Loss streak < 3.
+-> Any mismatch or conflicting signal -> HOLD.
 
-## Output Format (JSON)
+### Exit Criteria:
+1. exit_long = true (for BUY) or exit_short = true (for SELL) -> CLOSE_ALL.
+2. green_tf_slope turning sharply against position -> CLOSE_ALL (early momentum exit).
+3. session.phase = "ending" -> CLOSE_ALL (EOD safety).
 
-{
+## Output Format (JSON only)
+
+{{
   "action": "BUY" | "SELL" | "CLOSE_ALL" | "HOLD",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
-  "reason": "Brief explanation"
-}
-
-## Critical Rules
-
-1. NEVER trade against TMS bias
-2. NEVER trade without SL
-3. NEVER trade if TMS bias is NEUTRAL
-4. ORB breakout must be decisive (is_decisive=true)
-5. R:R must be >= 1.5
-6. If exit_long/exit_short is true and position open → CLOSE_ALL
-7. If session.phase = "ending" → CLOSE_ALL
-8. If loss_streak >= 3 → HOLD (no new entries)
+  "sl_pips": {default_sl},
+  "tp_pips": {default_tp},
+  "reason": "Clear, concise technical justification (TMS bias, ORB breakout, Regime ER, Momentum slope)"
+}}
 """
 
 
@@ -212,10 +257,151 @@ def _resolve_account(snapshot: MarketSnapshot) -> str:
         equity=snapshot.account_equity,
     )
 
+def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
+    """
+    Deterministic Cycle Gate (Cost Gate).
+    Evaluates whether an expensive LLM call can be safely bypassed with an immediate deterministic action.
+    Returns AgentDecision if gated, or None if LLM call is required.
+    """
+    # 1. When we HAVE an open position:
+    if snapshot.position is not None:
+        # Check if session is ending -> Deterministic CLOSE_ALL
+        if snapshot.session and snapshot.session.phase in ("ending", "closed"):
+            return AgentDecision(
+                action="CLOSE_ALL",
+                volume_lots=0.0,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Session {snapshot.session.phase} (EOD close)"
+            )
+        # Check if explicit TMS exit signal fired for current position side
+        pos_side = snapshot.position.side.upper()
+        if (pos_side == "BUY" and snapshot.tms.exit_long) or (pos_side == "SELL" and snapshot.tms.exit_short):
+            return AgentDecision(
+                action="CLOSE_ALL",
+                volume_lots=0.0,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: TMS exit signal triggered ({snapshot.tms.exit_reason})"
+            )
+        # Position is open and needs active LLM monitoring (momentum slope, MFE giveback, etc.)
+        return None
+
+    # 2. When we DO NOT have an open position (Flat):
+    # Only candidate setups with aligned TMS + ORB should reach LLM.
+
+    # Gate 2.1: Session Gate
+    if snapshot.session is not None:
+        if not snapshot.session.is_trading_time or snapshot.session.phase in ("pre", "closed"):
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Outside trading session (phase={snapshot.session.phase})"
+            )
+        if snapshot.session.phase == "ending":
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Session ending ({snapshot.session.minutes_to_end}m remaining, no new entries)"
+            )
+
+    # Gate 2.2: Loss Streak Gate
+    if snapshot.loss_streak >= 3:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Loss streak protection active ({snapshot.loss_streak} consecutive losses)"
+        )
+
+    # Gate 2.3: TMS Bias Gate
+    bias = (snapshot.tms.bias or "NEUTRAL").upper()
+    if bias == "NEUTRAL":
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason="Cycle gate: TMS bias is NEUTRAL"
+        )
+
+    # Gate 2.4: ORB Breakout Gate
+    orb = snapshot.orb
+    if orb is None or not orb.breakout_direction or orb.breakout_direction.lower() == "none":
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason="Cycle gate: Price inside Opening Range (no breakout)"
+        )
+
+    if not orb.is_decisive:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Breakout not decisive ({orb.breakout_distance_pips:.1f}p < threshold)"
+        )
+
+    if not orb.in_entry_window:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout})"
+        )
+
+    # Gate 2.5: Directional Alignment Gate (TMS vs ORB)
+    orb_dir = orb.breakout_direction.lower()
+    if bias == "BULLISH" and orb_dir != "up":
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Conflict - TMS {bias} vs ORB breakout {orb_dir}"
+        )
+    if bias == "BEARISH" and orb_dir != "down":
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Conflict - TMS {bias} vs ORB breakout {orb_dir}"
+        )
+
+    # Gate 2.6: Choppy Market Gate (Chop trap brake)
+    if snapshot.market and snapshot.market.regime == "choppy" and snapshot.market.or_flips >= 5:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Market is CHOPPY ({snapshot.market.or_flips} failed OR breakouts)"
+        )
+
+    # All entry criteria met! Valid candidate setup -> Invoke LLM for entry sizing & SL/TP validation
+    return None
+
+
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
     account_id = _resolve_account(snapshot)
     logger.info(f"[{account_id}/{snapshot.bot_id}] {snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
+
+    # Deterministic Cycle Gate (Cost Gate - skip LLM when decision is deterministic)
+    gated_decision = evaluate_cycle_gate(snapshot)
+    if gated_decision is not None:
+        logger.info(f"[{account_id}/{snapshot.bot_id}] Cycle Gated: {gated_decision.action} | {gated_decision.reason}")
+        return gated_decision
 
     # Check portfolio risk before allowing new trades
     if snapshot.position is None:  # No open position, might want to open new one
@@ -246,8 +432,9 @@ async def trade_decision(snapshot: MarketSnapshot):
 
     try:
         # Use abstracted LLM client (supports Qwen, OpenAI, Claude, Gemini, DeepSeek)
+        system_prompt = build_system_prompt(snapshot)
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
         
@@ -430,6 +617,20 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
             f"- Bars since breakout: {orb.bars_since_breakout}",
             f"- In entry window: {orb.in_entry_window}",
             f"- Price position: {orb.price_position}",
+        ])
+
+    # Market regime info
+    if snapshot.market:
+        mkt = snapshot.market
+        er_sess_str = f"{mkt.er_session:.2f}" if mkt.er_session is not None else "N/A"
+        er_rec_str = f"{mkt.er_recent:.2f}" if mkt.er_recent is not None else "N/A"
+        lines.extend([
+            "",
+            "### Market Regime",
+            f"- Regime: {mkt.regime}",
+            f"- ER Session: {er_sess_str}",
+            f"- ER Recent (1h): {er_rec_str}",
+            f"- OR Flips (Failed Breakouts): {mkt.or_flips}",
         ])
 
     # Position info

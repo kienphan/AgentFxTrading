@@ -62,7 +62,7 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **TMS Indicators**: Heiken Ashi, TDI (RSI + Signal), Stochastic
 - **ORB Logic**: Opening Range detection with decisive breakout filter
 - **Momentum Tracking**: TF Green State with slope analysis
-- **Multi-Timeframe**: Works on M15, H1, H4 timeframes
+- **Market Regime Detection**: Kaufman Efficiency Ratio (`er_session`, `er_recent`) & failed breakout counter (`or_flips`) to classify market into `trending`, `choppy`, `mixed`, `forming`
 
 ### 💼 Portfolio Management
 - **Multi-Symbol Trading**: Run multiple bots on different pairs
@@ -76,6 +76,8 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Trailing Stop**: Dynamic SL adjustment during profitable trades
 - **Max Giveback Protection**: Closes position if giveback exceeds threshold
 - **Loss Streak Protection**: Blocks entries after 3 consecutive losses
+- **Cycle Gating (Cost Gate)**: Deterministically bypasses LLM calls when outside session, inside OR, or during loss streak — saving 80-90% API tokens
+- **Trend TP Disabled**: Automatically disables fixed TP during trending regimes to ride the full move with Trailing SL & Giveback Floor
 
 ### ⏰ Session Management
 - **Trading Sessions**: Configurable session times (London, NY, Tokyo)
@@ -224,6 +226,22 @@ ORB provides **precise entry timing**:
 2. **Breakout**: Price closes beyond OR boundary
 3. **Decisive Filter**: Breakout must be decisive (≥ MinDecisiveBreakoutPips, default 10.0 pips on XAUUSD)
 
+### Market Regime (Kaufman Efficiency Ratio)
+
+The system computes real-time efficiency metrics to adapt its trading and exit behavior:
+- **`er_session` & `er_recent`**: Kaufman Efficiency Ratio ($ER = \frac{|\text{Net Move}|}{\sum |\text{Bar Moves}|}$). $1.0$ represents a clean directional move, while $\approx 0.0$ indicates chop.
+- **`or_flips`**: Counts failed breakouts outside the Opening Range that close back inside (indicates chop day).
+- **Regimes**:
+  - **`trending`** ($ER \ge 0.35$): Disables fixed TP (`TrendTpDisabled = true`), lets Trailing SL and Giveback Floor capture the full trend run.
+  - **`choppy`** (`or_flips \ge 5`): High risk of stop-hunting traps → Cycle Gate forces `HOLD`.
+  - **`mixed`**: Standard trading discipline ($R:R \ge 1.5$).
+  - **`forming`**: Early session range formation ($< 6$ bars).
+
+### Quantitative Edge-Case Rules
+- **BIAS-FRESH Exception**: When a TDI cross just occurred ($\le 1$ bar ago), early momentum is treated as the **start of a fresh trend leg**, not an extended move → Favors entering immediately.
+- **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a pullback, **DO NOT chase** at extremes → Holds and waits for a pullback.
+- **Position Memory & Giveback Floor**: Tracks Peak Profit ($MFE$) on every tick. If floating profit drops below the maximum giveback threshold, the position is closed immediately to lock in gains.
+
 ### Entry Rules
 
 ```
@@ -303,6 +321,7 @@ ELSE:
 | Max Giveback | 30.0 pips | Giveback threshold to force close |
 | Max Loss Streak | 3 | Block after N losses |
 | Bias Flip Exit | true | Auto close on bias change |
+| Trend TP Disabled | true | Disable fixed TP in trending regime |
 
 ### 📊 Recommended Presets by Symbol
 

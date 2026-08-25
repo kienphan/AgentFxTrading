@@ -62,6 +62,7 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Chỉ Báo TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
 - **Logic ORB**: Phát hiện Opening Range với bộ lọc breakout quyết định
 - **Theo Dõi Momentum**: TF Green State với phân tích độ dốc
+- **Nhận Diện Chế Độ Thị Trường (Market Regime)**: Kaufman Efficiency Ratio (`er_session`, `er_recent`) và bộ đếm bẫy phá vỡ giả (`or_flips`) để phân loại `trending`, `choppy`, `mixed`, `forming`
 - **Đa Khung Thời Gian**: Hoạt động trên M15, H1, H4
 
 ### 💼 Quản Lý Danh Mục
@@ -76,6 +77,8 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Trailing Stop**: Điều chỉnh SL động trong các giao dịch có lãi
 - **Bảo Vệ Giveback Tối Đa**: Đóng vị thế nếu giveback vượt ngưỡng
 - **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
+- **Cycle Gating (Cost Gate)**: Tự động bỏ qua gọi LLM khi ngoài phiên, giá trong OR hoặc đang chuỗi thua — tiết kiệm 80-90% chi phí API
+- **Trend TP Disabled**: Tự động hủy TP cố định khi thị trường có xu hướng mạnh (`trending`) để gồng lời tối đa bằng Trailing SL & Giveback Floor
 
 ### ⏰ Quản Lý Phiên
 - **Phiên Giao Dịch**: Thời gian phiên có thể cấu hình (London, NY, Tokyo)
@@ -194,6 +197,22 @@ ORB cung cấp **thời điểm vào lệnh chính xác**:
 2. **Breakout**: Giá đóng cửa vượt qua ranh giới OR
 3. **Bộ Lọc Quyết Định**: Breakout phải dứt khoát (≥ MinDecisiveBreakoutPips, mặc định 10.0 pips cho XAUUSD)
 
+### Nhận Diện Chế Độ Thị Trường (Market Regime)
+
+Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian thực:
+- **`er_session` & `er_recent`**: Kaufman Efficiency Ratio ($ER = \frac{|\text{Net Move}|}{\sum |\text{Bar Moves}|}$). $1.0$ thể hiện xu hướng một chiều mượt mà, $\approx 0.0$ thể hiện sideway dập dình.
+- **`or_flips`**: Đếm số lần phá vỡ giả ra ngoài Opening Range rồi thụt đầu đóng nến vào trong.
+- **Các chế độ thị trường**:
+  - **`trending`** ($ER \ge 0.35$): Tự động hủy TP cố định (`TrendTpDisabled = true`), thả trôi lệnh để Trailing SL và Giveback Floor ăn trọn con sóng lớn.
+  - **`choppy`** (`or_flips \ge 5`): Nguy cơ bẫy giá cao → Cycle Gate tự động chọn `HOLD`.
+  - **`mixed`**: Kỷ luật giao dịch tiêu chuẩn ($R:R \ge 1.5$).
+  - **`forming`**: Giai đoạn mở phiên tích lũy ($< 6$ nến).
+
+### Quy Tắc Xử Lý Ngoại Lệ Thực Chiến (Edge-Case Rules)
+- **Ngoại lệ BIAS-FRESH**: Khi giao cắt TDI vừa mới xảy ra ($\le 1$ nến trước), xung lực bứt phá sớm được xem là **bắt đầu một con sóng mới** chứ không phải nến quá mua/quá bán → Ưu tiên vào lệnh ngay.
+- **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback.
+- **Position Memory & Giveback Floor**: Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Nếu lợi nhuận tụt từ đỉnh quá ngưỡng giveback, bot sẽ tự động đóng lệnh để bảo toàn thành quả.
+
 ### Quy Tắc Vào Lệnh
 
 ```
@@ -273,6 +292,7 @@ ELSE:
 | Max Giveback | 30.0 pips | Ngưỡng giveback để đóng lệnh |
 | Max Loss Streak | 3 | Chặn sau N lần thua |
 | Bias Flip Exit | true | Tự động đóng khi bias thay đổi |
+| Trend TP Disabled | true | Tự động hủy TP cố định khi trending |
 
 ### 📊 Bộ Tham Số Khuyến Nghị Theo Cặp Giao Dịch
 

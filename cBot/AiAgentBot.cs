@@ -123,6 +123,9 @@ namespace cAlgo.Robots
 
         [Parameter("Max Giveback (pips, 0=off)", Group = "Guardrails", DefaultValue = 30.0, MinValue = 0, Step = 1.0)]
         public double MaxGivebackPips { get; set; }
+
+        [Parameter("Trend TP Disabled", Group = "Guardrails", DefaultValue = true)]
+        public bool TrendTpDisabled { get; set; }
         [Parameter("Show Logs", Group = "General", DefaultValue = true)]
         public bool ShowLogs { get; set; }
         #endregion
@@ -181,6 +184,14 @@ namespace cAlgo.Robots
             public string price_position { get; set; }
         }
 
+        public class MarketRegimeInfo
+        {
+            public string regime { get; set; }  // "forming", "trending", "choppy", "mixed"
+            public double? er_session { get; set; }
+            public double? er_recent { get; set; }
+            public int or_flips { get; set; }
+        }
+
         public class PositionInfo
         {
             public string side { get; set; }
@@ -193,7 +204,6 @@ namespace cAlgo.Robots
             public double tp_price { get; set; }
             public int bars_held { get; set; }
         }
-
         public class SessionInfo
         {
             public string session_name { get; set; }
@@ -212,6 +222,7 @@ namespace cAlgo.Robots
             public List<BarData> bars { get; set; }
             public TmsSignals tms { get; set; }
             public OrbData orb { get; set; }
+            public MarketRegimeInfo market { get; set; }
             public PositionInfo position { get; set; }
             public SessionInfo session { get; set; }
             public int loss_streak { get; set; }
@@ -333,6 +344,12 @@ namespace cAlgo.Robots
 
             UpdateOrb(index);
             UpdateLossStreak();
+            var session = GetSessionInfo();
+            // Cost Gate: Nếu không có vị thế mở và ngoài phiên (hoặc phiên sắp kết thúc), không cần gửi request
+            if (Positions.Count == 0 && (!session.is_trading_time || session.phase == "closed" || session.phase == "ending"))
+            {
+                return;
+            }
 
             var snapshot = new MarketSnapshot
             {
@@ -357,6 +374,7 @@ namespace cAlgo.Robots
                 },
                 tms = GetTmsSignals(index),
                 orb = GetOrbData(index),
+                market = GetMarketRegime(index),
                 position = GetPositionInfo(index),
                 session = GetSessionInfo()
             };
@@ -591,6 +609,100 @@ namespace cAlgo.Robots
                 in_entry_window = barsSince >= 0 && barsSince <= MaxBarsAfterBreakout,
                 is_decisive = isDecisive,
                 price_position = pricePos
+            };
+        }
+
+        private MarketRegimeInfo GetMarketRegime(int currentIndex)
+        {
+            var now = Server.TimeInUtc;
+            int adjustedStartHour = GetAdjustedHour(now, OrbStartHour, SessionDstRule);
+            DateTime sessionStartTime = now.Date.AddHours(adjustedStartHour);
+            
+            // Handle overnight session start if needed
+            if (now < sessionStartTime && adjustedStartHour > 12)
+            {
+                sessionStartTime = sessionStartTime.AddDays(-1);
+            }
+
+            var sessionCloses = new List<double>();
+            for (int i = 0; i <= currentIndex; i++)
+            {
+                if (Bars[i].OpenTime >= sessionStartTime)
+                {
+                    sessionCloses.Add(Bars[i].Close);
+                }
+            }
+
+            if (sessionCloses.Count < 6)
+            {
+                return new MarketRegimeInfo
+                {
+                    regime = "forming",
+                    er_session = null,
+                    er_recent = null,
+                    or_flips = 0
+                };
+            }
+
+            // Kaufman Efficiency Ratio (ER)
+            double Er(List<double> seq)
+            {
+                if (seq.Count < 2) return 0.0;
+                double net = Math.Abs(seq[seq.Count - 1] - seq[0]);
+                double path = 0;
+                for (int j = 1; j < seq.Count; j++)
+                {
+                    path += Math.Abs(seq[j] - seq[j - 1]);
+                }
+                return path > 1e-7 ? Math.Round(net / path, 3) : 0.0;
+            }
+
+            double erSession = Er(sessionCloses);
+
+            // Recent ER (last 12 bars = 1 hour on M5)
+            int recentCount = Math.Min(12, sessionCloses.Count);
+            var recentCloses = sessionCloses.GetRange(sessionCloses.Count - recentCount, recentCount);
+            double erRecent = Er(recentCloses);
+
+            // Count OR Flips (Failed breakouts closing back inside OR)
+            int flips = 0;
+            if (_orHigh > double.MinValue && _orLow < double.MaxValue)
+            {
+                string zone = null;
+                foreach (var close in sessionCloses)
+                {
+                    string z = close > _orHigh ? "A" : (close < _orLow ? "B" : "I"); // Above, Below, Inside
+                    if ((zone == "A" || zone == "B") && z == "I")
+                    {
+                        flips++;
+                    }
+                    if (z != "I")
+                    {
+                        zone = z;
+                    }
+                }
+            }
+
+            string regime = "mixed";
+            if (erSession >= 0.35 || (erRecent >= 0.45 && flips <= 3))
+            {
+                regime = "trending";
+            }
+            else if (flips >= 5)
+            {
+                regime = "choppy";
+            }
+            else
+            {
+                regime = "mixed";
+            }
+
+            return new MarketRegimeInfo
+            {
+                regime = regime,
+                er_session = erSession,
+                er_recent = erRecent,
+                or_flips = flips
             };
         }
 
@@ -996,7 +1108,16 @@ namespace cAlgo.Robots
                 }
             }
 
-            var result = ExecuteMarketOrder(tradeType, SymbolName, volume, "AI_Agent", slPips, tpPips);
+            // Trend TP Disabled: In trending regime, remove fixed TP to let Trailing SL and Giveback floor ride the trend
+            double? effectiveTpPips = tpPips;
+            var regime = GetMarketRegime(Bars.Count - 1);
+            if (TrendTpDisabled && regime.regime == "trending")
+            {
+                effectiveTpPips = null;
+                if (ShowLogs) Print($"[Trend Mode] Market is TRENDING (ER_session={regime.er_session:F2}, ER_recent={regime.er_recent:F2}, flips={regime.or_flips}) -> Fixed TP removed, letting trade run with Trailing SL!");
+            }
+
+            var result = ExecuteMarketOrder(tradeType, SymbolName, volume, "AI_Agent", slPips, effectiveTpPips);
             if (result != null && result.IsSuccessful)
             {
                 if (ShowLogs)
