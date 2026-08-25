@@ -190,7 +190,7 @@ Server will run at `http://127.0.0.1:8000`
 6. Configure parameters:
    - **Bot ID**: `bot1` (unique identifier)
    - **API URL**: `http://127.0.0.1:8000/trade`
-   - **Session**: London (7:00-16:00 UTC)
+   - **Session**: New York (13:00-21:00 UTC) / London (8:00-17:00 UTC)
 
 ### 5. Start Trading! 🎉
 
@@ -222,7 +222,7 @@ ORB provides **precise entry timing**:
 
 1. **Opening Range**: High/Low of first 15 minutes of session
 2. **Breakout**: Price closes beyond OR boundary
-3. **Decisive Filter**: Breakout must be ≥ 3 pips (avoids false breakouts)
+3. **Decisive Filter**: Breakout must be decisive (≥ MinDecisiveBreakoutPips, default 10.0 pips on XAUUSD)
 
 ### Entry Rules
 
@@ -243,10 +243,10 @@ ELSE:
 |-----------|--------|
 | TDI Green flat/hook/checkmark | CLOSE_ALL |
 | Bias reverses | Auto close |
-| Session ends | Auto close |
-| Profit ≥ 5p | Move SL to breakeven |
-| Profit ≥ 10p | Trail SL by 5p |
-| Giveback ≥ threshold | Auto close |
+| Session ends (EOD) | Auto close (EOD Force-Flatten safety net) |
+| Profit ≥ 30p | Move SL to breakeven (+2p offset) |
+| Profit ≥ 50p | Trail SL by 25p |
+| Giveback ≥ 30p | Auto close (Max giveback protection) |
 
 ---
 
@@ -272,31 +272,37 @@ ELSE:
 |-----------|---------|-------------|
 | Max Bars After Cross | 5 | Entry window |
 | Min Angle Delta | 0.0 | Angle filter (0=off) |
-| Min Decisive Breakout | 3.0 pips | Breakout strength |
+| Min Decisive Breakout | 10.0 pips | Breakout strength (default tuned for XAUUSD) |
 
 #### Exit Management
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Flat Threshold | 0.01 | TDI flatness |
-| Breakeven Trigger | 5.0 pips | Profit to move SL |
-| Trail Trigger | 10.0 pips | Profit to start trailing |
-| Trail Distance | 5.0 pips | SL distance from price |
+| Breakeven Trigger | 30.0 pips | Profit to move SL |
+| Breakeven Offset | 2.0 pips | Profit locked at breakeven |
+| Trail Trigger | 50.0 pips | Profit to start trailing |
+| Trail Distance | 25.0 pips | SL distance from price |
 
 #### Session
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Session Start Hour | 7 (UTC) | London open |
-| Session End Hour | 16 (UTC) | London close |
+| Session Start Hour | 13 (UTC) | New York open (Winter UTC) |
+| Session End Hour | 21 (UTC) | New York close (EOD force-flatten) |
 | Opening Range | 15 min | OR calculation window |
+| Min OR Width | 20.0 pips | Minimum OR width |
+| ORB Buffer | 3.0 pips | Buffer to avoid fakeouts |
+| DST Rule | US | Auto daylight saving adjustment |
 
 #### Guardrails
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Min SL | 3.0 pips | Minimum stop loss |
-| Max SL | 30.0 pips | Maximum stop loss |
+| Min SL | 20.0 pips | Minimum stop loss |
+| Max SL | 80.0 pips | Maximum stop loss |
+| Min TP | 30.0 pips | Minimum take profit |
+| Max TP | 250.0 pips | Maximum take profit |
+| Max Giveback | 30.0 pips | Giveback threshold to force close |
 | Max Loss Streak | 3 | Block after N losses |
 | Bias Flip Exit | true | Auto close on bias change |
-
 ### Portfolio Manager Settings
 
 Edit `app/portfolio.py`:

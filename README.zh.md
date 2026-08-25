@@ -151,7 +151,7 @@ python app/server.py
 6. 配置参数：
    - **Bot ID**：`bot1`（唯一标识符）
    - **API URL**：`http://127.0.0.1:8000/trade`
-   - **Session**：London（7:00-16:00 UTC）
+   - **Session**：New York（13:00-21:00 UTC）/ London（8:00-17:00 UTC）
 
 ### 5. 开始交易！🎉
 
@@ -183,7 +183,7 @@ ORB提供**精确的入场时机**：
 
 1. **开盘区间**：时段开始15分钟的High/Low
 2. **突破**：价格收于OR边界之外
-3. **决定性过滤**：突破必须≥3 pips（避免假突破）
+3. **决定性过滤**：突破必须具备决定性（≥ MinDecisiveBreakoutPips，XAUUSD默认10.0 pips）
 
 ### 入场规则
 
@@ -204,10 +204,10 @@ ELSE:
 |------|------|
 | TDI Green走平/钩子/对号 | CLOSE_ALL |
 | 偏向反转 | 自动平仓 |
-| 时段结束 | 自动平仓 |
-| 利润≥5p | 移动SL至保本 |
-| 利润≥10p | 追踪SL 5p |
-| 回撤≥阈值 | 自动平仓 |
+| 时段结束（EOD） | 自动全平（EOD Force-Flatten安全网） |
+| 利润≥30p | 移动SL至保本（+2p锁利） |
+| 利润≥50p | 追踪SL 25p |
+| 回撤≥30p | 自动平仓（最大回撤保护） |
 
 ---
 
@@ -233,31 +233,37 @@ ELSE:
 |------|--------|------|
 | Max Bars After Cross | 5 | 入场窗口 |
 | Min Angle Delta | 0.0 | 角度过滤（0=关闭） |
-| Min Decisive Breakout | 3.0 pips | 突破强度 |
+| Min Decisive Breakout | 10.0 pips | 突破强度（针对XAUUSD默认优化） |
 
 #### 出场管理
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
 | Flat Threshold | 0.01 | TDI平坦度 |
-| Breakeven Trigger | 5.0 pips | 移动SL的利润 |
-| Trail Trigger | 10.0 pips | 开始追踪的利润 |
-| Trail Distance | 5.0 pips | SL与价格的距离 |
+| Breakeven Trigger | 30.0 pips | 移动SL的利润 |
+| Breakeven Offset | 2.0 pips | 保本锁利距离 |
+| Trail Trigger | 50.0 pips | 开始追踪的利润 |
+| Trail Distance | 25.0 pips | SL与价格的距离 |
 
 #### 时段
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
-| Session Start Hour | 7 (UTC) | 伦敦开盘 |
-| Session End Hour | 16 (UTC) | 伦敦收盘 |
+| Session Start Hour | 13 (UTC) | 纽约开盘（冬令时UTC） |
+| Session End Hour | 21 (UTC) | 纽约收盘（EOD强制平仓） |
 | Opening Range | 15 min | OR计算窗口 |
+| Min OR Width | 20.0 pips | 最小OR宽度 |
+| ORB Buffer | 3.0 pips | 假突破缓冲 |
+| DST Rule | US | 自动夏令时调整 |
 
 #### 防护栏
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
-| Min SL | 3.0 pips | 最小止损 |
-| Max SL | 30.0 pips | 最大止损 |
+| Min SL | 20.0 pips | 最小止损 |
+| Max SL | 80.0 pips | 最大止损 |
+| Min TP | 30.0 pips | 最小止盈 |
+| Max TP | 250.0 pips | 最大止盈 |
+| Max Giveback | 30.0 pips | 利润回撤强制平仓阈值 |
 | Max Loss Streak | 3 | N次亏损后阻止 |
 | Bias Flip Exit | true | 偏向变化时自动平仓 |
-
 ### 投资组合管理器设置
 
 编辑`app/portfolio.py`：

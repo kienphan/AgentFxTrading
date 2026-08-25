@@ -160,7 +160,7 @@ python app/server.py
 6. パラメータを設定：
    - **Bot ID**：`bot1`（一意の識別子）
    - **API URL**：`http://127.0.0.1:8000/trade`
-   - **Session**：London（7:00-16:00 UTC）
+   - **Session**：New York（13:00-21:00 UTC）/ London（8:00-17:00 UTC）
 
 ### 5. 取引開始！🎉
 
@@ -192,7 +192,7 @@ ORBは**正確なエントリータイミング**を提供します：
 
 1. **オープニングレンジ**：セッションの最初の15分のHigh/Low
 2. **ブレイクアウト**：価格がOR境界を超えてクローズ
-3. **決定的フィルタ**：ブレイクアウトは≥3 pipsである必要があります（偽のブレイクアウトを回避）
+3. **決定的フィルタ**：ブレイクアウトは決定的である必要があります（≥ MinDecisiveBreakoutPips、XAUUSDデフォルトは10.0 pips）
 
 ### エントリールール
 
@@ -213,10 +213,10 @@ ELSE:
 |------|-----------|
 | TDI Green フラット/フック/チェックマーク | CLOSE_ALL |
 | バイアスが反転 | 自動クローズ |
-| セッション終了 | 自動クローズ |
-| 利益 ≥ 5p | SLをブレークイーブンに移動 |
-| 利益 ≥ 10p | SLを5pトレーリング |
-| ギブバック ≥ 閾値 | 自動クローズ |
+| セッション終了（EOD） | 自動全クローズ（EOD Force-Flatten安全ネット） |
+| 利益 ≥ 30p | SLをブレークイーブンに移動（+2pオフセット） |
+| 利益 ≥ 50p | SLを25pトレーリング |
+| ギブバック ≥ 30p | 自動クローズ（最大ギブバック保護） |
 
 ---
 
@@ -242,31 +242,37 @@ ELSE:
 |-----------|-----------|------|
 | Max Bars After Cross | 5 | エントリーウィンドウ |
 | Min Angle Delta | 0.0 | 角度フィルタ（0=オフ） |
-| Min Decisive Breakout | 3.0 pips | ブレイクアウト強度 |
+| Min Decisive Breakout | 10.0 pips | ブレイクアウト強度（XAUUSD向けに最適化） |
 
 #### エグジット管理
 | パラメータ | デフォルト | 説明 |
 |-----------|-----------|------|
 | Flat Threshold | 0.01 | TDI平坦度 |
-| Breakeven Trigger | 5.0 pips | SL移動の利益 |
-| Trail Trigger | 10.0 pips | トレーリング開始の利益 |
-| Trail Distance | 5.0 pips | 価格からのSL距離 |
+| Breakeven Trigger | 30.0 pips | SL移動の利益 |
+| Breakeven Offset | 2.0 pips | ブレークイーブン確保利益 |
+| Trail Trigger | 50.0 pips | トレーリング開始の利益 |
+| Trail Distance | 25.0 pips | 価格からのSL距離 |
 
 #### セッション
 | パラメータ | デフォルト | 説明 |
 |-----------|-----------|------|
-| Session Start Hour | 7 (UTC) | ロンドンオープン |
-| Session End Hour | 16 (UTC) | ロンドンクローズ |
+| Session Start Hour | 13 (UTC) | ニューヨークオープン（冬時間UTC） |
+| Session End Hour | 21 (UTC) | ニューヨーククローズ（EOD強制決済） |
 | Opening Range | 15 min | OR計算ウィンドウ |
+| Min OR Width | 20.0 pips | 最小OR幅 |
+| ORB Buffer | 3.0 pips | ダマシ防止バッファ |
+| DST Rule | US | 自動サマータイム調整 |
 
 #### ガードレール
 | パラメータ | デフォルト | 説明 |
 |-----------|-----------|------|
-| Min SL | 3.0 pips | 最小ストップロス |
-| Max SL | 30.0 pips | 最大ストップロス |
+| Min SL | 20.0 pips | 最小ストップロス |
+| Max SL | 80.0 pips | 最大ストップロス |
+| Min TP | 30.0 pips | 最小テイクプロフィット |
+| Max TP | 250.0 pips | 最大テイクプロフィット |
+| Max Giveback | 30.0 pips | 決済強制ギブバック閾値 |
 | Max Loss Streak | 3 | N回損失後にブロック |
 | Bias Flip Exit | true | バイアス変化時の自動クローズ |
-
 ### ポートフォリオマネージャー設定
 
 `app/portfolio.py`を編集：

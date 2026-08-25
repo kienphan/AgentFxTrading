@@ -160,7 +160,7 @@ Server sẽ chạy tại `http://127.0.0.1:8000`
 6. Cấu hình parameters:
    - **Bot ID**: `bot1` (identifier duy nhất)
    - **API URL**: `http://127.0.0.1:8000/trade`
-   - **Session**: London (7:00-16:00 UTC)
+   - **Session**: New York (13:00-21:00 UTC) / London (8:00-17:00 UTC)
 
 ### 5. Bắt Đầu Giao Dịch! 🎉
 
@@ -192,7 +192,7 @@ ORB cung cấp **thời điểm vào lệnh chính xác**:
 
 1. **Opening Range**: High/Low của 15 phút đầu phiên
 2. **Breakout**: Giá đóng cửa vượt qua ranh giới OR
-3. **Bộ Lọc Quyết Định**: Breakout phải ≥ 3 pips (tránh false breakouts)
+3. **Bộ Lọc Quyết Định**: Breakout phải dứt khoát (≥ MinDecisiveBreakoutPips, mặc định 10.0 pips cho XAUUSD)
 
 ### Quy Tắc Vào Lệnh
 
@@ -213,10 +213,10 @@ ELSE:
 |-----------|-----------|
 | TDI Green flat/hook/checkmark | CLOSE_ALL |
 | Bias đảo ngược | Tự động đóng |
-| Phiên kết thúc | Tự động đóng |
-| Lợi nhuận ≥ 5p | Di chuyển SL về breakeven |
-| Lợi nhuận ≥ 10p | Trail SL 5p |
-| Giveback ≥ ngưỡng | Tự động đóng |
+| Phiên kết thúc (EOD) | Tự động đóng toàn bộ lệnh (EOD Force-Flatten safety net) |
+| Lợi nhuận ≥ 30p | Di chuyển SL về breakeven (+2p offset) |
+| Lợi nhuận ≥ 50p | Trail SL 25p |
+| Giveback ≥ 30p | Tự động đóng (Max giveback protection) |
 
 ---
 
@@ -242,31 +242,37 @@ ELSE:
 |---------|----------|-------|
 | Max Bars After Cross | 5 | Cửa sổ vào lệnh |
 | Min Angle Delta | 0.0 | Bộ lọc góc (0=tắt) |
-| Min Decisive Breakout | 3.0 pips | Độ mạnh breakout |
+| Min Decisive Breakout | 10.0 pips | Độ mạnh breakout (tối ưu mặc định cho XAUUSD) |
 
 #### Quản Lý Thoát Lệnh
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
 | Flat Threshold | 0.01 | Độ phẳng TDI |
-| Breakeven Trigger | 5.0 pips | Lợi nhuận để di chuyển SL |
-| Trail Trigger | 10.0 pips | Lợi nhuận để bắt đầu trailing |
-| Trail Distance | 5.0 pips | Khoảng cách SL từ giá |
+| Breakeven Trigger | 30.0 pips | Lợi nhuận để di chuyển SL |
+| Breakeven Offset | 2.0 pips | Lợi nhuận giữ lại khi về breakeven |
+| Trail Trigger | 50.0 pips | Lợi nhuận để bắt đầu trailing |
+| Trail Distance | 25.0 pips | Khoảng cách SL từ giá |
 
 #### Phiên
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
-| Session Start Hour | 7 (UTC) | London mở cửa |
-| Session End Hour | 16 (UTC) | London đóng cửa |
+| Session Start Hour | 13 (UTC) | New York mở cửa (Winter UTC) |
+| Session End Hour | 21 (UTC) | New York đóng cửa (EOD force-flatten) |
 | Opening Range | 15 min | Cửa sổ tính toán OR |
+| Min OR Width | 20.0 pips | Độ rộng OR tối thiểu |
+| ORB Buffer | 3.0 pips | Vùng đệm tránh fakeout |
+| DST Rule | US | Tự động điều chỉnh giờ mùa hè (DST) |
 
 #### Guardrails
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
-| Min SL | 3.0 pips | Stop loss tối thiểu |
-| Max SL | 30.0 pips | Stop loss tối đa |
+| Min SL | 20.0 pips | Stop loss tối thiểu |
+| Max SL | 80.0 pips | Stop loss tối đa |
+| Min TP | 30.0 pips | Take profit tối thiểu |
+| Max TP | 250.0 pips | Take profit tối đa |
+| Max Giveback | 30.0 pips | Ngưỡng giveback để đóng lệnh |
 | Max Loss Streak | 3 | Chặn sau N lần thua |
 | Bias Flip Exit | true | Tự động đóng khi bias thay đổi |
-
 ### Cài Đặt Portfolio Manager
 
 Chỉnh sửa `app/portfolio.py`:

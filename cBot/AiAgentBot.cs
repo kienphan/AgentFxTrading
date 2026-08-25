@@ -53,7 +53,7 @@ namespace cAlgo.Robots
         [Parameter("Min Angle Delta (0=off)", Group = "Entry", DefaultValue = 0.0, MinValue = 0, Step = 0.05)]
         public double MinAngleDelta { get; set; }
 
-        [Parameter("Min Decisive Breakout (pips)", Group = "Entry", DefaultValue = 3.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Min Decisive Breakout (pips)", Group = "Entry", DefaultValue = 10.0, MinValue = 0, Step = 0.5)]
         public double MinDecisiveBreakoutPips { get; set; }
 
         // ---- Exit ----
@@ -63,59 +63,55 @@ namespace cAlgo.Robots
         [Parameter("Checkmark Threshold", Group = "Exit", DefaultValue = 0.0, MinValue = 0)]
         public double CheckMarkThreshold { get; set; }
 
-        [Parameter("Breakeven Trigger (pips)", Group = "Exit", DefaultValue = 5.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Breakeven Trigger (pips)", Group = "Exit", DefaultValue = 30.0, MinValue = 0, Step = 1.0)]
         public double BreakevenTriggerPips { get; set; }
 
-        [Parameter("Breakeven Offset (pips)", Group = "Exit", DefaultValue = 0.5, MinValue = 0, Step = 0.1)]
+        [Parameter("Breakeven Offset (pips)", Group = "Exit", DefaultValue = 2.0, MinValue = 0, Step = 0.5)]
         public double BreakevenOffsetPips { get; set; }
 
-        [Parameter("Trail Trigger (pips)", Group = "Exit", DefaultValue = 10.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Trail Trigger (pips)", Group = "Exit", DefaultValue = 50.0, MinValue = 0, Step = 1.0)]
         public double TrailTriggerPips { get; set; }
 
-        [Parameter("Trail Distance (pips)", Group = "Exit", DefaultValue = 5.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Trail Distance (pips)", Group = "Exit", DefaultValue = 25.0, MinValue = 0, Step = 1.0)]
         public double TrailDistancePips { get; set; }
-
         // ---- ORB ----
-        [Parameter("ORB Start Hour (Winter UTC)", Group = "ORB", DefaultValue = 8)]
+        [Parameter("ORB Start Hour (Winter UTC)", Group = "ORB", DefaultValue = 13)]
         public int OrbStartHour { get; set; }
 
         [Parameter("ORB Opening Range (minutes)", Group = "ORB", DefaultValue = 15, MinValue = 1)]
         public int OrbOpeningRangeMinutes { get; set; }
 
-        [Parameter("Min OR Width (pips)", Group = "ORB", DefaultValue = 2.0, MinValue = 0, Step = 0.1)]
+        [Parameter("Min OR Width (pips)", Group = "ORB", DefaultValue = 20.0, MinValue = 0, Step = 1.0)]
         public double MinOrWidthPips { get; set; }
 
-        [Parameter("ORB Buffer (pips)", Group = "ORB", DefaultValue = 0.0, MinValue = 0)]
+        [Parameter("ORB Buffer (pips)", Group = "ORB", DefaultValue = 3.0, MinValue = 0, Step = 0.5)]
         public double OrbBufferPips { get; set; }
-
         [Parameter("Max Bars After Breakout", Group = "ORB", DefaultValue = 5, MinValue = 1)]
         public int MaxBarsAfterBreakout { get; set; }
         // ---- Session / EOD ----
-        [Parameter("DST Rule (Auto-adjust UTC)", Group = "Session", DefaultValue = DstRule.Europe)]
+        [Parameter("DST Rule (Auto-adjust UTC)", Group = "Session", DefaultValue = DstRule.US)]
         public DstRule SessionDstRule { get; set; }
 
-        [Parameter("Session End Hour (Winter UTC, 0=off)", Group = "Session", DefaultValue = 17, MinValue = 0)]
+        [Parameter("Session End Hour (Winter UTC, 0=off)", Group = "Session", DefaultValue = 21, MinValue = 0)]
         public int SessionEndHour { get; set; }
 
         [Parameter("Session End Minute", Group = "Session", DefaultValue = 0, MinValue = 0)]
         public int SessionEndMinute { get; set; }
 
-        [Parameter("Session Name", Group = "Session", DefaultValue = "london")]
+        [Parameter("Session Name", Group = "Session", DefaultValue = "newyork")]
         public string SessionName { get; set; }
-
         // ---- Guardrails ----
-        [Parameter("Min SL Distance (pips)", Group = "Guardrails", DefaultValue = 3.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Min SL Distance (pips)", Group = "Guardrails", DefaultValue = 20.0, MinValue = 0, Step = 1.0)]
         public double MinSlPips { get; set; }
 
-        [Parameter("Max SL Distance (pips)", Group = "Guardrails", DefaultValue = 30.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Max SL Distance (pips)", Group = "Guardrails", DefaultValue = 80.0, MinValue = 0, Step = 1.0)]
         public double MaxSlPips { get; set; }
 
-        [Parameter("Min TP Distance (pips)", Group = "Guardrails", DefaultValue = 3.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Min TP Distance (pips)", Group = "Guardrails", DefaultValue = 30.0, MinValue = 0, Step = 1.0)]
         public double MinTpPips { get; set; }
 
-        [Parameter("Max TP Distance (pips)", Group = "Guardrails", DefaultValue = 100.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Max TP Distance (pips)", Group = "Guardrails", DefaultValue = 250.0, MinValue = 0, Step = 5.0)]
         public double MaxTpPips { get; set; }
-
         [Parameter("Max Loss Streak", Group = "Guardrails", DefaultValue = 3, MinValue = 0)]
         public int MaxLossStreak { get; set; }
 
@@ -125,9 +121,8 @@ namespace cAlgo.Robots
         [Parameter("Bias Flip Exit", Group = "Guardrails", DefaultValue = true)]
         public bool BiasFlipExit { get; set; }
 
-        [Parameter("Max Giveback (pips, 0=off)", Group = "Guardrails", DefaultValue = 0.0, MinValue = 0, Step = 0.5)]
+        [Parameter("Max Giveback (pips, 0=off)", Group = "Guardrails", DefaultValue = 30.0, MinValue = 0, Step = 1.0)]
         public double MaxGivebackPips { get; set; }
-
         [Parameter("Show Logs", Group = "General", DefaultValue = true)]
         public bool ShowLogs { get; set; }
         #endregion
@@ -300,6 +295,8 @@ namespace cAlgo.Robots
             _rawK = CreateDataSeries();
             _kSeries = CreateDataSeries();
             _dSeries = CreateDataSeries();
+
+            Positions.Closed += OnPositionClosed;
 
             if (ShowLogs) Print($"AiAgentBot started | TF={TimeFrame.Name} | Session={SessionName}");
         }
@@ -557,62 +554,6 @@ namespace cAlgo.Robots
             else if (hookDn || hookUp) reason = "hook";
         }
 
-        // ==========================================
-        // ORB LOGIC
-        // ==========================================
-
-        private void UpdateOrb(int index)
-        {
-            var barTime = Bars[index].OpenTime;
-            string currentDate = barTime.ToString("yyyy-MM-dd");
-
-            if (_lastOrbDate != currentDate)
-            {
-                _orHigh = double.MinValue;
-                _orLow = double.MaxValue;
-                _orComplete = false;
-                _breakoutDir = null;
-                _breakoutPrice = 0;
-                _breakoutBar = -1;
-                _lastOrbDate = currentDate;
-            }
-
-            int barTotalMinutes = barTime.Hour * 60 + barTime.Minute;
-            int orStartMinutes = OrbStartHour * 60;
-            int orEndMinutes = OrbStartHour * 60 + OrbOpeningRangeMinutes;
-
-            if (barTotalMinutes >= orStartMinutes && barTotalMinutes < orEndMinutes)
-            {
-                if (Bars[index].High > _orHigh) _orHigh = Bars[index].High;
-                if (Bars[index].Low < _orLow) _orLow = Bars[index].Low;
-            }
-
-            if (barTotalMinutes >= orEndMinutes && !_orComplete && _orHigh > double.MinValue)
-            {
-                double orWidthPips = (_orHigh - _orLow) / Symbol.PipSize;
-                if (orWidthPips >= MinOrWidthPips)
-                    _orComplete = true;
-            }
-
-            if (_orComplete && _breakoutDir == null && _orHigh > double.MinValue)
-            {
-                double buffer = OrbBufferPips * Symbol.PipSize;
-                double currentClose = Bars[index].Close;
-
-                if (currentClose > _orHigh + buffer)
-                {
-                    _breakoutDir = "up";
-                    _breakoutPrice = currentClose;
-                    _breakoutBar = index;
-                }
-                else if (currentClose < _orLow - buffer)
-                {
-                    _breakoutDir = "down";
-                    _breakoutPrice = currentClose;
-                    _breakoutBar = index;
-                }
-            }
-        }
 
         private OrbData GetOrbData(int index)
         {
@@ -839,18 +780,15 @@ namespace cAlgo.Robots
             if (SessionEndHour == 0) return;
             if (Positions.Count == 0) return;
 
-            var now = Server.TimeInUtc;
-            int nowMinutes = now.Hour * 60 + now.Minute;
-            int adjustedEndHour = GetAdjustedHour(now, SessionEndHour, SessionDstRule);
-            int sessionEnd = adjustedEndHour * 60 + SessionEndMinute;
-
-            // Need a tolerance or exact check. If it's exactly session end or within 1 min after
-            if (nowMinutes == sessionEnd)
+            var session = GetSessionInfo();
+            
+            // EOD Force-Flatten (Safety net theo mô hình dnse-kash): Đóng toàn bộ lệnh khi phiên kết thúc
+            if (!session.is_trading_time)
             {
                 foreach (var pos in Positions)
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[EOD] Pos#{pos.Id} closed at session end");
+                    if (ShowLogs) Print($"[EOD Force-Flatten] Pos#{pos.Id} closed outside trading session (phase={session.phase}, UTC={Server.TimeInUtc:HH:mm:ss})");
                 }
             }
         }
@@ -871,7 +809,7 @@ namespace cAlgo.Robots
             _lastClosedTradeDay = today;
         }
 
-        protected override void OnPositionClosed(PositionClosedEventArgs args)
+        private void OnPositionClosed(PositionClosedEventArgs args)
         {
             double pnl = args.Position.NetProfit;
             _dayPnl += pnl;
@@ -997,11 +935,12 @@ namespace cAlgo.Robots
                 return;
             }
 
-            // Guardrail: block entry if not in trading session
+            // Guardrail: block entry if not in trading session or session is ending (EOD buffer)
             var session = GetSessionInfo();
-            if (!session.is_trading_time && (decision.action == "BUY" || decision.action == "SELL"))
+            if ((!session.is_trading_time || session.phase == "ending" || session.phase == "closed") &&
+                (decision.action == "BUY" || decision.action == "SELL"))
             {
-                if (ShowLogs) Print($"[Guardrail] Blocked: session={session.phase}");
+                if (ShowLogs) Print($"[Guardrail] Blocked entry: session={session.phase} (minutes_to_end={session.minutes_to_end})");
                 return;
             }
 
