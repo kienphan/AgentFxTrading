@@ -273,6 +273,24 @@ ELSE:
 | Max Giveback | 30.0 pips | 決済強制ギブバック閾値 |
 | Max Loss Streak | 3 | N回損失後にブロック |
 | Bias Flip Exit | true | バイアス変化時の自動クローズ |
+
+### 📊 通貨ペア別推奨プリセット
+
+| パラメータ | XAUUSD (ゴールド) | EURUSD | GBPUSD | USDJPY |
+| :--- | :--- | :--- | :--- | :--- |
+| **取引セッション** | ニューヨーク (`13:00 - 21:00 UTC`) | ロンドン (`08:00 - 17:00 UTC`) | ロンドン (`08:00 - 17:00 UTC`) | 東京 / NY (`00:00 - 09:00` / `13:00 - 21:00 UTC`) |
+| **DSTルール** | `US` | `Europe` | `Europe` | `None` (東京) / `US` (NY) |
+| **Min Decisive Breakout** | `10.0 pips` | `3.0 pips` | `4.5 pips` | `4.0 pips` |
+| **Min OR Width** | `20.0 pips` | `6.0 pips` | `10.0 pips` | `8.0 pips` |
+| **ORB Buffer** | `3.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Breakeven Trigger** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Breakeven Offset** | `2.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Trail Trigger** | `50.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Trail Distance** | `25.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Min SL / Max SL** | `20.0 / 80.0 pips` | `6.0 / 20.0 pips` | `8.0 / 30.0 pips` | `8.0 / 25.0 pips` |
+| **Min TP / Max TP** | `30.0 / 250.0 pips` | `10.0 / 50.0 pips` | `15.0 / 80.0 pips` | `15.0 / 70.0 pips` |
+| **Max Giveback** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **推奨タイムフレーム** | `M5` または `M15` | `M15` | `M15` | `M15` |
 ### ポートフォリオマネージャー設定
 
 `app/portfolio.py`を編集：

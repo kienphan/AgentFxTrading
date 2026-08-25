@@ -264,6 +264,24 @@ ELSE:
 | Max Giveback | 30.0 pips | 利润回撤强制平仓阈值 |
 | Max Loss Streak | 3 | N次亏损后阻止 |
 | Bias Flip Exit | true | 偏向变化时自动平仓 |
+
+### 📊 推荐交易品种预设参数
+
+| 参数 | XAUUSD (黄金) | EURUSD | GBPUSD | USDJPY |
+| :--- | :--- | :--- | :--- | :--- |
+| **交易时段** | 纽约时段 (`13:00 - 21:00 UTC`) | 伦敦时段 (`08:00 - 17:00 UTC`) | 伦敦时段 (`08:00 - 17:00 UTC`) | 东京 / 纽约 (`00:00 - 09:00` / `13:00 - 21:00 UTC`) |
+| **夏令时规则 (DST)** | `US` | `Europe` | `Europe` | `None` (东京) / `US` (纽约) |
+| **Min Decisive Breakout** | `10.0 pips` | `3.0 pips` | `4.5 pips` | `4.0 pips` |
+| **Min OR Width** | `20.0 pips` | `6.0 pips` | `10.0 pips` | `8.0 pips` |
+| **ORB Buffer** | `3.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Breakeven Trigger** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Breakeven Offset** | `2.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Trail Trigger** | `50.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Trail Distance** | `25.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Min SL / Max SL** | `20.0 / 80.0 pips` | `6.0 / 20.0 pips` | `8.0 / 30.0 pips` | `8.0 / 25.0 pips` |
+| **Min TP / Max TP** | `30.0 / 250.0 pips` | `10.0 / 50.0 pips` | `15.0 / 80.0 pips` | `15.0 / 70.0 pips` |
+| **Max Giveback** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **推荐时间框架** | `M5` 或 `M15` | `M15` | `M15` | `M15` |
 ### 投资组合管理器设置
 
 编辑`app/portfolio.py`：

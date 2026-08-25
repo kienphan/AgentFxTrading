@@ -273,6 +273,24 @@ ELSE:
 | Max Giveback | 30.0 pips | Limite de giveback para fechar posição |
 | Max Loss Streak | 3 | Bloquear após N perdas |
 | Bias Flip Exit | true | Fechamento automático na mudança de viés |
+
+### 📊 Predefinições Recomendadas por Par
+
+| Parâmetro | XAUUSD (Ouro) | EURUSD | GBPUSD | USDJPY |
+| :--- | :--- | :--- | :--- | :--- |
+| **Sessão de Negociação** | Nova York (`13:00 - 21:00 UTC`) | Londres (`08:00 - 17:00 UTC`) | Londres (`08:00 - 17:00 UTC`) | Tóquio / NY (`00:00 - 09:00` / `13:00 - 21:00 UTC`) |
+| **Regra DST** | `US` | `Europe` | `Europe` | `None` (Tóquio) / `US` (NY) |
+| **Min Decisive Breakout** | `10.0 pips` | `3.0 pips` | `4.5 pips` | `4.0 pips` |
+| **Min OR Width** | `20.0 pips` | `6.0 pips` | `10.0 pips` | `8.0 pips` |
+| **ORB Buffer** | `3.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Breakeven Trigger** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Breakeven Offset** | `2.0 pips` | `1.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Trail Trigger** | `50.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Trail Distance** | `25.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Min SL / Max SL** | `20.0 / 80.0 pips` | `6.0 / 20.0 pips` | `8.0 / 30.0 pips` | `8.0 / 25.0 pips` |
+| **Min TP / Max TP** | `30.0 / 250.0 pips` | `10.0 / 50.0 pips` | `15.0 / 80.0 pips` | `15.0 / 70.0 pips` |
+| **Max Giveback** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Timeframe Recomendado** | `M5` ou `M15` | `M15` | `M15` | `M15` |
 ### Configurações do Portfolio Manager
 
 Editar `app/portfolio.py`:
