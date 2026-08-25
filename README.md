@@ -1,299 +1,270 @@
 # AgentFxTrading
 
-**Autonomous AI Trading Agent** for Forex and Commodities.
+Hệ thống giao dịch tự động sử dụng AI Agent kết hợp cTrader cBot với chiến lược TMS (Trend Momentum Signal) + ORB (Opening Range Breakout).
 
-Combines **TMS (Trading Maid Simple)** strategy with **ORB (Opening Range Breakout)** confirmation, powered by LLM (Qwen/DeepSeek/OpenAI/Anthropic/Gemini) for autonomous trading via cTrader Remote MCP.
+## Kiến trúc
+
+```
+┌─────────────────┐      HTTP POST      ┌──────────────────┐
+│  cTrader cBot   │ ──────────────────► │  FastAPI Server  │
+│     (C#)        │                     │    (Python)      │
+│                 │ ◄────────────────── │                  │
+│  • Tính TMS     │      JSON Response  │  • Build prompt  │
+│  • Tính ORB     │                     │  • Gọi LLM       │
+│  • Gửi snapshot │                     │  • Parse decision│
+└─────────────────┘                     └──────────────────┘
+                                                   │
+                                                   ▼
+                                        ┌──────────────────┐
+                                        │   LLM Provider   │
+                                        │  • Qwen (DashScope)│
+                                        │  • OpenAI        │
+                                        │  • Claude        │
+                                        │  • DeepSeek      │
+                                        └──────────────────┘
+```
 
 ## Features
 
-### Core Strategy
-- **TMS (H1)** — Directional bias using TDI (Green/Red lines), Heiken Ashi, and Stochastic
-- **ORB (M15)** — Entry confirmation using Opening Range Breakout from London session
-- **Multi-symbol** — Trade multiple pairs simultaneously (XAUUSD, EURUSD, GBPUSD, USDJPY, etc.)
-- **Session filtering** — Only trade during London (07:00-16:00 UTC) and New York (12:00-21:00 UTC) sessions
+### cBot (C#)
+- **TMS Indicators**: Heiken Ashi, TDI (RSI + Signal), Stochastic
+- **ORB Logic**: Opening Range detection, breakout detection
+- **TF Green State**: Momentum tracking (value + slope)
+- **Position Memory**: MFE (Maximum Favorable Excursion), giveback tracking
+- **Auto Exit Management**: Breakeven, trailing stop, max giveback
+- **Session Management**: Session phases, EOD auto-close
+- **Guardrails**: Loss streak protection, bias flip exit, decisive breakout check
 
-### Risk Management
-- **Position sizing** — Automatic calculation based on account equity and risk %
-- **ATR-based SL validation** — Prevents liquidity sweeps (SL must be ≥ 1.5x ATR)
-- **Spread filter** — Skip trades when spread is too wide
-- **Volatility filter** — Skip trades during extreme volatility (ATR > 90th percentile)
-- **Portfolio risk** — Correlation checks, currency exposure limits, total heat management
-- **News filter** — AI-based detection of market anomalies (volatility spikes, spread widening, volume spikes)
+### Server (Python)
+- **LLM Abstraction**: Support Qwen, OpenAI, Claude, DeepSeek
+- **Strategy Logic**: TMS bias + ORB breakout alignment
+- **Decision Rules**: Entry/exit conditions, risk management
+- **JSON Response**: Structured trading decisions
 
-### AI Integration
-- **Multi-provider support** — Qwen, DeepSeek, OpenAI, Anthropic, Gemini
-- **Autonomous execution** — Agent analyzes, decides, and executes trades automatically
-- **cTrader Remote MCP** — Direct integration with cTrader broker
+## Cài đặt
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        agent.py (CLI)                                │
-│                                                                      │
-│  python agent.py --once          # Single analysis                   │
-│  python agent.py --cycle 60      # Run every 60 minutes              │
-└──────────────────────────────────┬──────────────────────────────────┘
-                                   │
-        ┌──────────────────────────┼──────────────────────────┐
-        │                          │                          │
-        ▼                          ▼                          ▼
-┌───────────────┐      ┌───────────────────┐      ┌─────────────────┐
-│  cTrader MCP  │      │   TMS Indicator   │      │  Risk Manager   │
-│               │      │                   │      │                 │
-│ • get_candles │      │ • Heiken Ashi     │      │ • Position size │
-│ • get_balance │      │ • TDI Green/Red   │      │ • Daily loss    │
-│ • place_order │      │ • Stochastic      │      │ • Max drawdown  │
-│ • close_pos   │      │ • Bias detection  │      │ • ATR validation│
-└───────────────┘      └───────────────────┘      └─────────────────┘
-        │                          │                          │
-        └──────────────────────────┼──────────────────────────┘
-                                   │
-                                   ▼
-                        ┌───────────────────┐
-                        │   ORB Indicator   │
-                        │                   │
-                        │ • Opening Range   │
-                        │ • Breakout detect │
-                        │ • Entry trigger   │
-                        └───────────────────┘
-                                   │
-                                   ▼
-                        ┌───────────────────┐
-                        │   LLM (Qwen)      │
-                        │                   │
-                        │ • TMS bias + ORB  │
-                        │ • Decision making │
-                        │ • Entry/SL/TP     │
-                        └───────────────────┘
-                                   │
-                                   ▼
-                        ┌───────────────────┐
-                        │   EXECUTE ORDER   │
-                        │   (via MCP)       │
-                        └───────────────────┘
-```
-
-## Strategy Logic
-
-### TMS = BIAS (H1 timeframe)
-- **BULLISH**: TDI Green > Red + HA green + Stoch K > D
-- **BEARISH**: TDI Green < Red + HA red + Stoch K < D
-- **NEUTRAL**: Mixed signals → NO TRADE
-
-Bias is **locked** at the last TDI cross and stays until the next cross in the opposite direction.
-
-### ORB = ENTRY (M15 timeframe)
-- Opening Range = First 15 minutes of London session (07:00-07:15 UTC)
-- **Only enter when ORB breaks in direction of TMS bias**
-
-| TMS Bias | ORB Breakout | Action |
-|----------|--------------|--------|
-| BULLISH | UP | ✅ BUY |
-| BEARISH | DOWN | ✅ SELL |
-| BULLISH | DOWN | ❌ HOLD (counter-trend) |
-| BEARISH | UP | ❌ HOLD (counter-trend) |
-| NEUTRAL | Any | ❌ HOLD (no bias) |
-
-## Installation
+### 1. Python Dependencies
 
 ```bash
-# Clone repository
-git clone https://github.com/kienphan/AgentFxTrading.git
-cd AgentFxTrading
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials
 ```
 
-## Configuration
+### 2. Cấu hình LLM Provider
 
-### 1. cTrader Remote MCP
+Copy `.env.example` thành `.env` và cấu hình:
 
-1. Login to **cTrader Web** → **Settings** → **Remote MCP**
-2. Copy the configuration (URL + Bearer token)
-3. Add to `.env`:
-
-```env
-CTRADER_MCP_URL=https://mcp.ctrader.com/trading/mcp
-CTRADER_MCP_TOKEN=your_bearer_token_here
-```
-
-### 2. LLM Provider
-
-**Qwen (default):**
-```env
+#### Qwen (Recommended - Cost efficient)
+```bash
 LLM_PROVIDER=qwen
-LLM_API_KEY=sk-xxx
+DASHSCOPE_API_KEY=sk-your-dashscope-key
 LLM_MODEL=qwen-max
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-**DeepSeek:**
-```env
+#### OpenAI
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-openai-key
+LLM_MODEL=gpt-4o-mini
+```
+
+#### Claude
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-your-key
+LLM_MODEL=claude-3-5-sonnet-20241022
+```
+
+#### DeepSeek
+```bash
 LLM_PROVIDER=deepseek
-LLM_API_KEY=sk-xxx
+DEEPSEEK_API_KEY=sk-your-deepseek-key
 LLM_MODEL=deepseek-chat
 ```
 
-**Other providers:** OpenAI, Anthropic, Gemini (see `.env.example`)
+## Chạy Server
 
-### 3. Trading Configuration
-
-```env
-# Symbols to trade
-SYMBOLS=XAUUSD,EURUSD,GBPUSD,USDJPY
-TIMEFRAME=H1              # TMS timeframe
-ORB_TIMEFRAME=M15         # ORB timeframe
-
-# Trading sessions (UTC)
-TRADING_SESSIONS=london,newyork
-LONDON_START=7
-LONDON_END=16
-NEWYORK_START=12
-NEWYORK_END=21
-```
-
-### 4. Risk Management
-
-```env
-# Basic risk
-RISK_PER_TRADE_PCT=1.0        # Risk 1% per trade
-MAX_DAILY_LOSS_PCT=3.0        # Stop if daily loss > 3%
-MAX_DRAWDOWN_PCT=10.0         # Stop if drawdown > 10%
-MAX_POSITIONS=3               # Max concurrent positions
-MIN_RR_RATIO=1.5              # Minimum risk/reward ratio
-
-# XAUUSD protection
-MAX_SPREAD_PIPS=5.0           # Skip if spread > 5 pips
-MIN_SL_ATR_MULTIPLE=1.5       # SL must be >= 1.5x ATR
-SYMBOL_RISK_OVERRIDES=XAUUSD:0.5:50  # XAUUSD: 0.5% risk, 50 pip max SL
-```
-
-### 5. Per-Symbol ORB Sessions
-
-```env
-# Different sessions for different symbols
-ORB_SYMBOL_SESSIONS=USDJPY:tokyo:0,USDCAD:newyork:12
-```
-
-## Usage
-
-### Single Analysis
 ```bash
-python agent.py --once
+python app/server.py
 ```
 
-### Continuous Mode
-```bash
-# Run every 60 minutes
-python agent.py --cycle 60
+Server sẽ chạy tại `http://127.0.0.1:8000`
+
+## Chạy cBot
+
+1. Mở cTrader → Automate
+2. Tạo bot mới, paste code từ `cBot/AiAgentBot.cs`
+3. Build và attach vào chart (M15 hoặc H1)
+4. Cấu hình parameters:
+   - **API**: `http://127.0.0.1:8000/trade`
+   - **TDI**: RSI Period=6, Red Period=6
+   - **Stochastic**: K=6, D=6, Slowing=4
+   - **ORB**: Session Start Hour=7 (London), Opening Range=15 minutes
+   - **Session**: End Hour=16 (London close)
+   - **Exit**: Breakeven Trigger=5p, Trail Trigger=10p
+   - **Guardrails**: Min SL=3p, Max SL=30p, Max Loss Streak=3
+
+Bot sẽ tự động gọi API mỗi khi nến đóng và thực thi quyết định từ AI.
+
+## Cấu trúc Project
+
+```
+.
+├── app/
+│   ├── llm_client.py      # LLM abstraction layer
+│   └── server.py          # FastAPI server (bộ não AI)
+├── cBot/
+│   └── AiAgentBot.cs      # cTrader cBot (người thực thi)
+├── .env.example           # Template biến môi trường
+├── requirements.txt       # Python dependencies
+└── README.md
 ```
 
-### Dry Run (No Execution)
-```bash
-python agent.py --once --dry-run
-```
+## Chiến lược Giao dịch
 
-### Override Symbols
-```bash
-python agent.py --once --symbols XAUUSD,EURUSD
-```
+### TMS (Trend Momentum Signal) - Xác định Bias
+- **BULLISH**: Green cắt lên Red + HA green + Stoch K > D
+- **BEARISH**: Green cắt xuống Red + HA red + Stoch K < D
+- Bias được khóa cho đến khi có cross ngược lại
 
-### Verbose Logging
-```bash
-python agent.py --once --verbose
-```
+### ORB (Opening Range Breakout) - Trigger Entry
+- **Opening Range**: High/Low của N nến đầu phiên (mặc định London 7:00-7:15 UTC)
+- **Breakout**: Giá đóng cửa vượt OR High (bullish) hoặc OR Low (bearish)
+- **Decisive**: Breakout phải đủ mạnh (>= 3 pips) để tránh false breakout
 
-## Output Example
+### Entry Rules
+1. TMS BULLISH + ORB breakout UP + decisive → BUY
+2. TMS BEARISH + ORB breakout DOWN + decisive → SELL
+3. Mismatch hoặc không decisive → HOLD
 
+### Exit Rules
+- **TDI Exit**: Green flat/hook/checkmark → CLOSE_ALL
+- **Bias Flip**: Bias đảo chiều → auto close
+- **Session End**: Hết phiên → auto close
+- **Breakeven**: Profit >= 5p → dời SL về entry
+- **Trailing**: Profit >= 10p → trail SL 5p
+- **Max Giveback**: Giveback >= threshold → auto close
+
+### Guardrails
+- Loss streak >= 3 → block entry
+- ORB ngược chiều → block entry
+- SL/TP clamped vào [Min, Max]
+
+## API Endpoint
+
+### POST /trade
+
+**Request** (từ cBot):
 ```json
 {
-  "ok": true,
-  "cycle": 1,
   "symbol": "XAUUSD",
-  "timeframe": "H1",
-  "session": "london",
-  "action": "BUY",
-  "executed": true,
-  "order": {
-    "symbol": "XAUUSD",
-    "side": "buy",
-    "volume": 0.05,
-    "entry": 2350.50,
-    "sl": 2340.00,
-    "tp": 2370.00,
-    "risk_amount": 50.00
+  "timeframe": "M15",
+  "ask": 2450.15,
+  "bid": 2450.10,
+  "bars": [
+    {"ha_color": "Green", "tdi_green": 55.2, "tdi_red": 52.1, "stoch_k": 75.0, "stoch_d": 70.0},
+    {"ha_color": "Green", "tdi_green": 54.8, "tdi_red": 51.9, "stoch_k": 72.0, "stoch_d": 68.0},
+    {"ha_color": "Red", "tdi_green": 53.5, "tdi_red": 52.5, "stoch_k": 65.0, "stoch_d": 62.0}
+  ],
+  "tms": {
+    "bias": "BULLISH",
+    "bars_since_cross": 2,
+    "cross_direction": "up",
+    "long_entry": true,
+    "short_entry": false,
+    "exit_long": false,
+    "exit_short": false,
+    "green_tf_value": 55.2,
+    "green_tf_slope": 0.4
   },
-  "tms_bias": "BULLISH",
-  "orb_breakout": "UP",
-  "alignment": "ALIGNED",
-  "risk_status": {
-    "equity": 10000.00,
-    "daily_pnl": 0.0,
-    "drawdown_pct": 0.0
-  }
+  "orb": {
+    "or_high": 2448.50,
+    "or_low": 2445.20,
+    "or_complete": true,
+    "breakout_direction": "up",
+    "breakout_distance_pips": 16.5,
+    "is_decisive": true,
+    "bars_since_breakout": 1,
+    "in_entry_window": true
+  },
+  "position": null,
+  "session": {
+    "session_name": "london",
+    "phase": "active",
+    "minutes_to_end": 180,
+    "is_trading_time": true
+  },
+  "loss_streak": 0,
+  "day_pnl": 0,
+  "trades_today": 0
 }
 ```
 
-## Project Structure
-
-```
-AgentFxTrading/
-├── agent.py                 # CLI entry point
-├── app/
-│   ├── agent/
-│   │   ├── client.py        # LLM client (multi-provider)
-│   │   ├── portfolio.py     # Portfolio risk management
-│   │   ├── prompt.py        # TMS + ORB system prompt
-│   │   ├── risk.py          # Trade risk management
-│   │   ├── snapshot.py      # MCP client + snapshot builder
-│   │   └── trader.py        # Autonomous trader
-│   ├── core/
-│   │   ├── config.py        # Settings (Pydantic)
-│   │   └── logger.py        # Logging (Loguru)
-│   ├── indicators/
-│   │   ├── orb.py           # ORB indicator (M15)
-│   │   └── tms.py           # TMS indicator (H1)
-│   └── news/
-│       ├── anomaly.py       # AI-based news detection
-│       └── calendar.py      # API-based news calendar
-├── .env.example             # Environment template
-├── requirements.txt         # Python dependencies
-└── README.md                # This file
+**Response** (từ AI):
+```json
+{
+  "action": "BUY",
+  "volume_lots": 0.01,
+  "sl_pips": 10.0,
+  "tp_pips": 20.0,
+  "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+16.5p), momentum rising"
+}
 ```
 
-## Risk Disclaimer
+## Phát triển
 
-⚠️ **Trading involves substantial risk of loss. This software is provided for educational purposes only.**
+### Cải thiện Prompt
+Edit `SYSTEM_PROMPT` trong `app/server.py` để điều chỉnh logic giao dịch.
 
-- Always test on demo accounts before live trading
-- Never risk more than you can afford to lose
-- Past performance does not guarantee future results
-- The authors are not responsible for any trading losses
+### Thêm LLM Provider mới
+Thêm class mới trong `app/llm_client.py` kế thừa `LLMClient` và update `create_llm_client()`.
+
+### Multi-symbol
+Chạy nhiều cBot instances trên các chart khác nhau, mỗi bot gọi cùng server.
+
+### Backtest
+1. Attach cBot vào chart với Visual Mode
+2. Server sẽ nhận request và trả về decision
+3. Review logs để đánh giá chiến lược
+
+## Tham số cBot
+
+### TDI
+- `RSI Period`: 6 (mặc định)
+- `Red Period`: 6 (mặc định)
+
+### Stochastic
+- `%K Period`: 6
+- `%D Period`: 6
+- `Slowing`: 4
+
+### Entry
+- `Max Bars After Cross`: 5
+- `Min Angle Delta`: 0.0 (off)
+- `Min Decisive Breakout`: 3.0 pips
+
+### Exit
+- `Flat Threshold`: 0.01
+- `Breakeven Trigger`: 5.0 pips
+- `Trail Trigger`: 10.0 pips
+- `Trail Distance`: 5.0 pips
+- `Max Giveback`: 0.0 (off)
+
+### ORB
+- `Session Start Hour`: 7 (UTC)
+- `Opening Range`: 15 minutes
+- `Min OR Width`: 2.0 pips
+- `Max Bars After Breakout`: 5
+
+### Session
+- `Session End Hour`: 16 (UTC)
+- `Session Name`: "london"
+
+### Guardrails
+- `Min SL`: 3.0 pips
+- `Max SL`: 30.0 pips
+- `Max Loss Streak`: 3
+- `Bias Flip Exit`: true
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Credits
-
-- **TMS Strategy** — Based on "Best of Big E I & II" by eelfranz (Forex Factory)
-- **cTrader Remote MCP** — Official cTrader API integration
-- **TDI Indicator** — Traders Dynamic Index
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
-
-## Support
-
-For questions or issues, please open a GitHub issue.
+MIT
