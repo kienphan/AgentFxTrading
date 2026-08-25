@@ -4,409 +4,144 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        .profit { color: #10b981; }
-        .loss { color: #ef4444; }
-        .neutral { color: #6b7280; }
-        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: .5; }
-        }
-    </style>
 </head>
-<body class="bg-gray-900 text-white">
-    <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <div class="mb-8">
-            <h1 class="text-4xl font-bold mb-2">🤖 AgentFxTrading Dashboard</h1>
-            <p class="text-gray-400">Real-time monitoring of your AI trading system</p>
-            <div class="flex items-center mt-2">
-                <div id="connection-status" class="flex items-center">
-                    <span class="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-                    <span class="text-sm text-gray-400">Disconnected</span>
-                </div>
-            </div>
+<body class="app-shell">
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-title">AgentFxTrading</div>
+            <div class="brand-subtitle">Multi-account AI trading monitor</div>
         </div>
-
-        <!-- Summary Cards -->
-        <!-- Account Selector -->
-        <div class="mb-6 bg-gray-800 rounded-lg p-4 flex items-center justify-between">
-            <label for="account-selector" class="text-gray-400 font-bold mr-4">Account:</label>
-            <select id="account-selector" class="bg-gray-700 text-white rounded p-2 flex-grow focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="all">All Accounts</option>
-                {% for account in accounts %}
-                <option value="{{ account.account_id }}">
-                    {{ account.label }} ({{ account.account_number }}) - 
-                    {% if account.account_type == 'live' %}LIVE{% else %}DEMO{% endif %}
-                </option>
-                {% endfor %}
-            </select>
+        <div class="topbar-controls">
+            <div class="account-select-wrap">
+                <label for="account-selector">Account</label>
+                <select id="account-selector" class="account-select">
+                    <option value="all">All Accounts</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.account_id }}">
+                        {{ account.label }} ({{ account.account_number }}) — {% if account.account_type == 'live' %}LIVE{% else %}DEMO{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div id="connection-status" class="status-pill status-pill--offline">
+                <span class="status-dot"></span><span>Disconnected</span>
+            </div>
+            <span id="last-updated" class="last-updated"></span>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-8">
-            <div id="account-balance-card" class="bg-gray-800 rounded-lg p-4 {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
-                <div class="text-gray-400 text-xs mb-1">Balance</div>
-                <div id="account-balance" class="text-xl font-bold">${{ summary.account_balance or 0 }}</div>
+    </header>
+    <main class="main-content">
+        <div class="kpi-grid">
+            <div id="account-balance-card" class="kpi-card {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+                <div class="kpi-label">Balance</div>
+                <div id="account-balance" class="kpi-value kpi-value--mono">${{ summary.account_balance or 0 }}</div>
             </div>
-            <div id="account-equity-card" class="bg-gray-800 rounded-lg p-4 {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
-                <div class="text-gray-400 text-xs mb-1">Equity</div>
-                <div id="account-equity" class="text-xl font-bold">${{ summary.account_equity or 0 }}</div>
+            <div id="account-equity-card" class="kpi-card {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+                <div class="kpi-label">Equity</div>
+                <div id="account-equity" class="kpi-value kpi-value--mono">${{ summary.account_equity or 0 }}</div>
             </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Open Positions</div>
-                <div id="open-positions" class="text-3xl font-bold">{{ summary.open_positions }}</div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Daily P&L</div>
-                <div id="daily-pnl" class="text-3xl font-bold {% if summary.daily_pnl >= 0 %}profit{% else %}loss{% endif %}">
-                    ${{ summary.daily_pnl }}
-                </div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Total P&L</div>
-                <div id="total-pnl" class="text-3xl font-bold {% if summary.total_pnl >= 0 %}profit{% else %}loss{% endif %}">
-                    ${{ summary.total_pnl }}
-                </div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Win Rate</div>
-                <div id="win-rate" class="text-3xl font-bold">{{ summary.win_rate }}%</div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Trades Today</div>
-                <div id="trades-today" class="text-3xl font-bold">{{ summary.trades_today }}</div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-1">Loss Streak</div>
-                <div id="loss-streak" class="text-3xl font-bold {% if summary.loss_streak >= 3 %}loss pulse{% else %}neutral{% endif %}">
-                    {{ summary.loss_streak }}
-                </div>
-            </div>
+            <div class="kpi-card"><div class="kpi-label">Open Positions</div><div id="open-positions" class="kpi-value">{{ summary.open_positions }}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Daily P&amp;L</div><div id="daily-pnl" class="kpi-value {% if summary.daily_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.daily_pnl > 0 %}+{% endif %}${{ summary.daily_pnl }}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Total P&amp;L</div><div id="total-pnl" class="kpi-value {% if summary.total_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.total_pnl > 0 %}+{% endif %}${{ summary.total_pnl }}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Win Rate</div><div id="win-rate" class="kpi-value">{{ summary.win_rate }}%</div></div>
+            <div class="kpi-card"><div class="kpi-label">Trades Today</div><div id="trades-today" class="kpi-value">{{ summary.trades_today }}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Loss Streak</div><div id="loss-streak" class="kpi-value {% if summary.loss_streak >= 3 %}kpi-value--warn{% endif %}">{{ summary.loss_streak }}</div></div>
         </div>
-
-        <!-- P&L Chart -->
-        <div class="bg-gray-800 rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-bold mb-4">Daily P&L (Last 30 Days)</h2>
-            <canvas id="pnl-chart" height="100"></canvas>
-        </div>
-
-        <!-- Active Positions -->
-        <div class="bg-gray-800 rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-bold mb-4">Active Positions</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="text-left text-gray-400 border-b border-gray-700">
-                            <th class="pb-3 col-account">Account</th>
-                            <th class="pb-3">Bot ID</th>
-                            <th class="pb-3">Symbol</th>
-                            <th class="pb-3">Side</th>
-                            <th class="pb-3">Volume</th>
-                            <th class="pb-3">Entry Price</th>
-                            <th class="pb-3">SL (pips)</th>
-                            <th class="pb-3">TP (pips)</th>
-                            <th class="pb-3">Entry Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="positions-table">
+        <div class="content-grid">
+            <section class="panel">
+                <div class="panel-header"><span class="panel-title">Active Positions</span></div>
+                <div class="panel-body"><div class="table-wrap">
+                    <table class="data-table"><thead><tr>
+                        <th class="col-account">Account</th><th>Bot</th><th>Symbol</th><th>Side</th><th>Vol</th><th>Entry</th><th>SL</th><th>TP</th><th>Time</th>
+                    </tr></thead><tbody id="positions-table">
                         {% for pos in positions %}
-                        <tr class="border-b border-gray-700 hover:bg-gray-750">
-                            <td class="py-3 col-account text-sm">
-                                {% if pos.account_type == 'live' %}
-                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>
-                                {% else %}
-                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>
-                                {% endif %}
-                                <br/>{{ pos.account_label }}
-                            </td>
-                            <td class="py-3">{{ pos.bot_id }}</td>
-                            <td class="py-3 font-mono">{{ pos.symbol }}</td>
-                            <td class="py-3">
-                                <span class="px-2 py-1 rounded text-xs font-bold {% if pos.side == 'BUY' %}bg-green-900 text-green-300{% else %}bg-red-900 text-red-300{% endif %}">
-                                    {{ pos.side }}
-                                </span>
-                            </td>
-                            <td class="py-3">{{ pos.volume }}</td>
-                            <td class="py-3 font-mono">{{ pos.entry_price }}</td>
-                            <td class="py-3">{{ pos.sl_pips }}</td>
-                            <td class="py-3">{{ pos.tp_pips }}</td>
-                            <td class="py-3 text-sm text-gray-400">{{ pos.entry_time }}</td>
-                        </tr>
-                        {% else %}
                         <tr>
-                            <td colspan="9" class="py-8 text-center text-gray-500">No active positions</td>
+                            <td class="col-account account-cell">{% if pos.account_type == 'live' %}<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>{% else %}<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>{% endif %}<span class="account-name">{{ pos.account_label }}</span></td>
+                            <td>{{ pos.bot_id }}</td><td class="td-mono">{{ pos.symbol }}</td>
+                            <td>{% if pos.side == 'BUY' %}<span class="side-chip side-chip--buy">BUY</span>{% else %}<span class="side-chip side-chip--sell">SELL</span>{% endif %}</td>
+                            <td>{{ pos.volume }}</td><td class="td-mono">{{ pos.entry_price }}</td><td>{{ pos.sl_pips }}</td><td>{{ pos.tp_pips }}</td><td class="td-dim">{{ pos.entry_time }}</td>
                         </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+                        {% else %}<tr><td colspan="9" class="empty-state">No active positions</td></tr>{% endfor %}
+                    </tbody></table>
+                </div></div>
+            </section>
+            <section class="panel">
+                <div class="panel-header"><span class="panel-title">Daily P&amp;L · 30D</span></div>
+                <div class="panel-body panel-body--chart"><canvas id="pnl-chart"></canvas></div>
+            </section>
         </div>
-
-        <!-- Trade History -->
-        <div class="bg-gray-800 rounded-lg p-6">
-            <h2 class="text-2xl font-bold mb-4">Recent Trades</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="text-left text-gray-400 border-b border-gray-700">
-                            <th class="pb-3 col-account">Account</th>
-                            <th class="pb-3">Bot ID</th>
-                            <th class="pb-3">Symbol</th>
-                            <th class="pb-3">Side</th>
-                            <th class="pb-3">Volume</th>
-                            <th class="pb-3">Entry</th>
-                            <th class="pb-3">Exit</th>
-                            <th class="pb-3">P&L</th>
-                            <th class="pb-3">Closed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for trade in history %}
-                        <tr class="border-b border-gray-700 hover:bg-gray-750">
-                            <td class="py-3 col-account text-sm">
-                                {% if trade.account_type == 'live' %}
-                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>
-                                {% else %}
-                                <span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>
-                                {% endif %}
-                                <br/>{{ trade.account_label }}
-                            </td>
-                            <td class="py-3">{{ trade.bot_id }}</td>
-                            <td class="py-3 font-mono">{{ trade.symbol }}</td>
-                            <td class="py-3">
-                                <span class="px-2 py-1 rounded text-xs font-bold {% if trade.side == 'BUY' %}bg-green-900 text-green-300{% else %}bg-red-900 text-red-300{% endif %}">
-                                    {{ trade.side }}
-                                </span>
-                            </td>
-                            <td class="py-3">{{ trade.volume }}</td>
-                            <td class="py-3 font-mono text-sm">{{ trade.entry_price }}</td>
-                            <td class="py-3 font-mono text-sm">{{ trade.exit_price }}</td>
-                            <td class="py-3 font-bold {% if trade.pnl >= 0 %}profit{% else %}loss{% endif %}">
-                                ${{ trade.pnl }}
-                            </td>
-                            <td class="py-3 text-sm text-gray-400">{{ trade.exit_time }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="9" class="py-8 text-center text-gray-500">No trade history</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+        <section class="panel">
+            <div class="panel-header"><span class="panel-title">Recent Trades</span></div>
+            <div class="panel-body"><div class="table-wrap">
+                <table class="data-table"><thead><tr>
+                    <th class="col-account">Account</th><th>Bot</th><th>Symbol</th><th>Side</th><th>Vol</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Closed</th>
+                </tr></thead><tbody id="history-table">
+                    {% for trade in history %}
+                    <tr>
+                        <td class="col-account account-cell">{% if trade.account_type == 'live' %}<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>{% else %}<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>{% endif %}<span class="account-name">{{ trade.account_label }}</span></td>
+                        <td>{{ trade.bot_id }}</td><td class="td-mono">{{ trade.symbol }}</td>
+                        <td>{% if trade.side == 'BUY' %}<span class="side-chip side-chip--buy">BUY</span>{% else %}<span class="side-chip side-chip--sell">SELL</span>{% endif %}</td>
+                        <td>{{ trade.volume }}</td><td class="td-mono">{{ trade.entry_price }}</td><td class="td-mono">{{ trade.exit_price }}</td>
+                        <td class="{% if trade.pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">{% if trade.pnl > 0 %}+{% endif %}${{ trade.pnl }}</td>
+                        <td class="td-dim">{{ trade.exit_time }}</td>
+                    </tr>
+                    {% else %}<tr><td colspan="9" class="empty-state">No trade history</td></tr>{% endfor %}
+                </tbody></table>
+            </div></div>
+        </section>
+    </main>
 
     <script>
-        // Initialize P&L Chart
-        const ctx = document.getElementById('pnl-chart').getContext('2d');
-        const pnlData = {{ pnl_history | tojson }};
-        
-        const pnlChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: pnlData.map(d => d.date),
-                datasets: [{
-                    label: 'Daily P&L ($)',
-                    data: pnlData.map(d => d.pnl),
-                    backgroundColor: pnlData.map(d => d.pnl >= 0 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
-                    borderColor: pnlData.map(d => d.pnl >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)'),
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(75, 85, 99, 0.3)'
-                        },
-                        ticks: {
-                            color: '#9ca3af'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            color: 'rgba(75, 85, 99, 0.3)'
-                        },
-                        ticks: {
-                            color: '#9ca3af'
-                        }
-                    }
-                }
-            }
+        function formatMoney(v){const n=Number(v)||0;const s=n>0?'+':'';return s+'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+        function pnlClass(v){return Number(v)>=0?'kpi-value--profit':'kpi-value--loss'}
+        function accountBadge(t){return t==='live'?'<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>':'<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>'}
+        function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${s}</span>`}
+
+        let selectedAccountId='all';
+        const accountSelector=document.getElementById('account-selector');
+        accountSelector.addEventListener('change',async(e)=>{
+            selectedAccountId=e.target.value;
+            try{const[sR,pR,hR,cR]=await Promise.all([
+                fetch(`/api/dashboard/summary?account_id=${selectedAccountId}`),
+                fetch(`/api/dashboard/positions?account_id=${selectedAccountId}`),
+                fetch(`/api/dashboard/history?account_id=${selectedAccountId}`),
+                fetch(`/api/dashboard/pnl-history?account_id=${selectedAccountId}`)
+            ]);
+            updateDashboard(await sR.json(),await pR.json());
+            updateTradeHistory(await hR.json());
+            updatePnlChart(await cR.json());
+            }catch(err){console.error('Fetch error:',err)}
         });
 
-        // WebSocket connection for real-time updates
-        let ws = null;
-        let pingInterval = null;
+        const ctx=document.getElementById('pnl-chart').getContext('2d');
+        const pnlData={{ pnl_history | tojson }};
+        const pnlChart=new Chart(ctx,{type:'bar',data:{labels:pnlData.map(d=>d.date),datasets:[{label:'Daily P&L',data:pnlData.map(d=>d.pnl),backgroundColor:pnlData.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),borderColor:pnlData.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),borderWidth:1,borderRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#333',titleColor:'#f0f0f0',bodyColor:'#a0a0a0'}},scales:{y:{beginAtZero:true,grid:{color:'rgba(64,64,64,0.5)'},ticks:{color:'#a0a0a0',callback:v=>'$'+v}},x:{grid:{display:false},ticks:{color:'#a0a0a0',maxRotation:0}}}}});
 
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
-            
-            ws = new WebSocket(wsUrl);
-            
-            ws.onopen = function() {
-                console.log('WebSocket connected');
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-                    <span class="text-sm text-gray-400">Connected</span>
-                `;
-                
-                // Send ping every 5 seconds to keep connection alive and get updates
-                pingInterval = setInterval(() => {
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send('ping');
-                    }
-                }, 5000);
-            };
-            
-            ws.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                if (data.type === 'update') {
-                    updateDashboard(data.summary, data.positions);
-                }
-            };
-            
-            ws.onclose = function() {
-                console.log('WebSocket disconnected');
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-                    <span class="text-sm text-gray-400">Disconnected</span>
-                `;
-                clearInterval(pingInterval);
-                
-                // Reconnect after 3 seconds
-                setTimeout(connectWebSocket, 3000);
-            };
-            
-            ws.onerror = function(error) {
-                console.error('WebSocket error:', error);
-            };
-        }
+        function updatePnlChart(h){pnlChart.data.labels=h.map(d=>d.date);pnlChart.data.datasets[0].data=h.map(d=>d.pnl);pnlChart.data.datasets[0].backgroundColor=h.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)');pnlChart.data.datasets[0].borderColor=h.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)');pnlChart.update()}
 
-        function updateDashboard(summary, positions) {
-            // Update summary cards
-            document.getElementById('open-positions').textContent = summary.open_positions;
-            
-            const dailyPnlEl = document.getElementById('daily-pnl');
-            dailyPnlEl.textContent = `$${summary.daily_pnl}`;
-            dailyPnlEl.className = `text-3xl font-bold ${summary.daily_pnl >= 0 ? 'profit' : 'loss'}`;
-            
-            const totalPnlEl = document.getElementById('total-pnl');
-            totalPnlEl.textContent = `$${summary.total_pnl}`;
-            totalPnlEl.className = `text-3xl font-bold ${summary.total_pnl >= 0 ? 'profit' : 'loss'}`;
-            
-            document.getElementById('win-rate').textContent = `${summary.win_rate}%`;
-            document.getElementById('trades-today').textContent = summary.trades_today;
-            
-            const lossStreakEl = document.getElementById('loss-streak');
-            lossStreakEl.textContent = summary.loss_streak;
-            lossStreakEl.className = `text-3xl font-bold ${summary.loss_streak >= 3 ? 'loss pulse' : 'neutral'}`;
-            
-            // Update positions table
-            const tbody = document.getElementById('positions-table');
-            
-            // Toggle columns
-            const accountCols = document.querySelectorAll('.col-account');
-            if (selectedAccountId === 'all') {
-                accountCols.forEach(el => el.classList.remove('hidden'));
-            } else {
-                accountCols.forEach(el => el.classList.add('hidden'));
-            }
-            
-            // Toggle balance/equity
-            const balCard = document.getElementById('account-balance-card');
-            const eqCard = document.getElementById('account-equity-card');
-            if (selectedAccountId === 'all') {
-                balCard.classList.add('hidden');
-                eqCard.classList.add('hidden');
-            } else {
-                balCard.classList.remove('hidden');
-                eqCard.classList.remove('hidden');
-                document.getElementById('account-balance').textContent = `$${summary.account_balance || 0}`;
-                document.getElementById('account-equity').textContent = `$${summary.account_equity || 0}`;
-            }
-            
-            if (positions.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="9" class="py-8 text-center text-gray-500">No active positions</td>
-                    </tr>
-                `;
-            } else {
-                tbody.innerHTML = positions.map(pos => `
-                    <tr class="border-b border-gray-700 hover:bg-gray-750">
-                        <td class="py-3 col-account text-sm ${selectedAccountId === 'all' ? '' : 'hidden'}">
-                            ${pos.account_type === 'live' ? 
-                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>' : 
-                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>'}
-                            <br/>${pos.account_label || ''}
-                        </td>
-                        <td class="py-3">${pos.bot_id}</td>
-                        <td class="py-3 font-mono">${pos.symbol}</td>
-                        <td class="py-3">
-                            <span class="px-2 py-1 rounded text-xs font-bold ${pos.side === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}">
-                                ${pos.side}
-                            </span>
-                        </td>
-                        <td class="py-3">${pos.volume}</td>
-                        <td class="py-3 font-mono">${pos.entry_price}</td>
-                        <td class="py-3">${pos.sl_pips}</td>
-                        <td class="py-3">${pos.tp_pips}</td>
-                        <td class="py-3 text-sm text-gray-400">${pos.entry_time}</td>
-                    </tr>
-                `).join('');
-            }
-        }
-        
-        function updateTradeHistory(history) {
-            const tbody = document.getElementById('history-table');
-            if (!tbody) return;
-            
-            if (history.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="9" class="py-8 text-center text-gray-500">No trade history</td>
-                    </tr>
-                `;
-            } else {
-                tbody.innerHTML = history.map(trade => `
-                    <tr class="border-b border-gray-700 hover:bg-gray-750">
-                        <td class="py-3 col-account text-sm ${selectedAccountId === 'all' ? '' : 'hidden'}">
-                            ${trade.account_type === 'live' ? 
-                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-green-900 text-green-300">LIVE</span>' : 
-                                '<span class="px-1 py-0.5 rounded text-[10px] font-bold bg-yellow-900 text-yellow-300">DEMO</span>'}
-                            <br/>${trade.account_label || ''}
-                        </td>
-                        <td class="py-3">${trade.bot_id}</td>
-                        <td class="py-3 font-mono">${trade.symbol}</td>
-                        <td class="py-3">
-                            <span class="px-2 py-1 rounded text-xs font-bold ${trade.side === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}">
-                                ${trade.side}
-                            </span>
-                        </td>
-                        <td class="py-3">${trade.volume}</td>
-                        <td class="py-3 font-mono text-sm">${trade.entry_price}</td>
-                        <td class="py-3 font-mono text-sm">${trade.exit_price}</td>
-                        <td class="py-3 font-bold ${trade.pnl >= 0 ? 'profit' : 'loss'}">$${trade.pnl}</td>
-                        <td class="py-3 text-sm text-gray-400">${trade.exit_time}</td>
-                    </tr>
-                `).join('');
-            }
-        }
+        let ws=null,pingInterval=null;
+        function setConn(on){const el=document.getElementById('connection-status');if(on){el.className='status-pill status-pill--online';el.innerHTML='<span class="status-dot"></span><span>Connected</span>'}else{el.className='status-pill status-pill--offline';el.innerHTML='<span class="status-dot"></span><span>Disconnected</span>'}}
+        function connectWebSocket(){const p=window.location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${window.location.host}/ws/dashboard`);ws.onopen=()=>{setConn(true);pingInterval=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'ping',account_id:selectedAccountId}))},5000)};ws.onmessage=(e)=>{const d=JSON.parse(e.data);if(d.type==='update')updateDashboard(d.summary,d.positions)};ws.onclose=()=>{setConn(false);clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};ws.onerror=(e)=>console.error('WS error:',e)}
 
-        // Start WebSocket connection
+        function updateDashboard(summary,positions){
+            document.getElementById('open-positions').textContent=summary.open_positions;
+            const dEl=document.getElementById('daily-pnl');dEl.textContent=formatMoney(summary.daily_pnl);dEl.className=`kpi-value ${pnlClass(summary.daily_pnl)}`;
+            const tEl=document.getElementById('total-pnl');tEl.textContent=formatMoney(summary.total_pnl);tEl.className=`kpi-value ${pnlClass(summary.total_pnl)}`;
+            document.getElementById('win-rate').textContent=`${summary.win_rate}%`;
+            document.getElementById('trades-today').textContent=summary.trades_today;
+            const lEl=document.getElementById('loss-streak');lEl.textContent=summary.loss_streak;lEl.className=`kpi-value ${summary.loss_streak>=3?'kpi-value--warn':''}`;
+            document.getElementById('last-updated').textContent=new Date().toLocaleTimeString();
+            document.querySelectorAll('.col-account').forEach(el=>{selectedAccountId==='all'?el.classList.remove('hidden'):el.classList.add('hidden')});
+            const bC=document.getElementById('account-balance-card'),eC=document.getElementById('account-equity-card');
+            if(selectedAccountId==='all'){bC.classList.add('hidden');eC.classList.add('hidden')}else{bC.classList.remove('hidden');eC.classList.remove('hidden');document.getElementById('account-balance').textContent=formatMoney(summary.account_balance||0);document.getElementById('account-equity').textContent=formatMoney(summary.account_equity||0)}
+            const tb=document.getElementById('positions-table'),ah=selectedAccountId==='all'?'':'hidden';
+            if(!positions.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No active positions</td></tr>'}else{tb.innerHTML=positions.map(p=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td><td>${p.bot_id}</td><td class="td-mono">${p.symbol}</td><td>${sideChip(p.side)}</td><td>${p.volume}</td><td class="td-mono">${p.entry_price}</td><td>${p.sl_pips}</td><td>${p.tp_pips}</td><td class="td-dim">${p.entry_time}</td></tr>`).join('')}
+        }
+        function updateTradeHistory(history){
+            const tb=document.getElementById('history-table');if(!tb)return;const ah=selectedAccountId==='all'?'':'hidden';
+            if(!history.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>'}else{tb.innerHTML=history.map(t=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td><td>${t.bot_id}</td><td class="td-mono">${t.symbol}</td><td>${sideChip(t.side)}</td><td>${t.volume}</td><td class="td-mono">${t.entry_price}</td><td class="td-mono">${t.exit_price}</td><td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'}">${formatMoney(t.pnl)}</td><td class="td-dim">${t.exit_time}</td></tr>`).join('')}
+        }
         connectWebSocket();
     </script>
-</body>
-</html>
+</body></html>

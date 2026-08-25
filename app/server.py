@@ -26,6 +26,9 @@ from app.dashboard import router as dashboard_router, broadcast_update
 from app.accounts import init_account_registry, get_account_registry
 app = FastAPI(title="TMS+ORB Agent Server")
 
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
+
 # Mount dashboard router
 app.include_router(dashboard_router)
 # Initialize Account Registry
