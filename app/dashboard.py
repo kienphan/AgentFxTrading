@@ -242,6 +242,40 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
     return get_daily_pnl_history(days, account_id)
 
 
+@router.get("/api/dashboard/logs")
+async def api_dashboard_logs(lines: int = 100, date_str: Optional[str] = None):
+    logs_dir = PROJECT_ROOT / "logs"
+    if not logs_dir.exists():
+        return {"lines": [], "date": date_str or date.today().isoformat(), "available_dates": []}
+    
+    today = date_str or date.today().isoformat()
+    log_file = logs_dir / f"agent_{today}.log"
+    
+    available_dates = [f.stem.replace("agent_", "") for f in sorted(logs_dir.glob("agent_*.log"), reverse=True)]
+    
+    if not log_file.exists():
+        if available_dates:
+            today = available_dates[0]
+            log_file = logs_dir / f"agent_{today}.log"
+        else:
+            return {"lines": [], "date": today, "available_dates": []}
+    
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+            tail_lines = all_lines[-lines:] if lines > 0 else all_lines
+            
+        return {
+            "lines": [line.rstrip("\r\n") for line in tail_lines],
+            "date": today,
+            "total_lines": len(all_lines),
+            "available_dates": available_dates
+        }
+    except Exception as e:
+        logger.error(f"Error reading log file {log_file}: {e}")
+        return {"lines": [f"Error reading log: {e}"], "date": today, "available_dates": available_dates}
+
+
 # WebSocket for real-time updates
 class ConnectionManager:
     """Manage WebSocket connections."""

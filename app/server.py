@@ -14,8 +14,40 @@ if str(PROJECT_ROOT) not in sys.path:
 # Load environment variables from .env
 load_dotenv(PROJECT_ROOT / ".env")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import datetime
+import logging.handlers
+
+_LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
+
+def setup_agent_logging(level=logging.INFO):
+    logs_dir = PROJECT_ROOT / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    # Daily rotating file handler (14 days backup)
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        logs_dir / f"agent_{today}.log",
+        when="midnight",
+        interval=1,
+        backupCount=14,
+        encoding="utf-8"
+    )
+    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+    file_handler.setLevel(level)
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
+    console_handler.setLevel(level)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    root_logger.handlers.clear()
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+setup_agent_logging(logging.INFO)
+logger = logging.getLogger("AgentFxTrading")
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -395,12 +427,21 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
     account_id = _resolve_account(snapshot)
-    logger.info(f"[{account_id}/{snapshot.bot_id}] {snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
+    regime_str = snapshot.market.regime if snapshot.market else "N/A"
+    er_str = f"{snapshot.market.er_session:.2f}" if snapshot.market and snapshot.market.er_session is not None else "N/A"
+    pos_str = f"{snapshot.position.side} pnl={snapshot.position.unrealized_pnl_pips:.1f}p" if snapshot.position else "FLAT"
+    sess_str = f"{snapshot.session.phase} ({snapshot.session.minutes_to_end}m)" if snapshot.session else "N/A"
+    
+    logger.info(
+        f"[SNAPSHOT] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
+        f"Bid/Ask={snapshot.bid:.5f}/{snapshot.ask:.5f} | TMS={snapshot.tms.bias} (age={snapshot.tms.bars_since_cross}) | "
+        f"Regime={regime_str} (ER={er_str}) | Pos={pos_str} | Session={sess_str}"
+    )
 
     # Deterministic Cycle Gate (Cost Gate - skip LLM when decision is deterministic)
     gated_decision = evaluate_cycle_gate(snapshot)
     if gated_decision is not None:
-        logger.info(f"[{account_id}/{snapshot.bot_id}] Cycle Gated: {gated_decision.action} | {gated_decision.reason}")
+        logger.info(f"[CYCLE GATE] GATED: {gated_decision.action} | Reason: {gated_decision.reason}")
         return gated_decision
 
     # Check portfolio risk before allowing new trades
@@ -447,8 +488,11 @@ async def trade_decision(snapshot: MarketSnapshot):
         
         # Parse JSON (handles markdown code blocks, etc.)
         decision_dict = JSONResponseParser.parse(result_str)
-
-        logger.info(f"[{account_id}/{snapshot.bot_id}] Decision: {decision_dict['action']} | {decision_dict.get('reason', '')[:50]}")
+        logger.info(
+            f"[LLM DECISION] {account_id}/{snapshot.bot_id} -> Action: {decision_dict['action']} | "
+            f"Vol: {decision_dict.get('volume_lots', 0.01)} lots | SL: {decision_dict.get('sl_pips', 0)}p | "
+            f"TP: {decision_dict.get('tp_pips', 0)}p | Reason: {decision_dict.get('reason', '')}"
+        )
 
         return AgentDecision(**decision_dict)
     except Exception as e:
@@ -507,7 +551,7 @@ async def report_position(request: dict):
             )
             
             if success:
-                logger.info(f"[{account_id}/{bot_id}] Position registered: {symbol} {side}")
+                logger.info(f"[PORTFOLIO EVENT] OPEN | {account_id}/{bot_id} | {symbol} {side} {volume} lots @ {entry_price} | SL={sl_pips}p TP={tp_pips}p")
                 try:
                     await broadcast_update()
                 except Exception:
@@ -534,7 +578,7 @@ async def report_position(request: dict):
                     await broadcast_update()
                 except Exception:
                     pass
-                return {"status": "success", "message": "Position closed"}
+                logger.info(f"[PORTFOLIO EVENT] CLOSE | {account_id}/{bot_id} | {symbol} | PnL: ${pnl:.2f}")
             else:
                 return {"status": "error", "message": "Failed to close position"}
         
