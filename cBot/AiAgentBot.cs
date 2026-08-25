@@ -13,6 +13,9 @@ namespace cAlgo.Robots
     public class AiAgentBot : Robot
     {
         #region Parameters
+        [Parameter("Bot ID", Group = "API", DefaultValue = "bot1")]
+        public string BotId { get; set; }
+
         [Parameter("Agent API URL", Group = "API", DefaultValue = "http://127.0.0.1:8000/trade")]
         public string ApiUrl { get; set; }
 
@@ -194,6 +197,7 @@ namespace cAlgo.Robots
 
         public class MarketSnapshot
         {
+            public string bot_id { get; set; }
             public string symbol { get; set; }
             public string timeframe { get; set; }
             public double ask { get; set; }
@@ -305,6 +309,7 @@ namespace cAlgo.Robots
 
             var snapshot = new MarketSnapshot
             {
+                bot_id = BotId,
                 symbol = SymbolName,
                 timeframe = TimeFrame.Name,
                 ask = Symbol.Ask,
@@ -772,6 +777,9 @@ namespace cAlgo.Robots
             {
                 _lossStreak = 0;
             }
+
+            // Report to portfolio manager
+            _ = ReportPositionClosed(args.SymbolName, pnl);
         }
 
         // ==========================================
@@ -799,6 +807,61 @@ namespace cAlgo.Robots
             catch (Exception ex)
             {
                 Print($"[Error] {ex.Message}");
+            }
+        }
+
+        private async Task ReportPositionOpen(Position position, double slPips, double tpPips)
+        {
+            try
+            {
+                var reportUrl = ApiUrl.Replace("/trade", "/portfolio/report");
+                var report = new
+                {
+                    bot_id = BotId,
+                    action = "open",
+                    symbol = SymbolName,
+                    side = position.TradeType.ToString(),
+                    volume = position.VolumeInUnits / Symbol.LotSize,
+                    entry_price = position.EntryPrice,
+                    sl_pips = slPips,
+                    tp_pips = tpPips
+                };
+
+                var json = JsonSerializer.Serialize(report);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                await _httpClient.PostAsync(reportUrl, content);
+                
+                if (ShowLogs) Print($"[Portfolio] Reported position open: {position.TradeType} {SymbolName}");
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[Portfolio] Failed to report position open: {ex.Message}");
+            }
+        }
+
+        private async Task ReportPositionClosed(Position position, double pnl)
+        {
+            try
+            {
+                var reportUrl = ApiUrl.Replace("/trade", "/portfolio/report");
+                var report = new
+                {
+                    bot_id = BotId,
+                    action = "close",
+                    symbol = SymbolName,
+                    exit_price = position.EntryPrice, // Will be updated with actual exit price
+                    pnl = pnl
+                };
+
+                var json = JsonSerializer.Serialize(report);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                await _httpClient.PostAsync(reportUrl, content);
+                
+                if (ShowLogs) Print($"[Portfolio] Reported position closed: {position.TradeType} {SymbolName}, PnL: {pnl:F2}");
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[Portfolio] Failed to report position closed: {ex.Message}");
             }
         }
 
@@ -876,8 +939,14 @@ namespace cAlgo.Robots
             }
 
             var result = ExecuteMarketOrder(tradeType, SymbolName, volume, "AI_Agent", slPips, tpPips);
-            if (result != null && result.IsSuccessful && ShowLogs)
-                Print($"[Entry] {tradeType} {volume} units | SL={slPips}p TP={tpPips}p");
+            if (result != null && result.IsSuccessful)
+            {
+                if (ShowLogs)
+                    Print($"[Entry] {tradeType} {volume} units | SL={slPips}p TP={tpPips}p");
+                
+                // Report position to portfolio manager
+                _ = ReportPositionOpen(result.Position, slPips, tpPips);
+            }
         }
 
         // ==========================================

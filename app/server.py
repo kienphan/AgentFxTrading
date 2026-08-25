@@ -7,11 +7,14 @@ from pydantic import BaseModel
 from typing import Optional, List
 from dotenv import load_dotenv
 from app.llm_client import create_llm_client, JSONResponseParser
+from app.portfolio import init_portfolio, get_portfolio_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AgentServer")
-
 app = FastAPI(title="TMS+ORB Agent Server")
+
+# Initialize Portfolio Manager
+portfolio_manager = init_portfolio("portfolio.db")
 
 # Create LLM client based on LLM_PROVIDER env variable
 # Supports: "qwen", "openai", "anthropic", "deepseek", "openai_compatible"
@@ -90,6 +93,7 @@ class SessionInfo(BaseModel):
     is_trading_time: bool
 
 class MarketSnapshot(BaseModel):
+    bot_id: str = "default"  # Bot identifier for portfolio tracking
     symbol: str
     timeframe: str
     ask: float
@@ -102,6 +106,7 @@ class MarketSnapshot(BaseModel):
     loss_streak: int = 0
     day_pnl: float = 0
     trades_today: int = 0
+    account_balance: float = 10000.0  # For margin calculation
 
 # ---- Output Format ----
 class AgentDecision(BaseModel):
@@ -172,18 +177,42 @@ SYSTEM_PROMPT = """You are an AUTONOMOUS trading agent using TMS for BIAS and OR
 
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
-    logger.info(f"{snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
+    logger.info(f"[{snapshot.bot_id}] {snapshot.symbol} {snapshot.timeframe} | TMS: {snapshot.tms.bias} | Pos: {snapshot.position is not None} | Session: {snapshot.session.phase if snapshot.session else 'N/A'}")
+
+    # Check portfolio risk before allowing new trades
+    if snapshot.position is None:  # No open position, might want to open new one
+        portfolio_status = portfolio_manager.get_portfolio_status()
+        open_positions = portfolio_status['total_positions']
+        
+        # Check if we can open a new position
+        can_trade, reason = portfolio_manager.check_risk(
+            symbol=snapshot.symbol,
+            side="BUY",  # Will be determined by LLM, just checking capacity
+            volume=0.01,  # Minimum volume
+            sl_pips=10.0,  # Reasonable SL
+            account_balance=snapshot.account_balance
+        )
+        
+        if not can_trade:
+            logger.warning(f"[{snapshot.bot_id}] Portfolio risk check failed: {reason}")
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0,
+                tp_pips=0,
+                reason=f"Portfolio constraint: {reason}"
+            )
 
     user_prompt = build_user_prompt(snapshot)
 
     try:
-        # Use abstracted LLM client (supports Qwen, OpenAI, Claude, DeepSeek)
+        # Use abstracted LLM client (supports Qwen, OpenAI, Claude, Gemini, DeepSeek)
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ]
         
-        # Qwen/OpenAI support response_format, Claude doesn't - handle both
+        # Qwen/OpenAI support response_format, Claude/Gemini don't - handle both
         kwargs = {"temperature": 0.1}
         if hasattr(llm_client, 'client') and hasattr(llm_client.client, 'chat'):
             kwargs["response_format"] = {"type": "json_object"}
@@ -193,11 +222,11 @@ async def trade_decision(snapshot: MarketSnapshot):
         # Parse JSON (handles markdown code blocks, etc.)
         decision_dict = JSONResponseParser.parse(result_str)
 
-        logger.info(f"Decision: {decision_dict['action']} | {decision_dict.get('reason', '')[:50]}")
+        logger.info(f"[{snapshot.bot_id}] Decision: {decision_dict['action']} | {decision_dict.get('reason', '')[:50]}")
 
         return AgentDecision(**decision_dict)
     except Exception as e:
-        logger.error(f"LLM Error: {e}")
+        logger.error(f"[{snapshot.bot_id}] LLM Error: {e}")
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
@@ -205,6 +234,76 @@ async def trade_decision(snapshot: MarketSnapshot):
             tp_pips=0,
             reason=f"Error: {e}"
         )
+
+
+@app.post("/portfolio/report")
+async def report_position(request: dict):
+    """
+    Report position changes from cBot.
+    Expected format: {"bot_id": "...", "action": "open|close", "symbol": "...", ...}
+    """
+    try:
+        bot_id = request.get("bot_id", "default")
+        action = request.get("action")
+        symbol = request.get("symbol")
+        
+        if action == "open":
+            side = request.get("side")
+            volume = request.get("volume", 0.01)
+            entry_price = request.get("entry_price")
+            sl_pips = request.get("sl_pips")
+            tp_pips = request.get("tp_pips")
+            
+            success = portfolio_manager.register_position(
+                bot_id=bot_id,
+                symbol=symbol,
+                side=side,
+                volume=volume,
+                entry_price=entry_price,
+                sl_pips=sl_pips,
+                tp_pips=tp_pips
+            )
+            
+            if success:
+                logger.info(f"[{bot_id}] Position registered: {symbol} {side}")
+                return {"status": "success", "message": "Position registered"}
+            else:
+                return {"status": "error", "message": "Failed to register position"}
+        
+        elif action == "close":
+            exit_price = request.get("exit_price")
+            pnl = request.get("pnl", 0)
+            
+            success = portfolio_manager.close_position(
+                bot_id=bot_id,
+                symbol=symbol,
+                exit_price=exit_price,
+                pnl=pnl
+            )
+            
+            if success:
+                logger.info(f"[{bot_id}] Position closed: {symbol}, PnL: {pnl}")
+                return {"status": "success", "message": "Position closed"}
+            else:
+                return {"status": "error", "message": "Failed to close position"}
+        
+        else:
+            return {"status": "error", "message": f"Unknown action: {action}"}
+    
+    except Exception as e:
+        logger.error(f"Portfolio report error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/portfolio/status")
+async def get_portfolio_status():
+    """Get current portfolio status."""
+    try:
+        status = portfolio_manager.get_portfolio_status()
+        return status
+    except Exception as e:
+        logger.error(f"Portfolio status error: {e}")
+        return {"error": str(e)}
 
 
 def build_user_prompt(snapshot: MarketSnapshot) -> str:
