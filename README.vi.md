@@ -2,18 +2,18 @@
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-Automated trading system using AI Agent integrated with cTrader cBot, implementing TMS (Trend Momentum Signal) + ORB (Opening Range Breakout) strategy.
+Hệ thống giao dịch tự động sử dụng AI Agent tích hợp với cTrader cBot, triển khai chiến lược TMS (Trend Momentum Signal) + ORB (Opening Range Breakout).
 
-## Architecture
+## Kiến trúc
 
 ```
 ┌─────────────────┐      HTTP POST      ┌──────────────────┐
 │  cTrader cBot   │ ──────────────────► │  FastAPI Server  │
 │     (C#)        │                     │    (Python)      │
 │                 │ ◄────────────────── │                  │
-│  • Calc TMS     │      JSON Response  │  • Build prompt  │
-│  • Calc ORB     │                     │  • Call LLM      │
-│  • Send snapshot│                     │  • Parse decision│
+│  • Tính TMS     │      JSON Response  │  • Xây dựng prompt│
+│  • Tính ORB     │                     │  • Gọi LLM       │
+│  • Gửi snapshot │                     │  • Phân tích quyết định│
 └─────────────────┘                     └──────────────────┘
                                                    │
                                                    ▼
@@ -27,36 +27,36 @@ Automated trading system using AI Agent integrated with cTrader cBot, implementi
                                         └──────────────────┘
 ```
 
-## Features
+## Tính năng
 
 ### cBot (C#)
-- **TMS Indicators**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **ORB Logic**: Opening Range detection, breakout detection
-- **TF Green State**: Momentum tracking (value + slope)
-- **Position Memory**: MFE (Maximum Favorable Excursion), giveback tracking
-- **Auto Exit Management**: Breakeven, trailing stop, max giveback
-- **Session Management**: Session phases, EOD auto-close
-- **Guardrails**: Loss streak protection, bias flip exit, decisive breakout check
+- **Chỉ báo TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
+- **Logic ORB**: Phát hiện Opening Range, phát hiện breakout
+- **Trạng thái TF Green**: Theo dõi momentum (giá trị + độ dốc)
+- **Bộ nhớ vị thế**: MFE (Maximum Favorable Excursion), theo dõi giveback
+- **Quản lý thoát tự động**: Breakeven, trailing stop, max giveback
+- **Quản lý phiên**: Các giai đoạn phiên, tự động đóng cuối ngày
+- **Guardrails**: Bảo vệ chuỗi thua, thoát khi bias đảo chiều, kiểm tra breakout quyết định
 
 ### Server (Python)
-- **LLM Abstraction**: Support Qwen, OpenAI, Claude, Gemini, DeepSeek
-- **Strategy Logic**: TMS bias + ORB breakout alignment
-- **Decision Rules**: Entry/exit conditions, risk management
-- **JSON Response**: Structured trading decisions
+- **Trừu tượng hóa LLM**: Hỗ trợ Qwen, OpenAI, Claude, Gemini, DeepSeek
+- **Logic chiến lược**: Căn chỉnh bias TMS + breakout ORB
+- **Quy tắc quyết định**: Điều kiện vào/ra, quản lý rủi ro
+- **Phản hồi JSON**: Quyết định giao dịch có cấu trúc
 
-## Installation
+## Cài đặt
 
-### 1. Python Dependencies
+### 1. Phụ thuộc Python
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure LLM Provider
+### 2. Cấu hình LLM Provider
 
-Copy `.env.example` to `.env` and configure:
+Sao chép `.env.example` thành `.env` và cấu hình:
 
-#### Qwen (Recommended - Cost efficient)
+#### Qwen (Khuyến nghị - Hiệu quả chi phí)
 ```bash
 LLM_PROVIDER=qwen
 DASHSCOPE_API_KEY=sk-your-dashscope-key
@@ -91,80 +91,80 @@ DEEPSEEK_API_KEY=sk-your-deepseek-key
 LLM_MODEL=deepseek-chat
 ```
 
-## Running the Server
+## Chạy Server
 
 ```bash
 python app/server.py
 ```
 
-Server will run at `http://127.0.0.1:8000`
+Server sẽ chạy tại `http://127.0.0.1:8000`
 
-## Running the cBot
+## Chạy cBot
 
-1. Open cTrader → Automate
-2. Create new bot, paste code from `cBot/AiAgentBot.cs`
-3. Build and attach to chart (M15 or H1)
-4. Configure parameters:
+1. Mở cTrader → Automate
+2. Tạo bot mới, dán code từ `cBot/AiAgentBot.cs`
+3. Build và attach vào chart (M15 hoặc H1)
+4. Cấu hình tham số:
    - **API**: `http://127.0.0.1:8000/trade`
    - **TDI**: RSI Period=6, Red Period=6
    - **Stochastic**: K=6, D=6, Slowing=4
-   - **ORB**: Session Start Hour=7 (London), Opening Range=15 minutes
-   - **Session**: End Hour=16 (London close)
+   - **ORB**: Session Start Hour=7 (London), Opening Range=15 phút
+   - **Session**: End Hour=16 (London đóng cửa)
    - **Exit**: Breakeven Trigger=5p, Trail Trigger=10p
    - **Guardrails**: Min SL=3p, Max SL=30p, Max Loss Streak=3
 
-The bot will automatically call the API on each bar close and execute AI decisions.
+Bot sẽ tự động gọi API mỗi khi nến đóng và thực thi quyết định từ AI.
 
-## Project Structure
+## Cấu trúc dự án
 
 ```
 .
 ├── app/
-│   ├── llm_client.py      # LLM abstraction layer
-│   ├── server.py          # FastAPI server (AI brain)
-│   └── portfolio.py       # Portfolio risk management
+│   ├── llm_client.py      # Lớp trừu tượng hóa LLM
+│   ├── server.py          # FastAPI server (bộ não AI)
+│   └── portfolio.py       # Quản lý rủi ro danh mục
 ├── cBot/
-│   └── AiAgentBot.cs      # cTrader cBot (executor)
-├── .env.example           # Environment template
-├── requirements.txt       # Python dependencies
-└── README.md
+│   └── AiAgentBot.cs      # cTrader cBot (bộ thực thi)
+├── .env.example           # Mẫu biến môi trường
+├── requirements.txt       # Phụ thuộc Python
+└── README.vi.md
 ```
 
-## Trading Strategy
+## Chiến lược giao dịch
 
-### TMS (Trend Momentum Signal) - Determine Bias
-- **BULLISH**: Green crosses above Red + HA green + Stoch K > D
-- **BEARISH**: Green crosses below Red + HA red + Stoch K < D
-- Bias is locked until next cross
+### TMS (Trend Momentum Signal) - Xác định Bias
+- **BULLISH**: Green cắt lên trên Red + HA green + Stoch K > D
+- **BEARISH**: Green cắt xuống dưới Red + HA red + Stoch K < D
+- Bias được khóa cho đến khi có cắt tiếp theo
 
-### ORB (Opening Range Breakout) - Entry Trigger
-- **Opening Range**: High/Low of first N candles of session (default London 7:00-7:15 UTC)
-- **Breakout**: Price closes above OR High (bullish) or OR Low (bearish)
-- **Decisive**: Breakout must be strong enough (>= 3 pips) to avoid false breakout
+### ORB (Opening Range Breakout) - Trigger vào lệnh
+- **Opening Range**: High/Low của N nến đầu phiên (mặc định London 7:00-7:15 UTC)
+- **Breakout**: Giá đóng cửa trên OR High (bullish) hoặc OR Low (bearish)
+- **Decisive**: Breakout phải đủ mạnh (>= 3 pips) để tránh false breakout
 
-### Entry Rules
+### Quy tắc vào lệnh
 1. TMS BULLISH + ORB breakout UP + decisive → BUY
 2. TMS BEARISH + ORB breakout DOWN + decisive → SELL
-3. Mismatch or not decisive → HOLD
+3. Mismatch hoặc không decisive → HOLD
 
-### Exit Rules
+### Quy tắc thoát lệnh
 - **TDI Exit**: Green flat/hook/checkmark → CLOSE_ALL
-- **Bias Flip**: Bias reverses → auto close
-- **Session End**: Session ends → auto close
-- **Breakeven**: Profit >= 5p → move SL to entry
-- **Trailing**: Profit >= 10p → trail SL 5p
-- **Max Giveback**: Giveback >= threshold → auto close
+- **Bias Flip**: Bias đảo chiều → tự động đóng
+- **Session End**: Kết thúc phiên → tự động đóng
+- **Breakeven**: Lợi nhuận >= 5p → dời SL về entry
+- **Trailing**: Lợi nhuận >= 10p → trail SL 5p
+- **Max Giveback**: Giveback >= ngưỡng → tự động đóng
 
 ### Guardrails
-- Loss streak >= 3 → block entry
-- ORB opposite direction → block entry
-- SL/TP clamped to [Min, Max]
+- Chuỗi thua >= 3 → chặn vào lệnh
+- ORB ngược hướng → chặn vào lệnh
+- SL/TP được kẹp trong [Min, Max]
 
 ## API Endpoint
 
 ### POST /trade
 
-**Request** (from cBot):
+**Request** (từ cBot):
 ```json
 {
   "symbol": "XAUUSD",
@@ -210,7 +210,7 @@ The bot will automatically call the API on each bar close and execute AI decisio
 }
 ```
 
-**Response** (from AI):
+**Response** (từ AI):
 ```json
 {
   "action": "BUY",
@@ -221,27 +221,27 @@ The bot will automatically call the API on each bar close and execute AI decisio
 }
 ```
 
-## Development
+## Phát triển
 
-### Improve Prompt
-Edit `SYSTEM_PROMPT` in `app/server.py` to adjust trading logic.
+### Cải thiện Prompt
+Chỉnh sửa `SYSTEM_PROMPT` trong `app/server.py` để điều chỉnh logic giao dịch.
 
-### Add New LLM Provider
-Add new class in `app/llm_client.py` inheriting `LLMClient` and update `create_llm_client()`.
+### Thêm LLM Provider mới
+Thêm class mới trong `app/llm_client.py` kế thừa `LLMClient` và cập nhật `create_llm_client()`.
 
 ### Multi-symbol
-Run multiple cBot instances on different charts, each bot calls the same server.
+Chạy nhiều cBot instances trên các chart khác nhau, mỗi bot gọi cùng server.
 
 ### Backtest
-1. Attach cBot to chart with Visual Mode
-2. Server will receive requests and return decisions
-3. Review logs to evaluate strategy
+1. Attach cBot vào chart với Visual Mode
+2. Server sẽ nhận request và trả về quyết định
+3. Xem lại logs để đánh giá chiến lược
 
-## cBot Parameters
+## Tham số cBot
 
 ### TDI
-- `RSI Period`: 6 (default)
-- `Red Period`: 6 (default)
+- `RSI Period`: 6 (mặc định)
+- `Red Period`: 6 (mặc định)
 
 ### Stochastic
 - `%K Period`: 6
@@ -250,7 +250,7 @@ Run multiple cBot instances on different charts, each bot calls the same server.
 
 ### Entry
 - `Max Bars After Cross`: 5
-- `Min Angle Delta`: 0.0 (off)
+- `Min Angle Delta`: 0.0 (tắt)
 - `Min Decisive Breakout`: 3.0 pips
 
 ### Exit
@@ -258,11 +258,11 @@ Run multiple cBot instances on different charts, each bot calls the same server.
 - `Breakeven Trigger`: 5.0 pips
 - `Trail Trigger`: 10.0 pips
 - `Trail Distance`: 5.0 pips
-- `Max Giveback`: 0.0 (off)
+- `Max Giveback`: 0.0 (tắt)
 
 ### ORB
 - `Session Start Hour`: 7 (UTC)
-- `Opening Range`: 15 minutes
+- `Opening Range`: 15 phút
 - `Min OR Width`: 2.0 pips
 - `Max Bars After Breakout`: 5
 
