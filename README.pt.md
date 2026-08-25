@@ -79,6 +79,7 @@ AgentFxTrading é um **sistema de negociação forex automatizado** que combina 
 - **Proteção de Sequência de Perdas**: Bloqueia entradas após 3 perdas consecutivas
 - **Cycle Gating (Cost Gate)**: Ignora automaticamente chamadas LLM fora da sessão, dentro do OR ou em sequência de perdas — economizando 80-90% de custos de API
 - **Trend TP Disabled**: Desativa automaticamente o TP fixo em regimes de forte tendência (`trending`) para maximizar ganhos com Trailing SL & Giveback Floor
+- **Logs com Rotação Diária**: Persiste todo o raciocínio do Agent, ações de cycle gate e snapshots em `logs/agent_YYYY-MM-DD.log` (retenção de 14 dias)
 
 ### ⏰ Gestão de Sessão
 - **Sessões de Negociação**: Tempos de sessão configuráveis (Londres, NY, Tóquio)

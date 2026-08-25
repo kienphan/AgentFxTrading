@@ -78,6 +78,7 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Loss Streak Protection**: Blocks entries after 3 consecutive losses
 - **Cycle Gating (Cost Gate)**: Deterministically bypasses LLM calls when outside session, inside OR, or during loss streak — saving 80-90% API tokens
 - **Trend TP Disabled**: Automatically disables fixed TP during trending regimes to ride the full move with Trailing SL & Giveback Floor
+- **Daily Rotating Logs**: Persists all agent reasoning, cycle gate actions, and market snapshots to `logs/agent_YYYY-MM-DD.log` (14-day retention)
 
 ### ⏰ Session Management
 - **Trading Sessions**: Configurable session times (London, NY, Tokyo)

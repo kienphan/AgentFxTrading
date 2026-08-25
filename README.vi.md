@@ -79,6 +79,7 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
 - **Cycle Gating (Cost Gate)**: Tự động bỏ qua gọi LLM khi ngoài phiên, giá trong OR hoặc đang chuỗi thua — tiết kiệm 80-90% chi phí API
 - **Trend TP Disabled**: Tự động hủy TP cố định khi thị trường có xu hướng mạnh (`trending`) để gồng lời tối đa bằng Trailing SL & Giveback Floor
+- **Daily Rotating Logs**: Ghi toàn bộ nhật ký suy luận của Agent, quyết định Cycle Gate và Snapshot vào file `logs/agent_YYYY-MM-DD.log` (lưu 14 ngày)
 
 ### ⏰ Quản Lý Phiên
 - **Phiên Giao Dịch**: Thời gian phiên có thể cấu hình (London, NY, Tokyo)

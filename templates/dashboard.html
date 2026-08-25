@@ -90,6 +90,31 @@
                 </tbody></table>
             </div></div>
         </section>
+        <section class="panel" style="margin-top: 16px;">
+            <div class="panel-header">
+                <span class="panel-title">🧠 Agent Reasoning &amp; Live Logs</span>
+                <span id="log-status" class="td-dim">Auto-refreshing</span>
+            </div>
+            <div class="panel-body log-panel-wrap">
+                <div class="log-toolbar">
+                    <div class="log-toolbar-group">
+                        <label for="log-date-select" class="td-dim">Date:</label>
+                        <select id="log-date-select" class="log-select"></select>
+                        <input type="text" id="log-filter-input" class="log-input" placeholder="Filter logs (e.g. LLM, CYCLE, OPEN)..." style="min-width: 240px;">
+                    </div>
+                    <div class="log-toolbar-group">
+                        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.75rem;">
+                            <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+                        </label>
+                        <button id="log-refresh-btn" class="log-btn">Refresh</button>
+                        <button id="log-clear-btn" class="log-btn">Clear</button>
+                    </div>
+                </div>
+                <div id="agent-log-box" class="log-terminal">
+                    <div class="log-line td-dim">Loading agent logs...</div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <script>
@@ -142,6 +167,99 @@
             const tb=document.getElementById('history-table');if(!tb)return;const ah=selectedAccountId==='all'?'':'hidden';
             if(!history.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>'}else{tb.innerHTML=history.map(t=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td><td>${t.bot_id}</td><td class="td-mono">${t.symbol}</td><td>${sideChip(t.side)}</td><td>${t.volume}</td><td class="td-mono">${t.entry_price}</td><td class="td-mono">${t.exit_price}</td><td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'}">${formatMoney(t.pnl)}</td><td class="td-dim">${t.exit_time}</td></tr>`).join('')}
         }
+
+        // ---- Agent Live Logs Management ----
+        let rawLogLines = [];
+        let currentLogDate = '';
+        const logBox = document.getElementById('agent-log-box');
+        const logDateSelect = document.getElementById('log-date-select');
+        const logFilterInput = document.getElementById('log-filter-input');
+        const logAutoscroll = document.getElementById('log-autoscroll');
+        const logRefreshBtn = document.getElementById('log-refresh-btn');
+        const logClearBtn = document.getElementById('log-clear-btn');
+
+        function colorizeLogLine(line) {
+            let formatted = line
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            // Highlight timestamps
+            formatted = formatted.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/, '<span class="log-time">$1</span>');
+            
+            // Highlight tags
+            if (formatted.includes('[LLM DECISION]')) {
+                formatted = formatted.replace(/\[LLM DECISION\]/, '<span class="log-tag-llm">[LLM DECISION]</span>');
+            } else if (formatted.includes('[CYCLE GATE]')) {
+                formatted = formatted.replace(/\[CYCLE GATE\]/, '<span class="log-tag-gate">[CYCLE GATE]</span>');
+            } else if (formatted.includes('[SNAPSHOT]')) {
+                formatted = formatted.replace(/\[SNAPSHOT\]/, '<span class="log-tag-snapshot">[SNAPSHOT]</span>');
+            } else if (formatted.includes('[PORTFOLIO EVENT]') || formatted.includes('[PORTFOLIO]')) {
+                formatted = formatted.replace(/\[PORTFOLIO EVENT\]|\[PORTFOLIO\]/, '<span class="log-tag-event">$&</span>');
+            } else if (formatted.includes('[WARNING]') || formatted.includes('[WARN]')) {
+                formatted = formatted.replace(/\[WARNING\]|\[WARN\s*\]/, '<span class="log-tag-warn">$&</span>');
+            } else if (formatted.includes('[ERROR]') || formatted.includes('Error:')) {
+                formatted = formatted.replace(/\[ERROR\s*\]|Error:/, '<span class="log-tag-error">$&</span>');
+            }
+
+            // Highlight key actions
+            formatted = formatted.replace(/\bAction: (BUY|SELL|CLOSE_ALL|HOLD)\b/g, (m, a) => {
+                const cls = a === 'BUY' ? 'side-chip--buy' : (a === 'SELL' ? 'side-chip--sell' : 'td-dim');
+                return `Action: <span class="side-chip ${cls}">${a}</span>`;
+            });
+
+            return `<div class="log-line">${formatted}</div>`;
+        }
+
+        function renderLogs() {
+            const filterText = (logFilterInput.value || '').toLowerCase();
+            const filtered = filterText 
+                ? rawLogLines.filter(l => l.toLowerCase().includes(filterText))
+                : rawLogLines;
+
+            if (!filtered.length) {
+                logBox.innerHTML = '<div class="log-line td-dim">No matching log entries found.</div>';
+                return;
+            }
+
+            logBox.innerHTML = filtered.map(colorizeLogLine).join('');
+            if (logAutoscroll.checked) {
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        }
+
+        async function fetchAgentLogs(dateParam = '') {
+            try {
+                const url = dateParam ? `/api/dashboard/logs?date_str=${dateParam}&lines=150` : '/api/dashboard/logs?lines=150';
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                rawLogLines = data.lines || [];
+                currentLogDate = data.date || '';
+
+                // Populate date selector if empty
+                if (data.available_dates && logDateSelect.children.length !== data.available_dates.length) {
+                    logDateSelect.innerHTML = data.available_dates.map(d => 
+                        `<option value="${d}" ${d === currentLogDate ? 'selected' : ''}>${d}</option>`
+                    ).join('');
+                }
+
+                renderLogs();
+            } catch (err) {
+                console.error('Failed to fetch logs:', err);
+            }
+        }
+
+        logFilterInput.addEventListener('input', renderLogs);
+        logRefreshBtn.addEventListener('click', () => fetchAgentLogs(logDateSelect.value));
+        logClearBtn.addEventListener('click', () => { logBox.innerHTML = ''; rawLogLines = []; });
+        logDateSelect.addEventListener('change', (e) => fetchAgentLogs(e.target.value));
+
+        // Initial fetch + 3s polling for live logs
+        fetchAgentLogs();
+        setInterval(() => {
+            if (!document.hidden && logDateSelect.value === currentLogDate) {
+                fetchAgentLogs(currentLogDate);
+            }
+        }, 3000);
         connectWebSocket();
     </script>
 </body></html>
