@@ -131,6 +131,13 @@ namespace cAlgo.Robots
         [Parameter("Bias Flip Exit", Group = "Guardrails", DefaultValue = true)]
         public bool BiasFlipExit { get; set; }
 
+        // ---- Post-TP Gate (Anti-FOMO/Anti-Chase) ----
+        [Parameter("Enable Post-TP Gate", Group = "Guardrails", DefaultValue = true)]
+        public bool EnablePostTpGate { get; set; }
+
+        [Parameter("Pullback Release (Pips)", Group = "Guardrails", DefaultValue = 5.0, MinValue = 1.0)]
+        public double PostTpPullbackPips { get; set; }
+
         [Parameter("Max Giveback (pips, 0=off)", Group = "Guardrails", DefaultValue = 30.0, MinValue = 0, Step = 1.0)]
         public double MaxGivebackPips { get; set; }
 
@@ -179,6 +186,9 @@ namespace cAlgo.Robots
             // TDI Bounce Detection (dnse-kash)
             public bool tdi_bounce_bull { get; set; }
             public bool tdi_bounce_bear { get; set; }
+            // Post-TP Gate State
+            public bool post_tp_gate_active { get; set; }
+            public string post_tp_gate_side { get; set; }
         }
 
         public class OrbData
@@ -286,6 +296,11 @@ namespace cAlgo.Robots
         // ---- Loss Streak Tracking ----
         private int _lossStreak = 0;
         private int _lastClosedTradeDay = -1;
+
+        // ---- Post-TP Gate State ----
+        private bool _postTpGateActive = false;
+        private string _postTpGateSide = null;
+        private double _postTpExtremePrice = 0;
         private double _dayPnl = 0;
         private int _tradesToday = 0;
 
@@ -293,12 +308,12 @@ namespace cAlgo.Robots
         private Dictionary<int, double> _positionMfe = new Dictionary<int, double>();
         private Dictionary<int, int> _positionEntryBar = new Dictionary<int, int>();
 
-        // ---- Exit Management ----
         private HashSet<int> _breakevenApplied = new HashSet<int>();
         #endregion
 
         private object GetAccountPayload()
         {
+
             return new
             {
                 account_number = Account.Number.ToString(),
@@ -371,6 +386,15 @@ namespace cAlgo.Robots
                 return;
             }
 
+            var macroTms = GetMacroTmsSignals();
+            var chartTms = GetTmsSignals(index);
+            
+            CheckPostTpGateRelease(macroTms, chartTms);
+
+            // Pre-fill Gate state into Macro TMS to pass to AI Server
+            macroTms.post_tp_gate_active = _postTpGateActive;
+            macroTms.post_tp_gate_side = _postTpGateSide;
+
             var snapshot = new MarketSnapshot
             {
                 bot_id = BotId,
@@ -393,8 +417,8 @@ namespace cAlgo.Robots
                     GetBarData(index - 1),
                     GetBarData(index - 2)
                 },
-                tms = GetMacroTmsSignals(),
-                chart_tms = GetTmsSignals(index),
+                tms = macroTms,
+                chart_tms = chartTms,
                 orb = GetOrbData(index),
                 market = GetMarketRegime(index),
                 session = GetSessionInfo()
@@ -1193,6 +1217,16 @@ namespace cAlgo.Robots
                 _lossStreak = 0;
             }
 
+            
+            // Arm Post-TP Gate if profitable (Take Profit or Trailing SL hit)
+            if (EnablePostTpGate && pnl > 0)
+            {
+                _postTpGateActive = true;
+                _postTpGateSide = args.Position.TradeType == TradeType.Buy ? "BUY" : "SELL";
+                _postTpExtremePrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+                if (ShowLogs) Print($"[Post-TP Gate] ARMED blocking {_postTpGateSide} entries.");
+            }
+
             // Report to portfolio manager
             _ = ReportPositionClosed(args.Position, pnl);
         }
@@ -1225,6 +1259,84 @@ namespace cAlgo.Robots
             }
         }
 
+        private void CheckPostTpGateRelease(TmsSignals macroTms, TmsSignals chartTms)
+        {
+            if (!_postTpGateActive) return;
+            
+            bool released = false;
+            string reason = "";
+
+            // 1. Update Extreme Price
+            if (_postTpGateSide == "BUY" && Symbol.Bid > _postTpExtremePrice)
+            {
+                _postTpExtremePrice = Symbol.Bid;
+            }
+            else if (_postTpGateSide == "SELL" && Symbol.Ask < _postTpExtremePrice)
+            {
+                _postTpExtremePrice = Symbol.Ask;
+            }
+
+            // 2. Bias Flip Release
+            if ((_postTpGateSide == "BUY" && macroTms.bias == "BEARISH") ||
+                (_postTpGateSide == "SELL" && macroTms.bias == "BULLISH") ||
+                macroTms.bias == "NEUTRAL")
+            {
+                released = true;
+                reason = "bias_flip";
+            }
+            
+            // 3. Pullback Release
+            if (!released)
+            {
+                double pullbackDistance = 0;
+                if (_postTpGateSide == "BUY") pullbackDistance = (_postTpExtremePrice - Symbol.Bid) / Symbol.PipSize;
+                if (_postTpGateSide == "SELL") pullbackDistance = (Symbol.Ask - _postTpExtremePrice) / Symbol.PipSize;
+
+                if (pullbackDistance >= PostTpPullbackPips)
+                {
+                    released = true;
+                    reason = "pullback";
+                }
+            }
+
+            // 4. OR Touch Release
+            if (!released && _orComplete)
+            {
+                if (_postTpGateSide == "BUY" && Symbol.Bid <= _orHigh)
+                {
+                    released = true;
+                    reason = "or_touch";
+                }
+                else if (_postTpGateSide == "SELL" && Symbol.Ask >= _orLow)
+                {
+                    released = true;
+                    reason = "or_touch";
+                }
+            }
+
+            // 5. TDI Bounce Release
+            if (!released)
+            {
+                if (_postTpGateSide == "BUY" && (chartTms.tdi_bounce_bull || macroTms.tdi_bounce_bull))
+                {
+                    released = true;
+                    reason = "tdi_bounce";
+                }
+                else if (_postTpGateSide == "SELL" && (chartTms.tdi_bounce_bear || macroTms.tdi_bounce_bear))
+                {
+                    released = true;
+                    reason = "tdi_bounce";
+                }
+            }
+
+            if (released)
+            {
+                _postTpGateActive = false;
+                _postTpGateSide = null;
+                if (ShowLogs) Print($"[Post-TP Gate] RELEASED via {reason}. Ready for entries.");
+            }
+        }
+
         private async Task ReportPositionOpen(Position position, double slPips, double tpPips)
         {
             try
@@ -1238,6 +1350,7 @@ namespace cAlgo.Robots
                     side = position.TradeType.ToString(),
                     volume = position.VolumeInUnits / Symbol.LotSize,
                     entry_price = position.EntryPrice,
+
                     sl_pips = slPips,
                     tp_pips = tpPips,
                     account_number = Account.Number.ToString(),
@@ -1361,6 +1474,16 @@ namespace cAlgo.Robots
             {
                 foreach (var pos in Positions) pos.Close();
                 return;
+            }
+
+            // Pre-execution Post-TP Gate Block
+            if (_postTpGateActive && (decision.action == "BUY" || decision.action == "SELL"))
+            {
+                if (decision.action == _postTpGateSide)
+                {
+                    if (ShowLogs) Print($"[Guardrail] Blocked: Post-TP Gate is ACTIVE blocking {_postTpGateSide}. Waiting for Pullback / Bounce.");
+                    return;
+                }
             }
 
             if (decision.action == "HOLD" || decision.action == "NONE") return;
