@@ -156,7 +156,7 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
         return OpenAICompatibleClient(
             api_key=os.getenv("DASHSCOPE_API_KEY", ""),
             base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-            model=os.getenv("LLM_MODEL", "qwen-max"),
+            model=os.getenv("LLM_MODEL", "qwen3.7-flash"),
             **kwargs
         )
 
@@ -164,7 +164,7 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
         return OpenAICompatibleClient(
             api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-            model=os.getenv("LLM_MODEL", "deepseek-chat"),
+            model=os.getenv("LLM_MODEL", "deepseek-v4-flash"),
             **kwargs
         )
     elif provider in ("anthropic", "claude"):
