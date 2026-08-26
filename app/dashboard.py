@@ -75,6 +75,7 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
     win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
     
     # Fetch account balance/equity if specific account
+    # Fetch account balance/equity
     account_balance = None
     account_equity = None
     if account_id and account_id != "all":
@@ -83,7 +84,12 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         if acc_row:
             account_balance = acc_row[0]
             account_equity = acc_row[1]
-
+    else:
+        cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE last_balance > 0")
+        sum_row = cursor.fetchone()
+        if sum_row and sum_row[0] is not None:
+            account_balance = sum_row[0]
+            account_equity = sum_row[1]
     conn.close()
     
     return {
