@@ -407,25 +407,6 @@ class PortfolioManager:
         except Exception as e:
             logger.error(f"Failed to get position count: {e}")
             return 0
-
-
-# Global instance (will be initialized in server.py)
-portfolio_manager: Optional[PortfolioManager] = None
-
-
-def init_portfolio(db_path: str = "portfolio.db") -> PortfolioManager:
-    """Initialize global portfolio manager instance."""
-    global portfolio_manager
-    portfolio_manager = PortfolioManager(db_path)
-    return portfolio_manager
-
-
-def get_portfolio_manager() -> PortfolioManager:
-    """Get global portfolio manager instance."""
-    if portfolio_manager is None:
-        raise RuntimeError("Portfolio manager not initialized. Call init_portfolio() first.")
-    return portfolio_manager
-    
     # --- Cbot Config Management ---
     
     def get_cbot_configs(self) -> List[Dict]:
@@ -489,3 +470,21 @@ def get_portfolio_manager() -> PortfolioManager:
             return cursor.rowcount > 0
         finally:
             conn.close()
+
+
+# Global instance (will be initialized in server.py)
+portfolio_manager: Optional[PortfolioManager] = None
+
+
+def init_portfolio(db_path: str = "portfolio.db") -> PortfolioManager:
+    """Initialize global portfolio manager instance."""
+    global portfolio_manager
+    portfolio_manager = PortfolioManager(db_path)
+    return portfolio_manager
+
+
+def get_portfolio_manager() -> PortfolioManager:
+    """Get global portfolio manager instance."""
+    if portfolio_manager is None:
+        raise RuntimeError("Portfolio manager not initialized. Call init_portfolio() first.")
+    return portfolio_manager

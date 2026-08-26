@@ -52,3 +52,17 @@ data/
 
 # OS
 Thumbs.db
+
+# Database & Local Backups
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.bak
+*.backup*
+*.local_save
+
+# cBot build artifacts
+*.algo
