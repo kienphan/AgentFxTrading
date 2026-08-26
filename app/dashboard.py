@@ -358,3 +358,59 @@ async def broadcast_update():
     })
 
 
+
+# --- Docker Management Routes ---
+from pydantic import BaseModel
+from app.docker_manager import docker_manager
+from app.portfolio import get_portfolio_manager
+
+class BotConfigRequest(BaseModel):
+    name: str
+    description: str = ""
+    run_command: str
+
+@router.get("/api/bots")
+async def api_get_bots():
+    pm = get_portfolio_manager()
+    configs = pm.get_cbot_configs()
+    # enrich with status
+    for cfg in configs:
+        status_info = docker_manager.get_container_status(cfg["name"])
+        cfg["status"] = status_info.get("status", "unknown")
+        cfg["container_id"] = status_info.get("id", "")
+    return {"bots": configs, "docker_available": docker_manager.is_available}
+
+@router.post("/api/bots")
+async def api_add_bot(req: BotConfigRequest):
+    pm = get_portfolio_manager()
+    success = pm.add_cbot_config(req.name, req.description, req.run_command)
+    if success:
+        return {"success": True, "message": "Bot config added"}
+    return {"success": False, "message": "Bot name already exists"}
+
+@router.delete("/api/bots/{name}")
+async def api_delete_bot(name: str):
+    pm = get_portfolio_manager()
+    success = pm.delete_cbot_config(name)
+    if success:
+        return {"success": True, "message": "Bot config deleted"}
+    return {"success": False, "message": "Bot config not found"}
+
+@router.post("/api/bots/{name}/start")
+async def api_start_bot(name: str):
+    pm = get_portfolio_manager()
+    config = pm.get_cbot_config(name)
+    if not config:
+        return {"success": False, "message": "Bot config not found"}
+    result = docker_manager.start_container(name, config["run_command"])
+    return result
+
+@router.post("/api/bots/{name}/stop")
+async def api_stop_bot(name: str):
+    result = docker_manager.stop_container(name)
+    return result
+
+@router.post("/api/bots/{name}/remove")
+async def api_remove_bot(name: str):
+    result = docker_manager.remove_container(name)
+    return result
