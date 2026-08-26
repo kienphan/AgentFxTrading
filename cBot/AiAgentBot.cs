@@ -53,6 +53,13 @@ namespace cAlgo.Robots
         [Parameter("Max Bars After Cross", Group = "Entry", DefaultValue = 5, MinValue = 1)]
         public int MaxBarsAfterCross { get; set; }
 
+        // ---- TDI Bounce Trade (dnse-kash) ----
+        [Parameter("Enable Bounce Trade", Group = "TMS", DefaultValue = true)]
+        public bool BounceTradeEnabled { get; set; }
+
+        [Parameter("Bounce Distance Threshold", Group = "TMS", DefaultValue = 1.5, MinValue = 0.1)]
+        public double BounceDistanceThreshold { get; set; }
+
         [Parameter("Min Angle Delta (0=off)", Group = "Entry", DefaultValue = 0.0, MinValue = 0, Step = 0.05)]
         public double MinAngleDelta { get; set; }
 
@@ -169,6 +176,9 @@ namespace cAlgo.Robots
             // TF Green State (current chart TF momentum)
             public double green_tf_value { get; set; }
             public double green_tf_slope { get; set; }  // positive = rising, negative = falling
+            // TDI Bounce Detection (dnse-kash)
+            public bool tdi_bounce_bull { get; set; }
+            public bool tdi_bounce_bear { get; set; }
         }
 
         public class OrbData
@@ -468,6 +478,12 @@ namespace cAlgo.Robots
             // TF Green State: current value + slope (momentum direction)
             double greenTfValue = Math.Round(g, 2);
             double greenTfSlope = Math.Round(g - g1, 3);
+            // TDI Bounce Detection (dnse-kash): Green approached Red then bounced back along original trend
+            double distCurr = Math.Abs(g - r);
+            double distPrev = Math.Abs(g1 - r1);
+            bool bounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev);
+            bool bounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev);
+
 
             return new TmsSignals
             {
@@ -490,7 +506,9 @@ namespace cAlgo.Robots
                 exit_reason = exitReason,
                 tdi_level = tdiLevel,
                 green_tf_value = greenTfValue,
-                green_tf_slope = greenTfSlope
+                green_tf_slope = greenTfSlope,
+                tdi_bounce_bull = bounceBull,
+                tdi_bounce_bear = bounceBear
             };
         }
 
@@ -687,6 +705,12 @@ namespace cAlgo.Robots
             string tdiLevel = "neutral";
             if (g < 32) tdiLevel = "oversold";
             else if (g > 68) tdiLevel = "overbought";
+            // Macro TDI Bounce Detection
+            double macroDistCurr = Math.Abs(g - r);
+            double macroDistPrev = Math.Abs(g1 - r1);
+            bool macroBounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev);
+            bool macroBounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev);
+
 
             return new TmsSignals
             {
@@ -709,7 +733,9 @@ namespace cAlgo.Robots
                 exit_reason = "",
                 tdi_level = tdiLevel,
                 green_tf_value = Math.Round(g, 2),
-                green_tf_slope = Math.Round(g - g1, 3)
+                green_tf_slope = Math.Round(g - g1, 3),
+                tdi_bounce_bull = macroBounceBull,
+                tdi_bounce_bear = macroBounceBear
             };
         }
 
