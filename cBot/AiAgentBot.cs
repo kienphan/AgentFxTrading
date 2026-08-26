@@ -62,6 +62,10 @@ namespace cAlgo.Robots
 
         [Parameter("Min Angle Delta (0=off)", Group = "Entry", DefaultValue = 0.0, MinValue = 0, Step = 0.05)]
         public double MinAngleDelta { get; set; }
+        // ---- Trend Filters ----
+        [Parameter("Trend EMA Period", Group = "Entry", DefaultValue = 5, MinValue = 1)]
+        public int EmaPeriod { get; set; }
+
 
         [Parameter("Min Decisive Breakout (pips)", Group = "Entry", DefaultValue = 10.0, MinValue = 0, Step = 0.5)]
         public double MinDecisiveBreakoutPips { get; set; }
@@ -114,6 +118,13 @@ namespace cAlgo.Robots
         [Parameter("Min SL Distance (pips)", Group = "Guardrails", DefaultValue = 20.0, MinValue = 0, Step = 1.0)]
         public double MinSlPips { get; set; }
 
+        [Parameter("Partial Close at BE (0-1)", Group = "Trade Management", DefaultValue = 0.5, MinValue = 0, MaxValue = 1.0, Step = 0.1)]
+        public double PartialCloseRatio { get; set; }
+
+
+        // ---- Risk Management (Dynamic Sizing) ----
+        [Parameter("Risk per Trade (%)", Group = "Trade Management", DefaultValue = 0.2, MinValue = 0.01, MaxValue = 10.0, Step = 0.1)]
+        public double RiskPerTradePercent { get; set; }
         [Parameter("Max SL Distance (pips)", Group = "Guardrails", DefaultValue = 80.0, MinValue = 0, Step = 1.0)]
         public double MaxSlPips { get; set; }
 
@@ -163,6 +174,8 @@ namespace cAlgo.Robots
         public class TmsSignals
         {
             public string bias { get; set; }
+            public bool price_above_ema { get; set; }
+            public bool price_below_ema { get; set; }
             public int bars_since_cross { get; set; }
             public string cross_direction { get; set; }
             public bool cross_up { get; set; }
@@ -275,6 +288,7 @@ namespace cAlgo.Robots
 
         // ---- Indicator Storage ----
         private IndicatorDataSeries _haOpen, _haHigh, _haLow, _haClose;
+        private ExponentialMovingAverage _ema;
         private IndicatorDataSeries _rsiSeries, _redSeries;
         private IndicatorDataSeries _rawK, _kSeries, _dSeries;
         private double _avgGain, _avgLoss, _gainSum, _lossSum;
@@ -346,6 +360,7 @@ namespace cAlgo.Robots
             _ = SendAccountHeartbeatAsync();
 
             if (ShowLogs) Print($"AiAgentBot started | TF={TimeFrame.Name} | Session={SessionName}");
+            _ema = Indicators.ExponentialMovingAverage(Bars.ClosePrices, EmaPeriod);
         }
         protected override void OnTick()
         {
@@ -447,17 +462,22 @@ namespace cAlgo.Robots
 
         private TmsSignals GetTmsSignals(int i)
         {
+            // EMA 5 Filter
+            double emaValue = _ema.Result[i];
+            double currentPrice = Bars.ClosePrices[i];
+            bool aboveEma = currentPrice > emaValue && _haClose[i] > emaValue;
+            bool belowEma = currentPrice < emaValue && _haClose[i] < emaValue;
+
             double g = _rsiSeries[i];
             double g1 = _rsiSeries[i - 1];
             double g2 = i >= 2 ? _rsiSeries[i - 2] : g1;
             double r = _redSeries[i];
-            double r1 = _redSeries[i - 1];
-
             double k = _kSeries[i];
             double d = _dSeries[i];
 
             if (double.IsNaN(g) || double.IsNaN(r))
             {
+
                 return new TmsSignals { bias = "NEUTRAL", tdi_level = "neutral", green_tf_value = 50, green_tf_slope = 0 };
             }
 
@@ -474,19 +494,20 @@ namespace cAlgo.Robots
 
             if (crossUp) { _lastCrossBar = i; _lastCrossDir = 1; }
             else if (crossDn) { _lastCrossBar = i; _lastCrossDir = -1; }
-
+            
             int barsSinceCross = _lastCrossBar >= 0 ? i - _lastCrossBar : 999;
-
+            
             bool stochBull = k > d;
             bool stochBear = k < d;
-
+            
             bool angleOkLong = IsGoodAngle(g, g1, g2, isLong: true);
             bool angleOkShort = IsGoodAngle(g, g1, g2, isLong: false);
-
+            
             bool withinWindow = barsSinceCross >= 1 && barsSinceCross <= MaxBarsAfterCross;
+            
+            bool longEntry = _lastCrossDir == 1 && withinWindow && haTurnedGreen && stochBull && angleOkLong && aboveEma;
+            bool shortEntry = _lastCrossDir == -1 && withinWindow && haTurnedRed && stochBear && angleOkShort && belowEma;
 
-            bool longEntry = _lastCrossDir == 1 && withinWindow && haTurnedGreen && stochBull && angleOkLong;
-            bool shortEntry = _lastCrossDir == -1 && withinWindow && haTurnedRed && stochBear && angleOkShort;
 
             bool exitLong, exitShort;
             string exitReason;
@@ -517,6 +538,8 @@ namespace cAlgo.Robots
                 cross_up = crossUp,
                 cross_down = crossDn,
                 ha_turned_green = haTurnedGreen,
+                price_above_ema = aboveEma,
+                price_below_ema = belowEma,
                 ha_turned_red = haTurnedRed,
                 stoch_bull = stochBull,
                 stoch_bear = stochBear,
@@ -1081,6 +1104,16 @@ namespace cAlgo.Robots
                     {
                         pos.ModifyStopLossPrice(beSl);
                         _breakevenApplied.Add(pos.Id);
+                        // Partial Close at Breakeven
+                        if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
+                        {
+                            double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
+                            if (volumeToClose >= Symbol.VolumeInUnitsMin)
+                            {
+                                pos.ModifyVolume(pos.VolumeInUnits - volumeToClose);
+                                if (ShowLogs) Print($"[Partial Close] Pos#{pos.Id} closed {volumeToClose / Symbol.LotSize} lots at TP1 (BE)");
+                            }
+                        }
                         if (ShowLogs) Print($"[BE] Pos#{pos.Id} SL → {beSl:F5} (pnl={pnlPips:F1}p)");
                     }
                 }
@@ -1496,8 +1529,16 @@ namespace cAlgo.Robots
             double slPips = Math.Max(MinSlPips, Math.Min(MaxSlPips, decision.sl_pips));
             double tpPips = Math.Max(MinTpPips, Math.Min(MaxTpPips, decision.tp_pips));
 
-            double volume = Symbol.NormalizeVolumeInUnits(decision.volume_lots * Symbol.LotSize);
+            // Risk-based Sizing overriding LLM volume
+            double riskAmount = Account.Balance * (RiskPerTradePercent / 100.0);
+            
+            // Volume = Risk / (SL * PipValue)
+            // Symbol.PipValue is the value of 1 pip for 1 unit of volume.
+            double volumeInUnits = riskAmount / (slPips * Symbol.PipValue);
+            
+            double volume = Symbol.NormalizeVolumeInUnits(volumeInUnits, RoundingMode.Down);
             if (volume < Symbol.VolumeInUnitsMin) volume = Symbol.VolumeInUnitsMin;
+            if (volume > Symbol.VolumeInUnitsMax) volume = Symbol.VolumeInUnitsMax;
 
             var tradeType = decision.action == "BUY" ? TradeType.Buy : TradeType.Sell;
 
