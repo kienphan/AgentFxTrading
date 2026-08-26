@@ -309,9 +309,11 @@ namespace cAlgo.Robots
 
             Positions.Closed += OnPositionClosed;
 
+            // Sync account balance & equity to server immediately on start
+            _ = SendAccountHeartbeatAsync();
+
             if (ShowLogs) Print($"AiAgentBot started | TF={TimeFrame.Name} | Session={SessionName}");
         }
-
         protected override void OnTick()
         {
             // Update MFE for all open positions every tick
@@ -1031,6 +1033,35 @@ namespace cAlgo.Robots
             catch (Exception ex)
             {
                 if (ShowLogs) Print($"[Portfolio] Failed to report position closed: {ex.Message}");
+            }
+        }
+
+        private async Task SendAccountHeartbeatAsync()
+        {
+            try
+            {
+                var reportUrl = ApiUrl.Replace("/trade", "/portfolio/report");
+                var report = new
+                {
+                    bot_id = BotId,
+                    action = "ping",
+                    symbol = SymbolName,
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
+                };
+
+                var json = JsonSerializer.Serialize(report);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                await _httpClient.PostAsync(reportUrl, content);
+                
+                if (ShowLogs) Print($"[Portfolio] Account synced on start: {Account.Number} (Balance: {Account.Balance})");
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[Portfolio] Account sync on start notice: {ex.Message}");
             }
         }
 

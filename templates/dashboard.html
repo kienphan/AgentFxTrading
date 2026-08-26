@@ -33,11 +33,11 @@
     </header>
     <main class="main-content">
         <div class="kpi-grid">
-            <div id="account-balance-card" class="kpi-card {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+            <div id="account-balance-card" class="kpi-card">
                 <div class="kpi-label">Balance</div>
                 <div id="account-balance" class="kpi-value kpi-value--mono">${{ summary.account_balance or 0 }}</div>
             </div>
-            <div id="account-equity-card" class="kpi-card {% if summary.account_id == 'all' or not summary.account_id %}hidden{% endif %}">
+            <div id="account-equity-card" class="kpi-card">
                 <div class="kpi-label">Equity</div>
                 <div id="account-equity" class="kpi-value kpi-value--mono">${{ summary.account_equity or 0 }}</div>
             </div>
@@ -158,8 +158,9 @@
             const lEl=document.getElementById('loss-streak');lEl.textContent=summary.loss_streak;lEl.className=`kpi-value ${summary.loss_streak>=3?'kpi-value--warn':''}`;
             document.getElementById('last-updated').textContent=new Date().toLocaleTimeString();
             document.querySelectorAll('.col-account').forEach(el=>{selectedAccountId==='all'?el.classList.remove('hidden'):el.classList.add('hidden')});
-            const bC=document.getElementById('account-balance-card'),eC=document.getElementById('account-equity-card');
-            if(selectedAccountId==='all'){bC.classList.add('hidden');eC.classList.add('hidden')}else{bC.classList.remove('hidden');eC.classList.remove('hidden');document.getElementById('account-balance').textContent=formatMoney(summary.account_balance||0);document.getElementById('account-equity').textContent=formatMoney(summary.account_equity||0)}
+            const bC=document.getElementById('account-balance'),eC=document.getElementById('account-equity');
+            if(bC)bC.textContent=formatMoney(summary.account_balance||0);
+            if(eC)eC.textContent=formatMoney(summary.account_equity||0);
             const tb=document.getElementById('positions-table'),ah=selectedAccountId==='all'?'':'hidden';
             if(!positions.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No active positions</td></tr>'}else{tb.innerHTML=positions.map(p=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td><td>${p.bot_id}</td><td class="td-mono">${p.symbol}</td><td>${sideChip(p.side)}</td><td>${p.volume}</td><td class="td-mono">${p.entry_price}</td><td>${p.sl_pips}</td><td>${p.tp_pips}</td><td class="td-dim">${p.entry_time}</td></tr>`).join('')}
         }

@@ -560,6 +560,14 @@ async def report_position(request: dict):
             else:
                 return {"status": "error", "message": "Failed to register position"}
         
+        elif action in ("ping", "sync"):
+            logger.info(f"[PORTFOLIO EVENT] SYNC | {account_id}/{bot_id} | Balance: ${account_balance:.2f} | Equity: ${account_equity:.2f}")
+            try:
+                await broadcast_update()
+            except Exception:
+                pass
+            return {"status": "success", "message": f"Account {account_id} synced", "account_id": account_id}
+        
         elif action == "close":
             exit_price = request.get("exit_price")
             pnl = request.get("pnl", 0)
@@ -573,16 +581,14 @@ async def report_position(request: dict):
             )
             
             if success:
-                logger.info(f"[{account_id}/{bot_id}] Position closed: {symbol}, PnL: {pnl}")
                 try:
                     await broadcast_update()
                 except Exception:
                     pass
                 logger.info(f"[PORTFOLIO EVENT] CLOSE | {account_id}/{bot_id} | {symbol} | PnL: ${pnl:.2f}")
+                return {"status": "success", "message": "Position closed"}
             else:
                 return {"status": "error", "message": "Failed to close position"}
-        
-        else:
             return {"status": "error", "message": f"Unknown action: {action}"}
     
     except Exception as e:
