@@ -1289,7 +1289,10 @@ namespace cAlgo.Robots
             }
             catch (Exception ex)
             {
-                Print($"[Error] {ex.Message}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    Print($"[Error] {ex.Message}");
+                });
             }
         }
 
@@ -1398,11 +1401,17 @@ namespace cAlgo.Robots
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 await _httpClient.PostAsync(reportUrl, content);
                 
-                if (ShowLogs) Print($"[Portfolio] Reported position open: {position.TradeType} {SymbolName}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Reported position open: {position.TradeType} {SymbolName}");
+                });
             }
             catch (Exception ex)
             {
-                if (ShowLogs) Print($"[Portfolio] Failed to report position open: {ex.Message}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Failed to report position open: {ex.Message}");
+                });
             }
         }
 
@@ -1429,11 +1438,17 @@ namespace cAlgo.Robots
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 await _httpClient.PostAsync(reportUrl, content);
                 
-                if (ShowLogs) Print($"[Portfolio] Reported position closed: {position.TradeType} {SymbolName}, PnL: {pnl:F2}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Reported position closed: {position.TradeType} {SymbolName}, PnL: {pnl:F2}");
+                });
             }
             catch (Exception ex)
             {
-                if (ShowLogs) Print($"[Portfolio] Failed to report position closed: {ex.Message}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Failed to report position closed: {ex.Message}");
+                });
             }
         }
 
@@ -1458,11 +1473,17 @@ namespace cAlgo.Robots
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 await _httpClient.PostAsync(reportUrl, content);
                 
-                if (ShowLogs) Print($"[Portfolio] Account synced on start: {Account.Number} (Balance: {Account.Balance})");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Account synced on start: {Account.Number} (Balance: {Account.Balance})");
+                });
             }
             catch (Exception ex)
             {
-                if (ShowLogs) Print($"[Portfolio] Account sync on start notice: {ex.Message}");
+                BeginInvokeOnMainThread(() =>
+                {
+                    if (ShowLogs) Print($"[Portfolio] Account sync on start notice: {ex.Message}");
+                });
             }
         }
 
