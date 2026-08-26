@@ -115,6 +115,9 @@ class TmsSignals(BaseModel):
     green_tf_value: float = 50.0
     green_tf_slope: float = 0.0  # positive = rising, negative = falling
 
+    # TDI Bounce Detection (dnse-kash)
+    tdi_bounce_bull: bool = False
+    tdi_bounce_bear: bool = False
 class MarketRegimeInfo(BaseModel):
     regime: str = "forming"  # "forming", "trending", "choppy", "mixed"
     er_session: Optional[float] = None
@@ -233,15 +236,22 @@ You analyze market structure and propose trade actions. The deterministic execut
 - Opening Range (OR) defines the high/low of the first 15 minutes of the active session.
 - Valid entry requires price closing beyond OR boundary in the direction of TMS bias.
 - Breakout must be DECISIVE (breakout_distance_pips >= threshold) and within entry window (bars_since_breakout <= 5).
+### 3. ENTRY MODELS (DIRECT BREAKOUT vs RETEST + TDI BOUNCE)
+- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`).
+- **Model 2: Breakout Retest + TDI Bounce (High R:R Continuation)**:
+  - Price broke out of OR, pulled back toward OR boundary (or consolidation zone) without breaking opposite structure.
+  - **TDI Bounce Trigger**: `tdi_bounce_bull = true` (Green was near Red and bounced up continuing Bullish trend) or `tdi_bounce_bear = true` (Green was near Red and bounced down continuing Bearish trend).
+  - When a TDI Bounce occurs in alignment with Macro Bias, this confirms trend continuation after pullback -> Strongly favors BUY / SELL even if `bars_since_breakout > 5`.
 
-### 3. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
+### 4. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
 - **er_session / er_recent**: Kaufman Efficiency Ratio (|net move| / total path, 1.0 = pure directional trend, ~0 = pure oscillation).
 - **or_flips**: Number of times price broke outside OR and closed back inside (flips >= 5 indicates chop trap day).
 {regime_guideline}
 
-### 4. Quantitative Edge-Case Rules (Battle-Tested Discipline)
+### 5. Quantitative Edge-Case Rules (Battle-Tested Discipline)
 - **BIAS-FRESH Exception**: When a TMS cross JUST occurred (bars_since_cross <= 1), treat early breakout momentum as the START of a new trend leg rather than an extended move. Entering in the fresh bias direction is strongly favored.
-- **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback, DO NOT chase at extremes. Declare HOLD and wait for a pullback or fresh cross.
+- **TDI BOUNCE EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce** is confirmed (`tdi_bounce_bull` or `tdi_bounce_bear`), the pullback has occurred and resolved in favor of the trend -> Enter on the bounce.
+- **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback/bounce, DO NOT chase at extremes. Declare HOLD.
 - **POSITION MEMORY & GIVEBACK FLOOR**:
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
@@ -249,7 +259,7 @@ You analyze market structure and propose trade actions. The deterministic execut
 - **MOMENTUM SLOPE AS EARLIEST EXIT WARNING**:
   - green_tf_slope turning negative for a BUY position (or positive for a SELL position) is the earliest warning that momentum is exhausting before full TDI cross confirms.
 
-### 5. Parameter Guidelines for {snapshot.symbol}
+### 6. Parameter Guidelines for {snapshot.symbol}
 - Realistic SL Distance: {sl_guideline} (Suggested: ~{default_sl} pips)
 - Realistic TP Distance: {tp_guideline} (Suggested: ~{default_tp} pips)
 - Minimum Risk-to-Reward: R:R >= 1.5
@@ -258,12 +268,12 @@ You analyze market structure and propose trade actions. The deterministic execut
 
 ### Entry Criteria (ALL must be satisfied):
 1. TMS Bias is clearly BULLISH (for BUY) or BEARISH (for SELL).
-2. ORB Breakout is aligned (UP for BUY, DOWN for SELL) and decisive (is_decisive = true).
-3. Inside entry window (in_entry_window = true).
-4. Session is active (not ending / not closed).
-5. Loss streak < 3.
+2. Valid Entry Trigger:
+   - EITHER Direct ORB Breakout (is_decisive = true, in_entry_window = true) aligned with bias
+   - OR Retest / Continuation with confirmed TDI Bounce (`tdi_bounce_bull = true` for BUY, `tdi_bounce_bear = true` for SELL).
+3. Session is active (not ending / not closed).
+4. Loss streak < 3.
 -> Any mismatch or conflicting signal -> HOLD.
-
 ### Exit Criteria:
 1. exit_long = true (for BUY) or exit_short = true (for SELL) -> CLOSE_ALL.
 2. green_tf_slope turning sharply against position -> CLOSE_ALL (early momentum exit).
@@ -635,6 +645,7 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
         f"- TDI level: {tms.tdi_level}",
         f"- Macro Green Slope: {tms.green_tf_slope:.3f}",
         f"- HA Bullish: {tms.long_entry}, Stoch Bullish: {tms.stoch_bull}",
+        f"- Macro TDI Bounce: Bull={tms.tdi_bounce_bull}, Bear={tms.tdi_bounce_bear}",
     ]
 
     # Chart execution TMS signals (e.g. M15/M5)
@@ -647,6 +658,7 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
             f"- Chart Stoch Bull: {ctms.stoch_bull}, Bear: {ctms.stoch_bear}",
             f"- Chart Green Momentum Value: {ctms.green_tf_value:.2f}",
             f"- Chart Green Momentum Slope: {ctms.green_tf_slope:.3f} (positive=rising, negative=falling)",
+            f"- Chart TDI Bounce: Bull={ctms.tdi_bounce_bull}, Bear={ctms.tdi_bounce_bear}",
             f"- Chart Exit Signals: exit_long={ctms.exit_long}, exit_short={ctms.exit_short} ({ctms.exit_reason or 'none'})",
         ])
     else:
