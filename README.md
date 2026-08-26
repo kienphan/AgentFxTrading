@@ -342,6 +342,11 @@ ELSE:
 | **Min TP / Max TP** | `30.0 / 250.0 pips` | `10.0 / 50.0 pips` | `15.0 / 80.0 pips` | `15.0 / 70.0 pips` |
 | **Max Giveback** | `30.0 pips` | `8.0 pips` | `12.0 pips` | `12.0 pips` |
 | **Recommended Timeframe** | `M5` or `M15` | `M15` | `M15` | `M15` |
+| **EMA Period** | `5` | `5` | `5` | `5` |
+| **Post-TP Gate / Pullback** | `true` (`10.0 pips`) | `true` (`3.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) |
+| **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
+| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
+| **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
 ### Portfolio Manager Settings
 
 Edit `app/portfolio.py`:
