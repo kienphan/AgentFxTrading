@@ -100,6 +100,8 @@ class TmsSignals(BaseModel):
     within_window: bool = False
 
     # Entry signals (all conditions met)
+    price_above_ema: bool = False
+    price_below_ema: bool = False
     long_entry: bool = False
     short_entry: bool = False
 
@@ -269,9 +271,10 @@ You analyze market structure and propose trade actions. The deterministic execut
 
 ### Entry Criteria (ALL must be satisfied):
 1. TMS Bias is clearly BULLISH (for BUY) or BEARISH (for SELL).
-2. Valid Entry Trigger:
-   - EITHER Direct ORB Breakout (is_decisive = true, in_entry_window = true) aligned with bias
-   - OR Retest / Continuation with confirmed TDI Bounce (`tdi_bounce_bull = true` for BUY, `tdi_bounce_bear = true` for SELL).
+2. Valid Entry Trigger (Any of the following models):
+   - **Model 1 (Direct Breakout)**: ORB Breakout (is_decisive = true, in_entry_window = true) AND price agrees with 5 EMA (price_above_ema = true for BUY, price_below_ema = true for SELL).
+   - **Model 2 (Retest + TDI Bounce)**: Breakout Retest/Continuation with confirmed TDI Bounce (`tdi_bounce_bull` for BUY, `tdi_bounce_bear` for SELL).
+   - **Model 3 (Fakeout Trap / Liquidity Sweep)**: Market is choppy (`or_flips > 0`), price recently broke opposite to Macro Bias (hunting liquidity), but immediately recovered back over 50% OR to trigger a Breakout aligned with Macro Bias.
 3. Session is active (not ending / not closed).
 4. Loss streak < 3.
 -> Any mismatch or conflicting signal -> HOLD.
@@ -676,6 +679,7 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
             "",
             f"### Chart Execution Signals ({snapshot.timeframe} - Timing & Momentum)",
             f"- Chart HA Turned Green: {ctms.ha_turned_green}, Turned Red: {ctms.ha_turned_red}",
+            f"- Price > EMA5: {ctms.price_above_ema}, Price < EMA5: {ctms.price_below_ema}",
             f"- Chart Stoch Bull: {ctms.stoch_bull}, Bear: {ctms.stoch_bear}",
             f"- Chart Green Momentum Value: {ctms.green_tf_value:.2f}",
             f"- Chart Green Momentum Slope: {ctms.green_tf_slope:.3f} (positive=rising, negative=falling)",
