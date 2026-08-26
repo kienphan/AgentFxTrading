@@ -244,9 +244,10 @@ ELSE:
 
 ### Tham Số cBot
 
-#### Cài Đặt TDI
+#### Cài Đặt TMS (Đa Khung Thời Gian)
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
+| TMS Timeframe (Macro) | Hour (H1) | Khung thời gian xu hướng lớn (H1, H4, M15, v.v.) |
 | RSI Period | 6 | Chu kỳ tính toán RSI |
 | Red Period | 6 | Chu kỳ đường signal |
 
