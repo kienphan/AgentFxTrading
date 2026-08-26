@@ -112,12 +112,6 @@ class PortfolioManager:
             )
         """)
 
-        # Ensure default account row exists
-        conn.execute("""
-            INSERT OR IGNORE INTO accounts (account_id, account_number, account_type, label, is_configured)
-            VALUES ('default', '0', 'demo', 'Legacy Default', 0)
-        """)
-        
         # Create indexes for performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)")
