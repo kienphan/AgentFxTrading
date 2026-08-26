@@ -29,11 +29,14 @@ namespace cAlgo.Robots
         [Parameter("Account Label (optional)", Group = "API", DefaultValue = "")]
         public string AccountLabel { get; set; }
 
-        // ---- TDI ----
-        [Parameter("RSI Period", Group = "TDI", DefaultValue = 6, MinValue = 1)]
+        // ---- TMS Multi-Timeframe ----
+        [Parameter("TMS Timeframe (Macro)", Group = "TMS", DefaultValue = "Hour")]
+        public TimeFrame TmsTimeFrame { get; set; }
+
+        [Parameter("RSI Period", Group = "TMS", DefaultValue = 6, MinValue = 1)]
         public int RsiPeriod { get; set; }
 
-        [Parameter("Red (Signal) Period", Group = "TDI", DefaultValue = 6, MinValue = 1)]
+        [Parameter("Red (Signal) Period", Group = "TMS", DefaultValue = 6, MinValue = 1)]
         public int RedPeriod { get; set; }
 
         // ---- Stochastic ----
@@ -217,10 +220,12 @@ namespace cAlgo.Robots
             public string bot_id { get; set; }
             public string symbol { get; set; }
             public string timeframe { get; set; }
+            public string tms_timeframe { get; set; }
             public double ask { get; set; }
             public double bid { get; set; }
             public List<BarData> bars { get; set; }
-            public TmsSignals tms { get; set; }
+            public TmsSignals tms { get; set; }        // Macro TMS Bias (H1/H4)
+            public TmsSignals chart_tms { get; set; }  // Chart Execution TMS (M15/M5)
             public OrbData orb { get; set; }
             public MarketRegimeInfo market { get; set; }
             public PositionInfo position { get; set; }
@@ -245,6 +250,8 @@ namespace cAlgo.Robots
             public double new_sl_pips { get; set; }  // for ADJUST action
             public string reason { get; set; }
         }
+
+        private Bars _macroBars;
 
         // ---- Indicator Storage ----
         private IndicatorDataSeries _haOpen, _haHigh, _haLow, _haClose;
@@ -295,6 +302,7 @@ namespace cAlgo.Robots
         protected override void OnStart()
         {
             _httpClient = new HttpClient();
+            _macroBars = MarketData.GetBars(TmsTimeFrame);
 
             _haOpen = CreateDataSeries();
             _haHigh = CreateDataSeries();
@@ -358,6 +366,7 @@ namespace cAlgo.Robots
                 bot_id = BotId,
                 symbol = SymbolName,
                 timeframe = TimeFrame.Name,
+                tms_timeframe = TmsTimeFrame.Name,
                 ask = Symbol.Ask,
                 bid = Symbol.Bid,
                 loss_streak = _lossStreak,
@@ -374,10 +383,10 @@ namespace cAlgo.Robots
                     GetBarData(index - 1),
                     GetBarData(index - 2)
                 },
-                tms = GetTmsSignals(index),
+                tms = GetMacroTmsSignals(),
+                chart_tms = GetTmsSignals(index),
                 orb = GetOrbData(index),
                 market = GetMarketRegime(index),
-                position = GetPositionInfo(index),
                 session = GetSessionInfo()
             };
 
@@ -482,6 +491,225 @@ namespace cAlgo.Robots
                 tdi_level = tdiLevel,
                 green_tf_value = greenTfValue,
                 green_tf_slope = greenTfSlope
+            };
+        }
+
+        // ==========================================
+        // MACRO TMS (H1 / H4 / Multi-Timeframe)
+        // ==========================================
+
+        private TmsSignals GetMacroTmsSignals()
+        {
+            if (_macroBars == null || _macroBars.Count < RsiPeriod + RedPeriod + 34)
+            {
+                return new TmsSignals { bias = "NEUTRAL", tdi_level = "neutral", green_tf_value = 50, green_tf_slope = 0 };
+            }
+
+            int count = _macroBars.Count;
+            int lookback = Math.Min(count, 120);
+            int startIdx = count - lookback;
+
+            // 1. Calculate Heikin Ashi on Macro Bars
+            double[] haOpen = new double[lookback];
+            double[] haClose = new double[lookback];
+            double[] haHigh = new double[lookback];
+            double[] haLow = new double[lookback];
+
+            for (int k = 0; k < lookback; k++)
+            {
+                int bIdx = startIdx + k;
+                if (k == 0)
+                {
+                    haOpen[k] = (_macroBars[bIdx].Open + _macroBars[bIdx].Close) / 2.0;
+                }
+                else
+                {
+                    haOpen[k] = (haOpen[k - 1] + haClose[k - 1]) / 2.0;
+                }
+
+                haClose[k] = (_macroBars[bIdx].Open + _macroBars[bIdx].High + _macroBars[bIdx].Low + _macroBars[bIdx].Close) / 4.0;
+                haHigh[k] = Math.Max(_macroBars[bIdx].High, Math.Max(haOpen[k], haClose[k]));
+                haLow[k] = Math.Min(_macroBars[bIdx].Low, Math.Min(haOpen[k], haClose[k]));
+            }
+
+            // 2. Calculate RSI on Heikin Ashi Closes
+            double[] rsi = new double[lookback];
+            double avgGain = 0, avgLoss = 0;
+            for (int k = 0; k < lookback; k++)
+            {
+                if (k == 0) { rsi[k] = 50; continue; }
+                double delta = haClose[k] - haClose[k - 1];
+                double gain = Math.Max(delta, 0);
+                double loss = Math.Max(-delta, 0);
+
+                if (k <= RsiPeriod)
+                {
+                    avgGain += gain;
+                    avgLoss += loss;
+                    if (k == RsiPeriod)
+                    {
+                        avgGain /= RsiPeriod;
+                        avgLoss /= RsiPeriod;
+                        rsi[k] = avgLoss == 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+                    }
+                    else
+                    {
+                        rsi[k] = 50;
+                    }
+                }
+                else
+                {
+                    avgGain = (avgGain * (RsiPeriod - 1) + gain) / RsiPeriod;
+                    avgLoss = (avgLoss * (RsiPeriod - 1) + loss) / RsiPeriod;
+                    rsi[k] = avgLoss == 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+                }
+            }
+
+            // 3. Calculate TDI Red Line (SMA of RSI over RedPeriod)
+            double[] red = new double[lookback];
+            for (int k = 0; k < lookback; k++)
+            {
+                if (k < RedPeriod)
+                {
+                    red[k] = rsi[k];
+                }
+                else
+                {
+                    double sum = 0;
+                    for (int j = k - RedPeriod + 1; j <= k; j++) sum += rsi[j];
+                    red[k] = sum / RedPeriod;
+                }
+            }
+
+            // 4. Calculate Yellow MBL Line (Market Base Line - SMA 34 of RSI)
+            double[] yellow = new double[lookback];
+            int yellowPeriod = 34;
+            for (int k = 0; k < lookback; k++)
+            {
+                if (k < yellowPeriod)
+                {
+                    yellow[k] = 50;
+                }
+                else
+                {
+                    double sum = 0;
+                    for (int j = k - yellowPeriod + 1; j <= k; j++) sum += rsi[j];
+                    yellow[k] = sum / yellowPeriod;
+                }
+            }
+
+            // 5. Calculate Stochastic on Macro Bars
+            double[] stochK = new double[lookback];
+            double[] stochD = new double[lookback];
+            double[] rawK = new double[lookback];
+
+            for (int k = 0; k < lookback; k++)
+            {
+                double lowest = double.MaxValue, highest = double.MinValue;
+                for (int j = k - StochKPeriod + 1; j <= k; j++)
+                {
+                    if (j < 0) continue;
+                    if (haLow[j] < lowest) lowest = haLow[j];
+                    if (haHigh[j] > highest) highest = haHigh[j];
+                }
+                rawK[k] = highest > lowest ? 100 * (haClose[k] - lowest) / (highest - lowest) : 50;
+
+                if (k >= StochSlowing - 1)
+                {
+                    double sum = 0;
+                    for (int j = k - StochSlowing + 1; j <= k; j++) sum += rawK[j];
+                    stochK[k] = sum / StochSlowing;
+                }
+                else stochK[k] = 50;
+
+                if (k >= StochSlowing + StochDPeriod - 2)
+                {
+                    double sum = 0;
+                    for (int j = k - StochDPeriod + 1; j <= k; j++) sum += stochK[j];
+                    stochD[k] = sum / StochDPeriod;
+                }
+                else stochD[k] = 50;
+            }
+
+            int last = lookback - 1;
+            int prev = lookback - 2;
+
+            double g = rsi[last];
+            double g1 = rsi[prev];
+            double g2 = lookback >= 3 ? rsi[lookback - 3] : g1;
+            double r = red[last];
+            double r1 = red[prev];
+            double y = yellow[last];
+
+            bool haGreen = haClose[last] > haOpen[last];
+            bool haGreenP1 = haClose[prev] > haOpen[prev];
+            bool haTurnedGreen = haGreen && !haGreenP1;
+            bool haTurnedRed = !haGreen && haGreenP1;
+
+            bool stochBull = stochK[last] > stochD[last];
+            bool stochBear = stochK[last] < stochD[last];
+
+            // Scan backwards to find the last confirmed TDI cross on Macro timeframe
+            int macroBarsSinceCross = 999;
+            string macroCrossDir = null;
+            for (int k = last; k >= 1; k--)
+            {
+                bool crossUp = rsi[k - 1] <= red[k - 1] && rsi[k] > red[k];
+                bool crossDn = rsi[k - 1] >= red[k - 1] && rsi[k] < red[k];
+                if (crossUp)
+                {
+                    macroBarsSinceCross = last - k;
+                    macroCrossDir = "up";
+                    break;
+                }
+                if (crossDn)
+                {
+                    macroBarsSinceCross = last - k;
+                    macroCrossDir = "down";
+                    break;
+                }
+            }
+
+            // Determine Macro Bias with Yellow MBL & 50 Level filter
+            string bias = "NEUTRAL";
+            if (macroCrossDir == "up" && g > r)
+            {
+                if (g >= y || g >= 50) bias = "BULLISH";
+            }
+            else if (macroCrossDir == "down" && g < r)
+            {
+                if (g <= y || g <= 50) bias = "BEARISH";
+            }
+
+            bool crossUpNow = g1 <= r1 && g > r;
+            bool crossDnNow = g1 >= r1 && g < r;
+
+            string tdiLevel = "neutral";
+            if (g < 32) tdiLevel = "oversold";
+            else if (g > 68) tdiLevel = "overbought";
+
+            return new TmsSignals
+            {
+                bias = bias,
+                bars_since_cross = macroBarsSinceCross,
+                cross_direction = macroCrossDir,
+                cross_up = crossUpNow,
+                cross_down = crossDnNow,
+                ha_turned_green = haTurnedGreen,
+                ha_turned_red = haTurnedRed,
+                stoch_bull = stochBull,
+                stoch_bear = stochBear,
+                angle_ok_long = IsGoodAngle(g, g1, g2, isLong: true),
+                angle_ok_short = IsGoodAngle(g, g1, g2, isLong: false),
+                within_window = macroBarsSinceCross >= 0 && macroBarsSinceCross <= MaxBarsAfterCross,
+                long_entry = bias == "BULLISH" && haGreen && stochBull,
+                short_entry = bias == "BEARISH" && !haGreen && stochBear,
+                exit_long = false,
+                exit_short = false,
+                exit_reason = "",
+                tdi_level = tdiLevel,
+                green_tf_value = Math.Round(g, 2),
+                green_tf_slope = Math.Round(g - g1, 3)
             };
         }
 
@@ -1091,7 +1319,7 @@ namespace cAlgo.Robots
             if (BiasFlipExit && Positions.Count > 0)
             {
                 var pos = Positions[0];
-                string bias = GetTmsSignals(Bars.Count - 1).bias;
+                string bias = GetMacroTmsSignals().bias;
                 bool againstBias = (pos.TradeType == TradeType.Buy && bias == "BEARISH") ||
                                    (pos.TradeType == TradeType.Sell && bias == "BULLISH");
                 if (againstBias && decision.action == "HOLD")

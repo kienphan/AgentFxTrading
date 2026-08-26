@@ -155,13 +155,15 @@ class MarketSnapshot(BaseModel):
     bot_id: str = "default"  # Bot identifier for portfolio tracking
     symbol: str
     timeframe: str
+    tms_timeframe: Optional[str] = "Hour"
     ask: float
     bid: float
     bars: List[BarData]
     tms: TmsSignals
+    chart_tms: Optional[TmsSignals] = None
     orb: Optional[OrbData] = None
-    position: Optional[PositionInfo] = None
     market: Optional[MarketRegimeInfo] = None
+    position: Optional[PositionInfo] = None
     session: Optional[SessionInfo] = None
     loss_streak: int = 0
     day_pnl: float = 0
@@ -620,39 +622,41 @@ async def api_dashboard_accounts():
 def build_user_prompt(snapshot: MarketSnapshot) -> str:
     """Build structured prompt from pre-computed signals."""
     tms = snapshot.tms
+    macro_tf = snapshot.tms_timeframe or "Macro"
 
     lines = [
-        f"## Market: {snapshot.symbol} on {snapshot.timeframe}",
+        f"## Market: {snapshot.symbol} | Chart: {snapshot.timeframe} | Macro TMS: {macro_tf}",
         f"**Price**: Ask={snapshot.ask:.5f}, Bid={snapshot.bid:.5f}",
         "",
-        "### TMS Signals (pre-computed)",
-        f"- **Bias**: {tms.bias}",
-        f"- Bars since cross: {tms.bars_since_cross}",
+        f"### Macro TMS Signals ({macro_tf} - Directional Bias)",
+        f"- **Macro Bias**: {tms.bias}",
+        f"- Bars since cross ({macro_tf}): {tms.bars_since_cross}",
         f"- Cross direction: {tms.cross_direction or 'none'}",
         f"- TDI level: {tms.tdi_level}",
-        "",
-        "**Current bar signals:**",
-        f"- cross_up: {tms.cross_up}, cross_down: {tms.cross_down}",
-        f"- ha_turned_green: {tms.ha_turned_green}, ha_turned_red: {tms.ha_turned_red}",
-        f"- stoch_bull: {tms.stoch_bull}, stoch_bear: {tms.stoch_bear}",
-        f"- angle_ok_long: {tms.angle_ok_long}, angle_ok_short: {tms.angle_ok_short}",
-        f"- within_window: {tms.within_window}",
-        "",
-        "**Entry signals:**",
-        f"- long_entry: {tms.long_entry}",
-        f"- short_entry: {tms.short_entry}",
-        "",
-        "**Exit signals:**",
-        f"- exit_long: {tms.exit_long}",
-        f"- exit_short: {tms.exit_short}",
-        f"- exit_reason: {tms.exit_reason or 'none'}",
-        "",
-        "**TF Green State (momentum):**",
-        f"- green_tf_value: {tms.green_tf_value:.2f}",
-        f"- green_tf_slope: {tms.green_tf_slope:.3f} (positive=rising, negative=falling)",
+        f"- Macro Green Slope: {tms.green_tf_slope:.3f}",
+        f"- HA Bullish: {tms.long_entry}, Stoch Bullish: {tms.stoch_bull}",
     ]
 
-    # ORB data
+    # Chart execution TMS signals (e.g. M15/M5)
+    if snapshot.chart_tms:
+        ctms = snapshot.chart_tms
+        lines.extend([
+            "",
+            f"### Chart Execution Signals ({snapshot.timeframe} - Timing & Momentum)",
+            f"- Chart HA Turned Green: {ctms.ha_turned_green}, Turned Red: {ctms.ha_turned_red}",
+            f"- Chart Stoch Bull: {ctms.stoch_bull}, Bear: {ctms.stoch_bear}",
+            f"- Chart Green Momentum Value: {ctms.green_tf_value:.2f}",
+            f"- Chart Green Momentum Slope: {ctms.green_tf_slope:.3f} (positive=rising, negative=falling)",
+            f"- Chart Exit Signals: exit_long={ctms.exit_long}, exit_short={ctms.exit_short} ({ctms.exit_reason or 'none'})",
+        ])
+    else:
+        lines.extend([
+            "",
+            f"**Exit signals:**",
+            f"- exit_long: {tms.exit_long}",
+            f"- exit_short: {tms.exit_short}",
+            f"- exit_reason: {tms.exit_reason or 'none'}",
+        ])
     if snapshot.orb:
         orb = snapshot.orb
         lines.extend([

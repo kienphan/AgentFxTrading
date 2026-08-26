@@ -235,9 +235,10 @@ ELSE:
 
 ### cBot参数
 
-#### TDI设置
+#### TMS设置（多时间框架）
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
+| TMS Timeframe (Macro) | Hour (H1) | 宏观趋势偏向时间框架（H1, H4, M15等） |
 | RSI Period | 6 | RSI计算周期 |
 | Red Period | 6 | 信号线周期 |
 

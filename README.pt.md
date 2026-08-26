@@ -244,9 +244,10 @@ ELSE:
 
 ### Parâmetros do cBot
 
-#### Configurações TDI
+#### Configurações TMS (Multi-Timeframe)
 | Parâmetro | Padrão | Descrição |
 |-----------|--------|-----------|
+| TMS Timeframe (Macro) | Hour (H1) | Timeframe da tendência macro (H1, H4, M15, etc.) |
 | RSI Period | 6 | Período de cálculo RSI |
 | Red Period | 6 | Período da linha de sinal |
 
