@@ -472,6 +472,7 @@ namespace cAlgo.Robots
             double g1 = _rsiSeries[i - 1];
             double g2 = i >= 2 ? _rsiSeries[i - 2] : g1;
             double r = _redSeries[i];
+            double r1 = _redSeries[i - 1];
             double k = _kSeries[i];
             double d = _dSeries[i];
 
