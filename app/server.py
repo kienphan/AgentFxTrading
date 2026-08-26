@@ -120,6 +120,12 @@ class TmsSignals(BaseModel):
     # TDI Bounce Detection (dnse-kash)
     tdi_bounce_bull: bool = False
     tdi_bounce_bear: bool = False
+
+    # Post-TP Gate State
+    post_tp_gate_active: bool = False
+    post_tp_gate_side: Optional[str] = None
+
+
 class MarketRegimeInfo(BaseModel):
     regime: str = "forming"  # "forming", "trending", "choppy", "mixed"
     er_session: Optional[float] = None
