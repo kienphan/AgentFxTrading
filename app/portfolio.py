@@ -124,6 +124,17 @@ class PortfolioManager:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_bot_id ON positions(bot_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_status ON positions(account_id, status)")
+
+        # Cbot Configs table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cbot_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                run_command TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
         conn.close()
         logger.info(f"Portfolio database initialized at {self.db_path}")
@@ -414,3 +425,67 @@ def get_portfolio_manager() -> PortfolioManager:
     if portfolio_manager is None:
         raise RuntimeError("Portfolio manager not initialized. Call init_portfolio() first.")
     return portfolio_manager
+    
+    # --- Cbot Config Management ---
+    
+    def get_cbot_configs(self) -> List[Dict]:
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, description, run_command, created_at FROM cbot_configs ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    "run_command": row[3],
+                    "created_at": row[4]
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+            
+    def get_cbot_config(self, name: str) -> Optional[Dict]:
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, description, run_command, created_at FROM cbot_configs WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    "run_command": row[3],
+                    "created_at": row[4]
+                }
+            return None
+        finally:
+            conn.close()
+
+    def add_cbot_config(self, name: str, description: str, run_command: str) -> bool:
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO cbot_configs (name, description, run_command) VALUES (?, ?, ?)",
+                (name, description, run_command)
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False # Name already exists
+        finally:
+            conn.close()
+            
+    def delete_cbot_config(self, name: str) -> bool:
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM cbot_configs WHERE name = ?", (name,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
