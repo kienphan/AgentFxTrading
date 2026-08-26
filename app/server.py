@@ -256,11 +256,12 @@ You analyze market structure and propose trade actions. The deterministic execut
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
   - **Golden Rule**: Never let a large winning trade turn into a losing trade without a deliberate technical reason. If giveback is high and momentum slope turns negative, declare CLOSE_ALL to protect capital.
+- **POST-TP GATE (Anti-FOMO)**: Once a trade hits Take Profit, the deterministic engine ARMS a blocker (`post_tp_gate_active = true`) preventing immediate re-entry in the same direction (`post_tp_gate_side`). It unlocks automatically only when a Pullback, OR Touch, TDI Bounce, or Bias Flip occurs.
+  - **Golden Rule**: If `post_tp_gate_active` is true and you want to enter in the `post_tp_gate_side` direction, you MUST declare HOLD and wait for the pullback/bounce to unlock the gate.
 - **MOMENTUM SLOPE AS EARLIEST EXIT WARNING**:
   - green_tf_slope turning negative for a BUY position (or positive for a SELL position) is the earliest warning that momentum is exhausting before full TDI cross confirms.
 
 ### 6. Parameter Guidelines for {snapshot.symbol}
-- Realistic SL Distance: {sl_guideline} (Suggested: ~{default_sl} pips)
 - Realistic TP Distance: {tp_guideline} (Suggested: ~{default_tp} pips)
 - Minimum Risk-to-Reward: R:R >= 1.5
 
@@ -362,9 +363,22 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             tp_pips=0.0,
             reason=f"Cycle gate: Loss streak protection active ({snapshot.loss_streak} consecutive losses)"
         )
+    bias = (snapshot.tms.bias or "NEUTRAL").upper()
 
     # Gate 2.3: TMS Bias Gate
-    bias = (snapshot.tms.bias or "NEUTRAL").upper()
+
+    # Gate 2.3.1: Post-TP Gate (Anti-FOMO)
+    if snapshot.tms.post_tp_gate_active:
+        gate_side = (snapshot.tms.post_tp_gate_side or "").upper()
+        if gate_side == bias: # Block entry if gate is active and bias matches
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Post-TP Gate is ACTIVE blocking {gate_side} (waiting for Pullback/Bounce)"
+            )
+
     if bias == "NEUTRAL":
         return AgentDecision(
             action="HOLD",
@@ -393,15 +407,21 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             tp_pips=0.0,
             reason=f"Cycle gate: Breakout not decisive ({orb.breakout_distance_pips:.1f}p < threshold)"
         )
+    # Post-TP Gate and Anti-Chase Bypass rule:
+    # If there is a TDI Bounce, we ignore the Entry Window constraint!
+    has_bounce = (bias == "BULLISH" and snapshot.tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.tms.tdi_bounce_bear)
+    if snapshot.chart_tms:
+        has_bounce = has_bounce or (bias == "BULLISH" and snapshot.chart_tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.chart_tms.tdi_bounce_bear)
 
-    if not orb.in_entry_window:
+    if not orb.in_entry_window and not has_bounce:
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout})"
+            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no Bounce"
         )
+
 
     # Gate 2.5: Directional Alignment Gate (TMS vs ORB)
     orb_dir = orb.breakout_direction.lower()
@@ -646,6 +666,7 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
         f"- Macro Green Slope: {tms.green_tf_slope:.3f}",
         f"- HA Bullish: {tms.long_entry}, Stoch Bullish: {tms.stoch_bull}",
         f"- Macro TDI Bounce: Bull={tms.tdi_bounce_bull}, Bear={tms.tdi_bounce_bear}",
+        f"- Post-TP Gate Active: {tms.post_tp_gate_active} (Blocking {tms.post_tp_gate_side or 'None'})",
     ]
 
     # Chart execution TMS signals (e.g. M15/M5)
