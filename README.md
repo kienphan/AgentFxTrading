@@ -183,7 +183,11 @@ python app/server.py
 
 Server will run at `http://127.0.0.1:8000`
 
-### 4. Setup cBot
+### 4. Setup & Run cBot
+
+You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI** (`ctrader-console`).
+
+#### Option A: cTrader Desktop GUI
 
 1. Open **cTrader** → **Automate**
 2. Click **New** → **cBot**
@@ -191,10 +195,306 @@ Server will run at `http://127.0.0.1:8000`
 4. Click **Build**
 5. Attach to chart (M15 or H1 recommended)
 6. Configure parameters:
-   - **Bot ID**: `bot1` (unique identifier)
+   - **Bot ID**: `xauusd_m15` (unique identifier)
    - **API URL**: `http://127.0.0.1:8000/trade`
-   - **Session**: New York (13:00-21:00 UTC) / London (8:00-17:00 UTC)
+   - **Session**: New York (13:00-21:00 UTC) / London (8:00-17:00 UTC) / Tokyo (0:00-9:00 UTC)
 
+#### Option B: Headless Docker CLI (`ctrader-console`)
+
+1. **Prepare Credentials File**:
+   ```bash
+   mkdir -p /root/ctrader_data
+   echo "your_ctid_password" > /root/ctrader_data/ctid_pwd
+   chmod 600 /root/ctrader_data/ctid_pwd
+   ```
+
+2. **Build/Compile the `.algo` package**:
+   ```bash
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
+   cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
+   cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
+   ```
+
+3. **Run Multi-Instance Docker Containers**:
+
+   * **XAUUSD (M15 - New York Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="xauusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork" \
+       --OrbStartHour=13 \
+       --SessionEndHour=21 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=10.0 \
+       --MinOrWidthPips=20.0 \
+       --OrbBufferPips=3.0 \
+       --BreakevenTriggerPips=30.0 \
+       --BreakevenOffsetPips=2.0 \
+       --TrailTriggerPips=50.0 \
+       --TrailDistancePips=25.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=20.0 \
+       --MaxSlPips=80.0 \
+       --MinTpPips=30.0 \
+       --MaxTpPips=250.0 \
+       --MaxGivebackPips=30.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=10.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=10 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **EURUSD (M15 - London Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="eurusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=17 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=3.0 \
+       --MinOrWidthPips=6.0 \
+       --OrbBufferPips=1.0 \
+       --BreakevenTriggerPips=8.0 \
+       --BreakevenOffsetPips=1.0 \
+       --TrailTriggerPips=15.0 \
+       --TrailDistancePips=8.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=6.0 \
+       --MaxSlPips=20.0 \
+       --MinTpPips=10.0 \
+       --MaxTpPips=50.0 \
+       --MaxGivebackPips=8.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=3.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=5 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **GBPUSD (M15 - London Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="gbpusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=17 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=4.5 \
+       --MinOrWidthPips=10.0 \
+       --OrbBufferPips=1.5 \
+       --BreakevenTriggerPips=12.0 \
+       --BreakevenOffsetPips=1.5 \
+       --TrailTriggerPips=20.0 \
+       --TrailDistancePips=10.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=8.0 \
+       --MaxSlPips=25.0 \
+       --MinTpPips=15.0 \
+       --MaxTpPips=60.0 \
+       --MaxGivebackPips=10.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=5.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=10 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **USDJPY (M15 - Tokyo Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-usdjpy \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=USDJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="usdjpy_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="tokyo" \
+       --OrbStartHour=0 \
+       --SessionEndHour=9 \
+       --SessionDstRule="None" \
+       --MinDecisiveBreakoutPips=4.0 \
+       --MinOrWidthPips=8.0 \
+       --OrbBufferPips=1.5 \
+       --BreakevenTriggerPips=12.0 \
+       --BreakevenOffsetPips=1.5 \
+       --TrailTriggerPips=25.0 \
+       --TrailDistancePips=12.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=8.0 \
+       --MaxSlPips=25.0 \
+       --MinTpPips=15.0 \
+       --MaxTpPips=70.0 \
+       --MaxGivebackPips=12.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=4.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=3 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **US30 (M5 - New York Index Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-us30 \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=US30 \
+       --period=m5 \
+       --full-access \
+       --BotId="us30_m5" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork_index" \
+       --OrbStartHour=13 \
+       --SessionEndHour=20 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=15.0 \
+       --MinOrWidthPips=30.0 \
+       --OrbBufferPips=5.0 \
+       --BreakevenTriggerPips=50.0 \
+       --BreakevenOffsetPips=5.0 \
+       --TrailTriggerPips=80.0 \
+       --TrailDistancePips=40.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=30.0 \
+       --MaxSlPips=120.0 \
+       --MinTpPips=50.0 \
+       --MaxTpPips=400.0 \
+       --MaxGivebackPips=50.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=20.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=10 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **NAS100 (M5 - New York Index Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-nas100 \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=NAS100 \
+       --period=m5 \
+       --full-access \
+       --BotId="nas100_m5" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork_index" \
+       --OrbStartHour=13 \
+       --SessionEndHour=20 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=15.0 \
+       --MinOrWidthPips=35.0 \
+       --OrbBufferPips=5.0 \
+       --BreakevenTriggerPips=60.0 \
+       --BreakevenOffsetPips=5.0 \
+       --TrailTriggerPips=100.0 \
+       --TrailDistancePips=50.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=35.0 \
+       --MaxSlPips=150.0 \
+       --MinTpPips=60.0 \
+       --MaxTpPips=500.0 \
+       --MaxGivebackPips=60.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=25.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=10 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
 ### 5. Start Trading! 🎉
 
 The bot will automatically:

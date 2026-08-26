@@ -387,12 +387,12 @@ namespace cAlgo.Robots
                 UpdateHeikinAshi(i);
                 UpdateTdi(i);
                 UpdateStoch(i);
+                UpdateOrb(i);
             }
             _lastProcessedIndex = index;
 
             if (index < 2) return;
 
-            UpdateOrb(index);
             UpdateLossStreak();
             var session = GetSessionInfo();
             // Cost Gate: Nếu không có vị thế mở và ngoài phiên (hoặc phiên sắp kết thúc), không cần gửi request
@@ -833,22 +833,30 @@ namespace cAlgo.Robots
                     _orComplete = true;
             }
 
-            if (_orComplete && _breakoutDir == null && _orHigh > double.MinValue)
+            if (_orComplete && _orHigh > double.MinValue)
             {
                 double buffer = OrbBufferPips * Symbol.PipSize;
                 double currentClose = Bars[index].Close;
 
                 if (currentClose > _orHigh + buffer)
                 {
-                    _breakoutDir = "up";
-                    _breakoutPrice = currentClose;
-                    _breakoutBar = index;
+                    if (_breakoutDir != "up")
+                    {
+                        _breakoutDir = "up";
+                        _breakoutPrice = currentClose;
+                        _breakoutBar = index;
+                        if (ShowLogs) Print($"[ORB] Breakout UP detected at {currentClose:F5} (Bar #{index})");
+                    }
                 }
                 else if (currentClose < _orLow - buffer)
                 {
-                    _breakoutDir = "down";
-                    _breakoutPrice = currentClose;
-                    _breakoutBar = index;
+                    if (_breakoutDir != "down")
+                    {
+                        _breakoutDir = "down";
+                        _breakoutPrice = currentClose;
+                        _breakoutBar = index;
+                        if (ShowLogs) Print($"[ORB] Breakout DOWN detected at {currentClose:F5} (Bar #{index})");
+                    }
                 }
             }
         }
