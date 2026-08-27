@@ -501,12 +501,25 @@ async def trade_decision(snapshot: MarketSnapshot):
     pos_str = f"{snapshot.position.side} pnl={snapshot.position.unrealized_pnl_pips:.1f}p" if snapshot.position else "FLAT"
     sess_str = f"{snapshot.session.phase} ({snapshot.session.minutes_to_end}m)" if snapshot.session else "N/A"
     
+    pos_data = None
+    if snapshot.position:
+        pos_data = {
+            "side": snapshot.position.side,
+            "entry_price": snapshot.position.entry_price,
+            "unrealized_pnl": snapshot.position.unrealized_pnl,
+            "unrealized_pnl_pips": snapshot.position.unrealized_pnl_pips,
+            "mfe_pips": snapshot.position.mfe_pips,
+            "giveback_pips": snapshot.position.giveback_pips,
+            "sl_price": snapshot.position.sl_price,
+            "tp_price": snapshot.position.tp_price,
+        }
+    portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data)
+
     logger.info(
         f"[SNAPSHOT] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
         f"Bid/Ask={snapshot.bid:.5f}/{snapshot.ask:.5f} | TMS={snapshot.tms.bias} (age={snapshot.tms.bars_since_cross}) | "
         f"Regime={regime_str} (ER={er_str}) | Pos={pos_str} | Session={sess_str}"
     )
-
     # Deterministic Cycle Gate (Cost Gate - skip LLM when decision is deterministic)
     gated_decision = evaluate_cycle_gate(snapshot)
     if gated_decision is not None:

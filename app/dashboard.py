@@ -126,8 +126,51 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
     
     cursor = conn.execute(query, tuple(params))
     positions = [dict(row) for row in cursor.fetchall()]
-    
     conn.close()
+
+    pm = get_portfolio_manager()
+    for pos in positions:
+        symbol = pos.get("symbol", "")
+        side = (pos.get("side") or "BUY").upper()
+        entry_price = float(pos.get("entry_price") or 0.0)
+        volume = float(pos.get("volume") or 0.01)
+        bot_id = pos.get("bot_id")
+
+        bot_pos = getattr(pm, "_bot_positions_cache", {}).get(bot_id) if hasattr(pm, "_bot_positions_cache") else None
+        price_info = pm.get_latest_price(symbol) if hasattr(pm, "get_latest_price") else None
+        
+        current_price = None
+        if price_info:
+            current_price = price_info.get("bid") if side == "BUY" else price_info.get("ask")
+            
+        pos["current_price"] = current_price if current_price is not None else entry_price
+        
+        if bot_pos and bot_pos.get("unrealized_pnl") is not None:
+            pos["unrealized_pnl"] = round(bot_pos["unrealized_pnl"], 2)
+            pos["unrealized_pnl_pips"] = round(bot_pos.get("unrealized_pnl_pips", 0.0), 1)
+        elif current_price and entry_price:
+            diff = (current_price - entry_price) if side == "BUY" else (entry_price - current_price)
+            if "JPY" in symbol:
+                pip_size = 0.01
+                multiplier = 6.3
+            elif "XAU" in symbol or "GOLD" in symbol:
+                pip_size = 0.1
+                multiplier = 10.0
+            elif any(k in symbol for k in ("US30", "USTEC", "DE40", "GER40", "NAS100")):
+                pip_size = 1.0
+                multiplier = 1.0
+            else:
+                pip_size = 0.0001
+                multiplier = 10.0
+                
+            pnl_pips = diff / pip_size
+            unrealized_pnl = round(pnl_pips * volume * multiplier, 2)
+            pos["unrealized_pnl"] = unrealized_pnl
+            pos["unrealized_pnl_pips"] = round(pnl_pips, 1)
+        else:
+            pos["unrealized_pnl"] = 0.0
+            pos["unrealized_pnl_pips"] = 0.0
+
     return positions
 
 

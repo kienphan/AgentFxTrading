@@ -465,6 +465,26 @@ class PortfolioManager:
         finally:
             conn.close()
 
+    def update_market_price(self, symbol: str, bid: float, ask: float, bot_id: Optional[str] = None, position_data: Optional[Dict] = None):
+        """Track latest market prices and position metrics."""
+        if not hasattr(self, "_latest_prices"):
+            self._latest_prices = {}
+        if not hasattr(self, "_bot_positions_cache"):
+            self._bot_positions_cache = {}
+        
+        self._latest_prices[symbol] = {
+            "bid": bid,
+            "ask": ask,
+            "time": datetime.now().isoformat()
+        }
+        if bot_id and position_data:
+            self._bot_positions_cache[bot_id] = position_data
+
+    def get_latest_price(self, symbol: str) -> Optional[Dict]:
+        """Get cached latest price for symbol."""
+        if not hasattr(self, "_latest_prices"):
+            self._latest_prices = {}
+        return self._latest_prices.get(symbol)
 
 # Global instance (will be initialized in server.py)
 portfolio_manager: Optional[PortfolioManager] = None

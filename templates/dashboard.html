@@ -11,8 +11,17 @@
 <body class="app-shell">
     <header class="topbar">
         <div class="topbar-brand">
-            <div class="brand-title">AgentFxTrading</div>
-            <div class="brand-subtitle">Multi-account AI trading monitor</div>
+            <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <div class="brand-text">
+                <div class="brand-title">AgentFxTrading</div>
+                <div class="brand-subtitle">Multi-account AI trading monitor</div>
+            </div>
         </div>
         <div class="topbar-controls">
             <div class="account-select-wrap">
@@ -34,16 +43,16 @@
     </header>
     
     <div class="app-body">
-        <nav class="sidebar">
-            <a href="#" class="nav-item active" data-target="view-dashboard">
+        <nav class="sidebar" id="app-sidebar">
+            <a href="#" class="nav-item active" data-target="view-dashboard" title="Overview">
                 <span class="nav-icon">📊</span>
                 <span class="nav-label">Overview</span>
             </a>
-            <a href="#" class="nav-item" data-target="view-docker">
+            <a href="#" class="nav-item" data-target="view-docker" title="Docker Bots">
                 <span class="nav-icon">🤖</span>
                 <span class="nav-label">Docker Bots</span>
             </a>
-            <a href="#" class="nav-item" data-target="view-logs">
+            <a href="#" class="nav-item" data-target="view-logs" title="Agent Logs">
                 <span class="nav-icon">🧠</span>
                 <span class="nav-label">Agent Logs</span>
             </a>
@@ -51,67 +60,178 @@
         <main class="main-content">
             <div id="view-dashboard" class="view-section active">
 
-        <div class="kpi-grid">
-            <div id="account-balance-card" class="kpi-card">
-                <div class="kpi-label">Balance</div>
-                <div id="account-balance" class="kpi-value kpi-value--mono">${{ summary.account_balance or 0 }}</div>
-            </div>
-            <div id="account-equity-card" class="kpi-card">
-                <div class="kpi-label">Equity</div>
-                <div id="account-equity" class="kpi-value kpi-value--mono">${{ summary.account_equity or 0 }}</div>
-            </div>
-            <div class="kpi-card"><div class="kpi-label">Open Positions</div><div id="open-positions" class="kpi-value">{{ summary.open_positions }}</div></div>
-            <div class="kpi-card"><div class="kpi-label">Daily P&amp;L</div><div id="daily-pnl" class="kpi-value {% if summary.daily_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.daily_pnl > 0 %}+{% endif %}${{ summary.daily_pnl }}</div></div>
-            <div class="kpi-card"><div class="kpi-label">Total P&amp;L</div><div id="total-pnl" class="kpi-value {% if summary.total_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.total_pnl > 0 %}+{% endif %}${{ summary.total_pnl }}</div></div>
-            <div class="kpi-card"><div class="kpi-label">Win Rate</div><div id="win-rate" class="kpi-value">{{ summary.win_rate }}%</div></div>
-            <div class="kpi-card"><div class="kpi-label">Trades Today</div><div id="trades-today" class="kpi-value">{{ summary.trades_today }}</div></div>
-            <div class="kpi-card"><div class="kpi-label">Loss Streak</div><div id="loss-streak" class="kpi-value {% if summary.loss_streak >= 3 %}kpi-value--warn{% endif %}">{{ summary.loss_streak }}</div></div>
-        </div>
-        <div class="content-grid">
-            <section class="panel">
-                <div class="panel-header"><span class="panel-title">Active Positions</span></div>
-                <div class="panel-body"><div class="table-wrap">
-                    <table class="data-table"><thead><tr>
-                        <th class="col-account">Account</th><th>Bot</th><th>Symbol</th><th>Side</th><th>Vol</th><th>Entry</th><th>SL</th><th>TP</th><th>Time</th>
-                    </tr></thead><tbody id="positions-table">
-                        {% for pos in positions %}
-                        <tr>
-                            <td class="col-account account-cell">{% if pos.account_type == 'live' %}<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>{% else %}<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>{% endif %}<span class="account-name">{{ pos.account_label }}</span></td>
-                            <td>{{ pos.bot_id }}</td><td class="td-mono">{{ pos.symbol }}</td>
-                            <td>{% if pos.side == 'BUY' %}<span class="side-chip side-chip--buy">BUY</span>{% else %}<span class="side-chip side-chip--sell">SELL</span>{% endif %}</td>
-                            <td>{{ pos.volume }}</td><td class="td-mono">{{ pos.entry_price }}</td><td>{{ pos.sl_pips }}</td><td>{{ pos.tp_pips }}</td><td class="td-dim">{{ pos.entry_time }}</td>
-                        </tr>
-                        {% else %}<tr><td colspan="9" class="empty-state">No active positions</td></tr>{% endfor %}
-                    </tbody></table>
-                </div></div>
-            </section>
-            <section class="panel">
-                <div class="panel-header"><span class="panel-title">Daily P&amp;L · 30D</span></div>
-                <div class="panel-body panel-body--chart"><canvas id="pnl-chart"></canvas></div>
-            </section>
-        </div>
-        <section class="panel">
-            <div class="panel-header"><span class="panel-title">Recent Trades</span></div>
-            <div class="panel-body"><div class="table-wrap">
-                <table class="data-table"><thead><tr>
-                    <th class="col-account">Account</th><th>Bot</th><th>Symbol</th><th>Side</th><th>Vol</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Closed</th>
-                </tr></thead><tbody id="history-table">
-                    {% for trade in history %}
-                    <tr>
-                        <td class="col-account account-cell">{% if trade.account_type == 'live' %}<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>{% else %}<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>{% endif %}<span class="account-name">{{ trade.account_label }}</span></td>
-                        <td>{{ trade.bot_id }}</td><td class="td-mono">{{ trade.symbol }}</td>
-                        <td>{% if trade.side == 'BUY' %}<span class="side-chip side-chip--buy">BUY</span>{% else %}<span class="side-chip side-chip--sell">SELL</span>{% endif %}</td>
-                        <td>{{ trade.volume }}</td><td class="td-mono">{{ trade.entry_price }}</td><td class="td-mono">{{ trade.exit_price }}</td>
-                        <td class="{% if trade.pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">{% if trade.pnl > 0 %}+{% endif %}${{ trade.pnl }}</td>
-                        <td class="td-dim">{{ trade.exit_time }}</td>
-                    </tr>
-                    {% else %}<tr><td colspan="9" class="empty-state">No trade history</td></tr>{% endfor %}
-                </tbody></table>
-            </div></div>
-        </section>
-        
+                <!-- KPI Metrics Cards (Strict 1 Row) -->
+                <div class="kpi-grid">
+                    <div id="account-balance-card" class="kpi-card">
+                        <div class="kpi-label">Balance</div>
+                        <div id="account-balance" class="kpi-value kpi-value--mono">${{ summary.account_balance or 0 }}</div>
                     </div>
-            <div id="view-docker" class="view-section">
+                    <div id="account-equity-card" class="kpi-card">
+                        <div class="kpi-label">Equity</div>
+                        <div id="account-equity" class="kpi-value kpi-value--mono">${{ summary.account_equity or 0 }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Open Pos</div>
+                        <div id="open-positions" class="kpi-value">{{ summary.open_positions }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Daily P&amp;L</div>
+                        <div id="daily-pnl" class="kpi-value {% if summary.daily_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.daily_pnl > 0 %}+{% endif %}${{ summary.daily_pnl }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Total P&amp;L</div>
+                        <div id="total-pnl" class="kpi-value {% if summary.total_pnl >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">{% if summary.total_pnl > 0 %}+{% endif %}${{ summary.total_pnl }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Win Rate</div>
+                        <div id="win-rate" class="kpi-value">{{ summary.win_rate }}%</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Trades Today</div>
+                        <div id="trades-today" class="kpi-value">{{ summary.trades_today }}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Loss Streak</div>
+                        <div id="loss-streak" class="kpi-value {% if summary.loss_streak >= 3 %}kpi-value--warn{% endif %}">{{ summary.loss_streak }}</div>
+                    </div>
+                </div>
+
+                <!-- Active Positions Panel (Full-Width, Complete Info) -->
+                <section class="panel active-positions-panel">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-title">Active Positions</span>
+                            <span class="panel-badge" id="active-pos-count">{% if positions %}{{ positions|length }} Open{% else %}0 Open{% endif %}</span>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-account">Account</th>
+                                        <th>Bot</th>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Vol</th>
+                                        <th>Entry Price</th>
+                                        <th>Current Price</th>
+                                        <th>SL / TP</th>
+                                        <th>Unrealized P&amp;L</th>
+                                        <th>Open Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="positions-table">
+                                    {% for pos in positions %}
+                                    <tr>
+                                        <td class="col-account account-cell">
+                                            {% if pos.account_type == 'live' %}
+                                            <span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>
+                                            {% else %}
+                                            <span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>
+                                            {% endif %}
+                                            <span class="account-name">{{ pos.account_label }}</span>
+                                        </td>
+                                        <td>{{ pos.bot_id }}</td>
+                                        <td class="td-mono font-bold">{{ pos.symbol }}</td>
+                                        <td>
+                                            {% if pos.side == 'BUY' %}
+                                            <span class="side-chip side-chip--buy">BUY</span>
+                                            {% else %}
+                                            <span class="side-chip side-chip--sell">SELL</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ pos.volume }}L</td>
+                                        <td class="td-mono">{{ pos.entry_price }}</td>
+                                        <td class="td-mono td-current-price">{{ pos.current_price or pos.entry_price }}</td>
+                                        <td class="td-dim td-sltp">{{ pos.sl_pips }}p / {{ pos.tp_pips }}p</td>
+                                        <td class="td-pnl-live">
+                                            {% set u_pnl = pos.unrealized_pnl | default(0) %}
+                                            {% set u_pips = pos.unrealized_pnl_pips | default(0) %}
+                                            <span class="pnl-chip {% if u_pnl >= 0 %}pnl-chip--profit{% else %}pnl-chip--loss{% endif %}">
+                                                {% if u_pnl > 0 %}+{% endif %}${{ u_pnl }} ({% if u_pips > 0 %}+{% endif %}{{ u_pips }}p)
+                                            </span>
+                                        </td>
+                                        <td class="td-dim">{{ pos.entry_time }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="10" class="empty-state">No active positions</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Recent Trades Panel (Full Width) -->
+                <section class="panel recent-trades-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Recent Trades</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-account">Account</th>
+                                        <th>Bot</th>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Vol</th>
+                                        <th>Entry</th>
+                                        <th>Exit</th>
+                                        <th>Net P&amp;L</th>
+                                        <th>Closed Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table">
+                                    {% for trade in history %}
+                                    <tr>
+                                        <td class="col-account account-cell">
+                                            {% if trade.account_type == 'live' %}
+                                            <span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>
+                                            {% else %}
+                                            <span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>
+                                            {% endif %}
+                                            <span class="account-name">{{ trade.account_label }}</span>
+                                        </td>
+                                        <td>{{ trade.bot_id }}</td>
+                                        <td class="td-mono font-bold">{{ trade.symbol }}</td>
+                                        <td>
+                                            {% if trade.side == 'BUY' %}
+                                            <span class="side-chip side-chip--buy">BUY</span>
+                                            {% else %}
+                                            <span class="side-chip side-chip--sell">SELL</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ trade.volume }}L</td>
+                                        <td class="td-mono">{{ trade.entry_price }}</td>
+                                        <td class="td-mono">{{ trade.exit_price }}</td>
+                                        <td class="{% if trade.pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %} font-bold">
+                                            {% if trade.pnl > 0 %}+{% endif %}${{ trade.pnl }}
+                                        </td>
+                                        <td class="td-dim">{{ trade.exit_time }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="9" class="empty-state">No trade history</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Daily P&L · 30D Chart (Bottom, Separated) -->
+                <section class="panel chart-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Daily P&amp;L · 30D</span>
+                    </div>
+                    <div class="panel-body panel-body--chart">
+                        <canvas id="pnl-chart"></canvas>
+                    </div>
+                </section>
+                
+            </div>
                 <section class="panel" style="margin-top: 16px;" id="bot-management-section">
             <div class="panel-header">
                 <span class="panel-title">🤖 Docker Bot Management</span>
@@ -177,10 +297,21 @@
         </main>
     </div>
 
-    <script>
+        // --- Sidebar Toggle & Navigation ---
+        const sidebar = document.getElementById('app-sidebar');
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+        if (sidebar && sidebarToggleBtn) {
+            if (localStorage.getItem('sidebar_collapsed') === 'true') {
+                sidebar.classList.add('collapsed');
+                document.body.classList.add('sidebar-collapsed');
+            }
+            sidebarToggleBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('collapsed');
+                document.body.classList.toggle('sidebar-collapsed');
+                localStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed'));
+            });
+        }
 
-        
-        // --- Sidebar Navigation ---
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -197,7 +328,6 @@
                 document.getElementById(targetId).classList.add('active');
             });
         });
-
         // --- Docker Bot Management ---
         async function fetchBots() {
             try {
@@ -332,17 +462,55 @@
             const bC=document.getElementById('account-balance'),eC=document.getElementById('account-equity');
             if(bC)bC.textContent=formatMoney(summary.account_balance||0);
             if(eC)eC.textContent=formatMoney(summary.account_equity||0);
+            
+            const posCountEl = document.getElementById('active-pos-count');
+            if (posCountEl) posCountEl.textContent = positions.length ? `${positions.length} Open` : '0 Open';
+
             const tb=document.getElementById('positions-table'),ah=selectedAccountId==='all'?'':'hidden';
-            if(!positions.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No active positions</td></tr>'}else{tb.innerHTML=positions.map(p=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td><td>${p.bot_id}</td><td class="td-mono">${p.symbol}</td><td>${sideChip(p.side)}</td><td>${p.volume}</td><td class="td-mono">${p.entry_price}</td><td>${p.sl_pips}</td><td>${p.tp_pips}</td><td class="td-dim">${p.entry_time}</td></tr>`).join('')}
+            if(!positions.length){
+                tb.innerHTML='<tr><td colspan="10" class="empty-state">No active positions</td></tr>';
+            } else {
+                tb.innerHTML=positions.map(p=>{
+                    const uPnl = Number(p.unrealized_pnl) || 0;
+                    const uPips = Number(p.unrealized_pnl_pips) || 0;
+                    const pnlChipClass = uPnl >= 0 ? 'pnl-chip--profit' : 'pnl-chip--loss';
+                    const pnlSign = uPnl > 0 ? '+' : '';
+                    const pipsSign = uPips > 0 ? '+' : '';
+                    const curPrice = (p.current_price !== undefined && p.current_price !== null) ? p.current_price : p.entry_price;
+                    
+                    return `<tr>
+                        <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td>
+                        <td>${p.bot_id}</td>
+                        <td class="td-mono font-bold">${p.symbol}</td>
+                        <td>${sideChip(p.side)}</td>
+                        <td>${p.volume}L</td>
+                        <td class="td-mono">${p.entry_price}</td>
+                        <td class="td-mono td-current-price">${curPrice}</td>
+                        <td class="td-dim td-sltp">${p.sl_pips}p / ${p.tp_pips}p</td>
+                        <td class="td-pnl-live"><span class="pnl-chip ${pnlChipClass}">${pnlSign}$${uPnl.toFixed(2)} (${pipsSign}${uPips.toFixed(1)}p)</span></td>
+                        <td class="td-dim">${p.entry_time}</td>
+                    </tr>`;
+                }).join('');
+            }
         }
         function updateTradeHistory(history){
             const tb=document.getElementById('history-table');if(!tb)return;const ah=selectedAccountId==='all'?'':'hidden';
-            if(!history.length){tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>'}else{tb.innerHTML=history.map(t=>`<tr><td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td><td>${t.bot_id}</td><td class="td-mono">${t.symbol}</td><td>${sideChip(t.side)}</td><td>${t.volume}</td><td class="td-mono">${t.entry_price}</td><td class="td-mono">${t.exit_price}</td><td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'}">${formatMoney(t.pnl)}</td><td class="td-dim">${t.exit_time}</td></tr>`).join('')}
+            if(!history.length){
+                tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>';
+            } else {
+                tb.innerHTML=history.map(t=>`<tr>
+                    <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td>
+                    <td>${t.bot_id}</td>
+                    <td class="td-mono font-bold">${t.symbol}</td>
+                    <td>${sideChip(t.side)}</td>
+                    <td>${t.volume}L</td>
+                    <td class="td-mono">${t.entry_price}</td>
+                    <td class="td-mono">${t.exit_price}</td>
+                    <td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'} font-bold">${formatMoney(t.pnl)}</td>
+                    <td class="td-dim">${t.exit_time}</td>
+                </tr>`).join('');
+            }
         }
-
-        // ---- Agent Live Logs Management ----
-        let rawLogLines = [];
-        let currentLogDate = '';
         const logBox = document.getElementById('agent-log-box');
         const logDateSelect = document.getElementById('log-date-select');
         const logFilterInput = document.getElementById('log-filter-input');
