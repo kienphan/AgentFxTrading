@@ -1014,8 +1014,8 @@ Endpoint principal para decisões de negociação.
 {
   "action": "BUY",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "Viés TMS ALTA confirmado, breakout ORB decisivo UP (+5.0p), momentum subindo"
 }
 ```

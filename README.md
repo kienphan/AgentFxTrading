@@ -811,7 +811,7 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
 - **Regimes**:
   - **`trending`** ($ER \ge 0.35$): Disables fixed TP (`TrendTpDisabled = true`), lets Trailing SL and Giveback Floor capture the full trend run.
   - **`choppy`** (`or_flips \ge 5`): High risk of stop-hunting traps → Cycle Gate forces `HOLD`.
-  - **`mixed`**: Standard trading discipline ($R:R \ge 1.5$).
+  - **`mixed`**: Standard trading discipline; entries only on confirmed setups.
   - **`forming`**: Early session range formation ($< 6$ bars).
 
 ### Quantitative Edge-Case Rules
@@ -1055,11 +1055,17 @@ Main endpoint for trading decisions.
 {
   "action": "BUY",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+5.0p), momentum rising"
 }
 ```
+
+> **Note**: `sl_pips` / `tp_pips` returned by the LLM are **ignored** by the cBot when
+> `UseAtr = true` (default). The cBot computes SL/TP dynamically from ATR
+> (`SL = AtrSlMultiplier × ATR`, `TP = AtrTpMultiplier × ATR`, clamped by ATR-based
+> Min/Max guardrails), then applies risk-based position sizing. The LLM decides
+> direction (`action`), timing, and a relative `volume_lots` suggestion only.
 
 ### POST /portfolio/report
 

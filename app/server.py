@@ -229,12 +229,6 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
     """
     is_gold = "XAU" in snapshot.symbol.upper() or "GOLD" in snapshot.symbol.upper()
     asset_type = "Gold (Commodity/Metals)" if is_gold else "Forex Major/Cross"
-    
-    # Pip scale guidelines based on asset
-    sl_guideline = "20.0 - 80.0 pips" if is_gold else "6.0 - 30.0 pips"
-    tp_guideline = "30.0 - 250.0 pips" if is_gold else "10.0 - 80.0 pips"
-    default_sl = 30.0 if is_gold else 10.0
-    default_tp = 60.0 if is_gold else 20.0
 
     current_regime = snapshot.market.regime if snapshot.market else "mixed"
     regime_guideline = ""
@@ -242,7 +236,7 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
         regime_guideline = (
             "• CURRENT REGIME IS TRENDING: The execution engine (cBot) automatically DISABLES fixed TP (Trend TP Disabled). "
             "Your trade will ride the full momentum wave managed by dynamic Trailing Stop and Giveback Floor. "
-            "Declare ambitious TP or open target and focus on accurate entry timing & SL boundary."
+            "Focus on accurate entry timing & direction — SL/TP are sized by the ATR engine."
         )
     elif current_regime == "choppy":
         regime_guideline = (
@@ -252,13 +246,18 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
         )
     else:
         regime_guideline = (
-            "• CURRENT REGIME IS MIXED/FORMING: Maintain standard trading discipline with R:R >= 1.5."
+            "• CURRENT REGIME IS MIXED/FORMING: Maintain standard trading discipline; entry only on confirmed setups."
         )
 
     return f"""You are an AUTONOMOUS quantitative trading agent running the TMS (Trend Momentum Signal) + ORB (Opening Range Breakout) strategy for {snapshot.symbol} ({asset_type}).
 
 ## Core Contract: "LLM proposes, Code disposes"
 You analyze market structure and propose trade actions. The deterministic execution harness (cBot + Portfolio Manager) enforces hard guardrails (spread checks, correlation limits, trailing stops, and EOD force-flatten). Always output valid structured JSON.
+
+## SL/TP ARE COMPUTED BY THE ATR ENGINE — DO NOT GUESS PIPS
+- The cBot overrides any sl_pips / tp_pips you return with ATR-based distances
+  (SL = ATR SL Multiplier x ATR, TP = ATR TP Multiplier x ATR, clamped by Min/Max ATR guardrails).
+- Return sl_pips = 0 and tp_pips = 0. Your job is DIRECTION (action), SIZING (volume_lots), and TIMING — never pip targets.
 
 ## Strategy Logic
 
@@ -272,6 +271,8 @@ You analyze market structure and propose trade actions. The deterministic execut
 - Opening Range (OR) defines the high/low of the first 15 minutes of the active session.
 - Valid entry requires price closing beyond OR boundary in the direction of TMS bias.
 - Breakout must be DECISIVE (breakout_distance_pips >= threshold) and within entry window (bars_since_breakout <= 5).
+- A breakout that has re-entered the range is reported as NO breakout (direction = none) — never trade a failed breakout.
+
 ### 3. ENTRY MODELS (DIRECT BREAKOUT vs RETEST + TDI BOUNCE)
 - **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`).
 - **Model 2: Breakout Retest + TDI Bounce (High R:R Continuation)**:
@@ -297,9 +298,9 @@ You analyze market structure and propose trade actions. The deterministic execut
 - **MOMENTUM SLOPE AS EARLIEST EXIT WARNING**:
   - green_tf_slope turning negative for a BUY position (or positive for a SELL position) is the earliest warning that momentum is exhausting before full TDI cross confirms.
 
-### 6. Parameter Guidelines for {snapshot.symbol}
-- Realistic TP Distance: {tp_guideline} (Suggested: ~{default_tp} pips)
-- Minimum Risk-to-Reward: R:R >= 1.5
+### 6. Risk & Sizing (handled by the engine — context only)
+- SL/TP distances are computed by the cBot ATR engine (ATR on the chart timeframe); you do NOT provide them.
+- Position volume is computed by the engine from risk-per-trade % and ATR-based SL. `volume_lots` you return is a *relative* suggestion only and may be overridden.
 
 ## Decision Rules Summary
 
@@ -322,8 +323,8 @@ You analyze market structure and propose trade actions. The deterministic execut
 {{
   "action": "BUY" | "SELL" | "CLOSE_ALL" | "HOLD",
   "volume_lots": 0.01,
-  "sl_pips": {default_sl},
-  "tp_pips": {default_tp},
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "Clear, concise technical justification (TMS bias, ORB breakout, Regime ER, Momentum slope)"
 }}
 """
@@ -841,6 +842,8 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
         "4. If short_entry=true and TMS BEARISH and ORB breakout DOWN and is_decisive → SELL",
         "5. If loss_streak >= 3 → HOLD",
         "6. Otherwise → HOLD",
+        "",
+        "SL/TP pips are ignored by the engine (ATR-based) — set sl_pips/tp_pips to 0.",
         "",
         "Output JSON decision.",
     ])

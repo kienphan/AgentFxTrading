@@ -782,7 +782,7 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
 - **Các chế độ thị trường**:
   - **`trending`** ($ER \ge 0.35$): Tự động hủy TP cố định (`TrendTpDisabled = true`), thả trôi lệnh để Trailing SL và Giveback Floor ăn trọn con sóng lớn.
   - **`choppy`** (`or_flips \ge 5`): Nguy cơ bẫy giá cao → Cycle Gate tự động chọn `HOLD`.
-  - **`mixed`**: Kỷ luật giao dịch tiêu chuẩn ($R:R \ge 1.5$).
+  - **`mixed`**: Kỷ luật giao dịch tiêu chuẩn; chỉ vào lệnh khi setup được xác nhận.
   - **`forming`**: Giai đoạn mở phiên tích lũy ($< 6$ nến).
 
 ### Quy Tắc Xử Lý Ngoại Lệ Thực Chiến (Edge-Case Rules)
@@ -1027,11 +1027,16 @@ Endpoint chính cho quyết định giao dịch.
 {
   "action": "BUY",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "TMS BULLISH bias confirmed, ORB decisive breakout UP (+5.0p), momentum rising"
 }
 ```
+
+> **Lưu ý**: `sl_pips` / `tp_pips` mà LLM trả về bị cBot **bỏ qua** khi `UseAtr = true` (mặc định).
+> cBot tự tính SL/TP động theo ATR (`SL = AtrSlMultiplier × ATR`, `TP = AtrTpMultiplier × ATR`,
+> kẹp bởi guardrails theo ATR), sau đó áp dụng định cỡ vị thế theo rủi ro. LLM chỉ quyết định
+> hướng (`action`), thời điểm, và gợi ý tương đối `volume_lots`.
 
 ### POST /portfolio/report
 

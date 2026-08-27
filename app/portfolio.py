@@ -25,12 +25,20 @@ class PortfolioManager:
     
     def __init__(self, db_path: str = "portfolio.db"):
         self.db_path = Path(db_path)
-        self.config = PortfolioConfig()
-        self._init_db()
-    
     def _init_db(self):
         """Initialize SQLite database with schema."""
         conn = sqlite3.connect(self.db_path)
+        # WAL mode + busy timeout: 11 bots report concurrently; without these
+        # concurrent writes throw "database is locked".
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+    
+        # WAL mode + busy timeout: 11 bots report concurrently; without these
+        # concurrent writes throw "database is locked".
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
         
         # Setup accounts table
         registry = get_account_registry()
@@ -123,11 +131,13 @@ class PortfolioManager:
         conn.commit()
         conn.close()
         logger.info(f"Portfolio database initialized at {self.db_path}")
-    
+
     def _get_conn(self):
         """Get database connection."""
-        return sqlite3.connect(self.db_path)
-    
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
     def register_position(self, bot_id: str, symbol: str, side: str, 
                          volume: float, entry_price: float, 
                          sl_pips: float, tp_pips: float, account_id: str) -> bool:

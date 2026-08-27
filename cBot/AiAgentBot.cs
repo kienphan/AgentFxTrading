@@ -928,6 +928,16 @@ namespace cAlgo.Robots
             else if (_breakoutDir == "down" && _orLow < double.MaxValue)
                 breakoutDistPips = (_orLow - currentPrice) / Symbol.PipSize;
 
+            // Breakout is dead if price has re-entered the range: distance <= 0.
+            // A failed breakout must not keep blocking entries for hours nor mislead the LLM
+            // (negative distance would otherwise read as a massive breakout via the bounce bypass).
+            string breakoutDirection = _breakoutDir;
+            if (breakoutDistPips <= 0)
+            {
+                breakoutDirection = null;
+                breakoutDistPips = 0;
+            }
+
             bool isDecisive = breakoutDistPips >= MinDecisiveBreakoutPips;
 
             string pricePos = "inside";
@@ -944,7 +954,7 @@ namespace cAlgo.Robots
                 or_mid = (_orHigh > double.MinValue && _orLow < double.MaxValue) ? Math.Round((_orHigh + _orLow) / 2, Symbol.Digits) : 0,
                 or_width = (_orHigh > double.MinValue && _orLow < double.MaxValue) ? Math.Round(_orHigh - _orLow, Symbol.Digits) : 0,
                 or_complete = _orComplete,
-                breakout_direction = _breakoutDir,
+                breakout_direction = breakoutDirection,
                 breakout_price = _breakoutPrice > 0 ? Math.Round(_breakoutPrice, Symbol.Digits) : 0,
                 breakout_distance_pips = Math.Round(breakoutDistPips, 1),
                 bars_since_breakout = barsSince,
@@ -953,6 +963,7 @@ namespace cAlgo.Robots
                 price_position = pricePos
             };
         }
+
 
         private MarketRegimeInfo GetMarketRegime(int currentIndex)
         {
@@ -1463,8 +1474,8 @@ namespace cAlgo.Robots
                     volume = position.VolumeInUnits / Symbol.LotSize,
                     entry_price = position.EntryPrice,
 
-                    sl_pips = slPips,
-                    tp_pips = tpPips,
+                    sl_pips = Math.Round(slPips, 1),
+                    tp_pips = Math.Round(tpPips, 1),
                     account_number = Account.Number.ToString(),
                     account_type = Account.IsLive ? "live" : "demo",
                     account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),

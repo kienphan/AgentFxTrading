@@ -1014,8 +1014,8 @@ class PortfolioConfig:
 {
   "action": "BUY",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "Бычий bias TMS подтвержден, решающий прорыв ORB UP (+5.0p), импульс растет"
 }
 ```

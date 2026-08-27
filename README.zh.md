@@ -1005,8 +1005,8 @@ class PortfolioConfig:
 {
   "action": "BUY",
   "volume_lots": 0.01,
-  "sl_pips": 10.0,
-  "tp_pips": 20.0,
+  "sl_pips": 0,
+  "tp_pips": 0,
   "reason": "TMS看涨偏向确认，ORB决定性向上突破（+5.0p），动量上升"
 }
 ```
