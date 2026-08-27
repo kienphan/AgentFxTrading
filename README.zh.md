@@ -642,10 +642,10 @@ python app/server.py
        --TrendTpDisabled=true
      ```
 
-   * **GER40 / DAX40 (M5 - 欧洲/伦敦时段 / 德国股指)**:
+   * **DE40 / DAX40 (M5 - 欧洲/伦敦时段 / 德国股指)** *(注意：根据平台代码使用 `DE40` 或 `GER40`)*:
      ```bash
      docker run -d \
-       --name cbot-ger40 \
+       --name cbot-de40 \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -655,10 +655,10 @@ python app/server.py
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=GER40 \
+       --symbol=DE40 \
        --period=m5 \
        --full-access \
-       --BotId="ger40_m5" \
+       --BotId="de40_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

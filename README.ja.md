@@ -651,10 +651,10 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --TrendTpDisabled=true
      ```
 
-   * **GER40 / DAX40 (M5 - ヨーロッパ/ロンドンセッション / ドイツ株式指数)**:
+   * **DE40 / DAX40 (M5 - ヨーロッパ/ロンドンセッション / ドイツ株式指数)** *(注意：ブローカーによって `DE40` または `GER40` を使用)*:
      ```bash
      docker run -d \
-       --name cbot-ger40 \
+       --name cbot-de40 \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -664,10 +664,10 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=GER40 \
+       --symbol=DE40 \
        --period=m5 \
        --full-access \
-       --BotId="ger40_m5" \
+       --BotId="de40_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

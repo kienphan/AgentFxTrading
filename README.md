@@ -680,10 +680,10 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --TrendTpDisabled=true
      ```
 
-   * **GER40 / DAX40 (M5 - London/European Index Session)**:
+   * **DE40 / DAX40 (M5 - London/European Index Session)** *(Note: Use `DE40` or `GER40` depending on your broker)*:
      ```bash
      docker run -d \
-       --name cbot-ger40 \
+       --name cbot-de40 \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -693,10 +693,10 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=GER40 \
+       --symbol=DE40 \
        --period=m5 \
        --full-access \
-       --BotId="ger40_m5" \
+       --BotId="de40_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

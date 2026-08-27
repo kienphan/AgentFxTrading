@@ -651,10 +651,10 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --TrendTpDisabled=true
      ```
 
-   * **GER40 / DAX40 (M5 - Sessão Europeia/Londres / Índice Alemão)**:
+   * **DE40 / DAX40 (M5 - Sessão Europeia/Londres / Índice Alemão)** *(Nota: Use `DE40` ou `GER40` dependendo da sua corretora)*:
      ```bash
      docker run -d \
-       --name cbot-ger40 \
+       --name cbot-de40 \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -664,10 +664,10 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --ctid=seu_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=ID_DA_CONTA \
-       --symbol=GER40 \
+       --symbol=DE40 \
        --period=m5 \
        --full-access \
-       --BotId="ger40_m5" \
+       --BotId="de40_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \
