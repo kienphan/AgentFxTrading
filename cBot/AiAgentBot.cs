@@ -340,6 +340,21 @@ namespace cAlgo.Robots
 
         protected override void OnStart()
         {
+            if (!string.IsNullOrWhiteSpace(BotId))
+            {
+                BotId = BotId.Trim().Trim('"', '\'', '“', '”', '‘', '’', '`');
+                if (BotId.Contains(" --"))
+                    BotId = BotId.Substring(0, BotId.IndexOf(" --")).Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(ApiUrl))
+            {
+                ApiUrl = ApiUrl.Trim().Trim('"', '\'', '“', '”', '‘', '’', '`');
+            }
+            if (!string.IsNullOrWhiteSpace(AccountLabel))
+            {
+                AccountLabel = AccountLabel.Trim().Trim('"', '\'', '“', '”', '‘', '’', '`');
+            }
+
             _httpClient = new HttpClient();
             _macroBars = MarketData.GetBars(TmsTimeFrame);
 

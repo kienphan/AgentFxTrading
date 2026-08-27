@@ -124,6 +124,13 @@ class GeminiClient(LLMClient):
         response = await self.model.generate_content_async(prompt, **merged)
         return response.text
 
+def _clean_env(key: str, default: str = "") -> str:
+    val = os.getenv(key)
+    if val is None or val == "":
+        return default
+    val = val.split(" #")[0].split(" //")[0].strip()
+    return val.strip("\"'“”`") or default
+
 
 def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     """
@@ -142,57 +149,56 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     - "gemini" / "google": Google Gemini models
     - "openai_compatible": Generic OpenAI-compatible endpoint
     """
-    provider = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    provider = (provider or _clean_env("LLM_PROVIDER", "openai")).lower()
 
     if provider in ("openai",):
         return OpenAICompatibleClient(
-            api_key=os.getenv("OPENAI_API_KEY", ""),
-            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-            model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            api_key=_clean_env("OPENAI_API_KEY", ""),
+            base_url=_clean_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            model=_clean_env("LLM_MODEL", "gpt-4o-mini"),
             **kwargs
         )
 
     elif provider in ("qwen", "dashscope"):
         return OpenAICompatibleClient(
-            api_key=os.getenv("DASHSCOPE_API_KEY", ""),
-            base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-            model=os.getenv("LLM_MODEL", "qwen3.7-flash"),
+            api_key=_clean_env("DASHSCOPE_API_KEY", ""),
+            base_url=_clean_env("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
+            model=_clean_env("LLM_MODEL", "qwen3.7-flash"),
             **kwargs
         )
 
     elif provider in ("deepseek",):
         return OpenAICompatibleClient(
-            api_key=os.getenv("DEEPSEEK_API_KEY", ""),
-            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-            model=os.getenv("LLM_MODEL", "deepseek-v4-flash"),
+            api_key=_clean_env("DEEPSEEK_API_KEY", ""),
+            base_url=_clean_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            model=_clean_env("LLM_MODEL", "deepseek-v4-flash"),
             **kwargs
         )
     elif provider in ("anthropic", "claude"):
         return AnthropicClient(
-            api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            api_key=_clean_env("ANTHROPIC_API_KEY", ""),
+            model=_clean_env("LLM_MODEL", "claude-3-5-sonnet-20241022"),
+            max_tokens=int(_clean_env("LLM_MAX_TOKENS", "4096")),
             **kwargs
         )
 
     elif provider in ("gemini", "google"):
         return GeminiClient(
-            api_key=os.getenv("GOOGLE_API_KEY", ""),
-            model=os.getenv("LLM_MODEL", "gemini-1.5-flash"),
+            api_key=_clean_env("GOOGLE_API_KEY", ""),
+            model=_clean_env("LLM_MODEL", "gemini-1.5-flash"),
             **kwargs
         )
 
     elif provider in ("openai_compatible", "custom"):
         return OpenAICompatibleClient(
-            api_key=os.getenv("CUSTOM_API_KEY", ""),
-            base_url=os.getenv("CUSTOM_BASE_URL", ""),
-            model=os.getenv("LLM_MODEL", ""),
+            api_key=_clean_env("CUSTOM_API_KEY", ""),
+            base_url=_clean_env("CUSTOM_BASE_URL", ""),
+            model=_clean_env("LLM_MODEL", ""),
             **kwargs
         )
 
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
-
 
 class JSONResponseParser:
     """Parse JSON from LLM responses, handling markdown code blocks."""

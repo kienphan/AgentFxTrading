@@ -50,8 +50,16 @@ setup_agent_logging(logging.INFO)
 logger = logging.getLogger("AgentFxTrading")
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
+
+def sanitize_bot_id(bot_id: Optional[str]) -> str:
+    if not bot_id:
+        return "default"
+    cleaned = str(bot_id).strip().strip("\"'“”‘’`")
+    if " --" in cleaned:
+        cleaned = cleaned.split(" --")[0].strip()
+    return cleaned.strip("\"'“”‘’`") or "default"
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
 from app.dashboard import router as dashboard_router, broadcast_update
@@ -186,6 +194,18 @@ class MarketSnapshot(BaseModel):
     account_balance: float = 10000.0
     account_equity: float = 10000.0
 
+    @field_validator("bot_id", mode="before")
+    @classmethod
+    def clean_bot_id(cls, v):
+        return sanitize_bot_id(v)
+
+    @field_validator("account_label", mode="before")
+    @classmethod
+    def clean_account_label(cls, v):
+        if not v:
+            return None
+        cleaned = str(v).strip().strip("\"'“”`")
+        return cleaned or None
 # ---- Output Format ----
 class AgentDecision(BaseModel):
     action: str  # "BUY", "SELL", "CLOSE_ALL", "HOLD"
@@ -554,7 +574,7 @@ async def report_position(request: dict):
     Expected format: {"bot_id": "...", "action": "open|close", "symbol": "...", ...}
     """
     try:
-        bot_id = request.get("bot_id", "default")
+        bot_id = sanitize_bot_id(request.get("bot_id", "default"))
         action = request.get("action")
         symbol = request.get("symbol")
         
