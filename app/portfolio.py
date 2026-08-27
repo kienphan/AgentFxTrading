@@ -25,15 +25,12 @@ class PortfolioManager:
     
     def __init__(self, db_path: str = "portfolio.db"):
         self.db_path = Path(db_path)
+        self.config = PortfolioConfig()
+        self._init_db()
+    
     def _init_db(self):
         """Initialize SQLite database with schema."""
         conn = sqlite3.connect(self.db_path)
-        # WAL mode + busy timeout: 11 bots report concurrently; without these
-        # concurrent writes throw "database is locked".
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA synchronous=NORMAL")
-    
         # WAL mode + busy timeout: 11 bots report concurrently; without these
         # concurrent writes throw "database is locked".
         conn.execute("PRAGMA journal_mode=WAL")
@@ -192,7 +189,7 @@ class PortfolioManager:
             logger.error(f"Failed to close position: {e}")
             return False
     
-    def check_risk(self, symbol: str, side: str, volume: float, sl_pips: float,
+    def check_risk(self, symbol: str, side: str, volume: float,
                    account_balance: float = 10000.0, account_id: str = "default") -> Tuple[bool, str]:
         """
         Check if new trade is safe at portfolio level.

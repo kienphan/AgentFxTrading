@@ -555,7 +555,6 @@ async def trade_decision(snapshot: MarketSnapshot):
             symbol=snapshot.symbol,
             side="BUY",  # Will be determined by LLM, just checking capacity
             volume=0.01,  # Minimum volume
-            sl_pips=10.0,  # Reasonable SL
             account_balance=snapshot.account_balance,
             account_id=account_id
         )
