@@ -436,7 +436,13 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason="Cycle gate: Price inside Opening Range (no breakout)"
         )
 
-    if not orb.is_decisive:
+    # Post-TP Gate and Anti-Chase Bypass rule:
+    # If there is a TDI Bounce, we ignore the Entry Window constraint AND the Decisive constraint!
+    has_bounce = (bias == "BULLISH" and snapshot.tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.tms.tdi_bounce_bear)
+    if snapshot.chart_tms:
+        has_bounce = has_bounce or (bias == "BULLISH" and snapshot.chart_tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.chart_tms.tdi_bounce_bear)
+
+    if not orb.is_decisive and not has_bounce:
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
@@ -444,11 +450,6 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             tp_pips=0.0,
             reason=f"Cycle gate: Breakout not decisive ({orb.breakout_distance_pips:.1f}p < threshold)"
         )
-    # Post-TP Gate and Anti-Chase Bypass rule:
-    # If there is a TDI Bounce, we ignore the Entry Window constraint!
-    has_bounce = (bias == "BULLISH" and snapshot.tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.tms.tdi_bounce_bear)
-    if snapshot.chart_tms:
-        has_bounce = has_bounce or (bias == "BULLISH" and snapshot.chart_tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.chart_tms.tdi_bounce_bear)
 
     if not orb.in_entry_window and not has_bounce:
         return AgentDecision(

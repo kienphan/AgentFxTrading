@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 class PortfolioConfig:
     """Portfolio risk limits."""
-    MAX_POSITIONS = 4
-    MAX_CURRENCY_EXPOSURE = 2  # max 2 positions with same base currency
-    MAX_CORRELATED_POSITIONS = 2  # max 2 positions with correlation > 0.7
+    MAX_POSITIONS = 11
+    MAX_CURRENCY_EXPOSURE = 4  # max 2 positions with same base currency
+    MAX_CORRELATED_POSITIONS = 4  # max 2 positions with correlation > 0.7
     MAX_DAILY_LOSS = -200.0  # USD
     MAX_MARGIN_USAGE_PCT = 50.0  # % of account
     
@@ -78,12 +78,13 @@ class PortfolioManager:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS daily_stats_v2 (
                 account_id TEXT NOT NULL,
+                bot_id TEXT NOT NULL DEFAULT 'unknown',
                 date TEXT NOT NULL,
                 total_pnl REAL DEFAULT 0,
                 trades_count INTEGER DEFAULT 0,
                 loss_streak INTEGER DEFAULT 0,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (account_id, date)
+                PRIMARY KEY (account_id, bot_id, date)
             )
         """)
         
@@ -103,12 +104,13 @@ class PortfolioManager:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS daily_stats (
                 account_id TEXT NOT NULL,
+                bot_id TEXT NOT NULL DEFAULT 'unknown',
                 date TEXT NOT NULL,
                 total_pnl REAL DEFAULT 0,
                 trades_count INTEGER DEFAULT 0,
                 loss_streak INTEGER DEFAULT 0,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (account_id, date)
+                PRIMARY KEY (account_id, bot_id, date)
             )
         """)
 
@@ -171,9 +173,9 @@ class PortfolioManager:
             # Update daily stats
             today = date.today().isoformat()
             conn.execute("""
-                INSERT INTO daily_stats (account_id, date, total_pnl, trades_count, loss_streak)
-                VALUES (?, ?, ?, 1, CASE WHEN ? < 0 THEN 1 ELSE 0 END)
-                ON CONFLICT(account_id, date) DO UPDATE SET
+                INSERT INTO daily_stats (account_id, bot_id, date, total_pnl, trades_count, loss_streak)
+                VALUES (?, ?, ?, ?, 1, CASE WHEN ? < 0 THEN 1 ELSE 0 END)
+                ON CONFLICT(account_id, bot_id, date) DO UPDATE SET
                     total_pnl = total_pnl + ?,
                     trades_count = trades_count + 1,
                     loss_streak = CASE 
@@ -181,7 +183,7 @@ class PortfolioManager:
                         ELSE 0
                     END,
                     updated_at = datetime('now')
-            """, (account_id, today, pnl, pnl, pnl, pnl))
+            """, (account_id, bot_id, today, pnl, pnl, pnl, pnl))
             
             conn.commit()
             conn.close()
@@ -234,18 +236,15 @@ class PortfolioManager:
             # 4. Daily loss limit
             today = date.today().isoformat()
             cursor = conn.execute(
-                "SELECT total_pnl, loss_streak FROM daily_stats WHERE date = ? AND account_id = ?",
+                "SELECT SUM(total_pnl) FROM daily_stats WHERE date = ? AND account_id = ?",
                 (today, account_id)
             )
             row = cursor.fetchone()
-            if row:
-                daily_pnl, loss_streak = row
+            if row and row[0] is not None:
+                daily_pnl = row[0]
                 if daily_pnl <= self.config.MAX_DAILY_LOSS:
                     conn.close()
                     return False, f"Daily loss limit reached ({daily_pnl:.2f})"
-                if loss_streak >= 3:
-                    conn.close()
-                    return False, f"Loss streak too high ({loss_streak})"
             
             # 5. Margin usage estimate (simplified)
             cursor = conn.execute("""
