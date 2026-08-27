@@ -231,10 +231,10 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
     asset_type = "Gold (Commodity/Metals)" if is_gold else "Forex Major/Cross"
     
     # Pip scale guidelines based on asset
-    sl_guideline = "20.0 - 80.0 pips" if is_gold else "6.0 - 30.0 pips"
-    tp_guideline = "30.0 - 250.0 pips" if is_gold else "10.0 - 80.0 pips"
-    default_sl = 30.0 if is_gold else 10.0
-    default_tp = 60.0 if is_gold else 20.0
+    sl_guideline = "200.0 - 800.0 pips" if is_gold else "6.0 - 30.0 pips"
+    tp_guideline = "300.0 - 2500.0 pips" if is_gold else "10.0 - 80.0 pips"
+    default_sl = 300.0 if is_gold else 10.0
+    default_tp = 600.0 if is_gold else 20.0
 
     current_regime = snapshot.market.regime if snapshot.market else "mixed"
     regime_guideline = ""
