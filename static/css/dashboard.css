@@ -13,7 +13,10 @@
   --font-mono: 'JetBrains Mono','Consolas',monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--text-primary);height:100vh;overflow:hidden;display:flex;flex-direction:column;line-height:1.5;-webkit-font-smoothing:antialiased}
+body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--text-primary);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
+@media(min-width: 1200px){
+  body.app-shell{height:100vh;overflow:hidden;display:flex;flex-direction:column}
+}
 .topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;padding:14px 24px;background:var(--bg-surface);border-bottom:2px solid var(--accent);box-shadow:var(--shadow)}
 .topbar-brand{display:flex;flex-direction:column;gap:2px}
 .brand-title{font-size:1.25rem;font-weight:700;color:var(--accent-bright);letter-spacing:-0.02em}
@@ -31,7 +34,10 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .status-pill--offline{color:var(--text-muted)}
 .last-updated{font-size:0.7rem;color:var(--text-dim);font-family:var(--font-mono)}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.5}}
-.main-content{flex:1;overflow:hidden;padding:16px 24px 20px;max-width:1800px;width:100%;margin:0 auto;display:flex;flex-direction:column}
+.main-content{padding:20px 24px 32px;max-width:1800px;margin:0 auto;width:100%}
+@media(min-width: 1200px){
+  .main-content{flex:1;overflow:hidden;padding:16px 24px 20px;display:flex;flex-direction:column}
+}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
 @media(min-width:768px){.kpi-grid{grid-template-columns:repeat(4,1fr)}}
 @media(min-width:1200px){.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
@@ -87,53 +93,90 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .log-tag-error{color:#f38ba8;font-weight:700}
 .hidden{display:none!important}
 
+
 .dashboard-columns {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    height: 100%;
-    overflow: hidden;
-}
-@media(min-width: 1200px) {
-    .dashboard-columns {
-        grid-template-columns: 1fr 1fr; /* 50/50 split */
-    }
-}
-@media(min-width: 1600px) {
-    .dashboard-columns {
-        grid-template-columns: 1.2fr 1fr; /* Left gets a bit more space */
-    }
-}
-.left-column {
-    overflow-y: auto;
-    padding-right: 8px; /* space for scrollbar */
     display: flex;
     flex-direction: column;
-    /* Custom scrollbar for left column */
+    gap: 16px;
 }
-.left-column::-webkit-scrollbar { width: 6px; }
-.left-column::-webkit-scrollbar-track { background: transparent; }
-.left-column::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
-.left-column::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+.left-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
 
 .right-column {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
+
 .log-section {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    margin-top: 0 !important;
+    min-height: 500px;
 }
+
 .log-panel-wrap {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-}
-.log-terminal {
     flex: 1;
-    overflow-y: auto;
+}
+
+.bot-form-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr;
+}
+
+@media(min-width: 768px) {
+    .bot-form-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media(min-width: 1200px) {
+    .dashboard-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr; /* 50/50 split */
+        height: 100%;
+        overflow: hidden;
+    }
+    
+    .left-column {
+        overflow-y: auto;
+        padding-right: 8px; /* space for scrollbar */
+        padding-bottom: 20px; /* prevent cut-off at bottom */
+    }
+    
+    .left-column::-webkit-scrollbar { width: 6px; }
+    .left-column::-webkit-scrollbar-track { background: transparent; }
+    .left-column::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
+    .left-column::-webkit-scrollbar-thumb:hover { background: var(--border); }
+    
+    .right-column {
+        overflow: hidden;
+        height: 100%;
+    }
+    
+    .log-section {
+        flex: 1;
+        margin-top: 0 !important;
+        height: 100%;
+    }
+    
+    .log-panel-wrap {
+        overflow: hidden;
+    }
+    
+    .log-terminal {
+        flex: 1;
+        overflow-y: auto;
+    }
+}
+
+@media(min-width: 1600px) {
+    .dashboard-columns {
+        grid-template-columns: 1.2fr 1fr; /* Left gets a bit more space */
+    }
 }
