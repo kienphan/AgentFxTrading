@@ -1,10 +1,11 @@
 import docker
+from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import logging
+import os
 import shlex
 import subprocess
-
 logger = logging.getLogger(__name__)
 
 class CbotConfig(BaseModel):
@@ -59,10 +60,15 @@ class DockerManager:
         # If not found, we need to execute the run command.
         # It's highly recommended the run command includes --name <name>
         try:
-            # We use subprocess to run the arbitrary command because parsing all docker run flags 
-            # (volumes, envs, network) into docker-py is too complex.
-            # We just append -d if not present.
-            parts = shlex.split(command)
+            project_root = str(Path(__file__).resolve().parent.parent)
+            cleaned_cmd = command.replace("$(pwd)", project_root).replace("$PWD", project_root)
+            
+            # Normalize multiline backslashes and newlines
+            cleaned_cmd = cleaned_cmd.replace("\\\r\n", " ").replace("\\\n", " ").replace("\\\r", " ").replace("\\", " ")
+            cleaned_cmd = cleaned_cmd.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+            cleaned_cmd = " ".join(cleaned_cmd.split())
+
+            parts = [p for p in shlex.split(cleaned_cmd) if p.strip()]
             if "-d" not in parts and "--detach" not in parts:
                 parts.insert(2, "-d") # docker run -d ...
             
