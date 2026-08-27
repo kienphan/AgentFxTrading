@@ -516,9 +516,26 @@ async def trade_decision(snapshot: MarketSnapshot):
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data)
 
+    ha_str = "N/A"
+    tdi_str = "N/A"
+    stoch_str = "N/A"
+    if snapshot.bars and len(snapshot.bars) > 0:
+        b = snapshot.bars[-1]
+        ha_icon = "🟢" if str(b.ha_color).lower() == "green" else "🔴" if str(b.ha_color).lower() == "red" else str(b.ha_color)
+        ha_str = f"HA={ha_icon}"
+        tdi_str = f"TDI_G={b.tdi_green:.2f} TDI_R={b.tdi_red:.2f}"
+        stoch_str = f"Stoch=%K={b.stoch_k:.1f} %D={b.stoch_d:.1f}"
+    
+    or_str = "OR=N/A"
+    if snapshot.orb:
+        # Use formatting that drops trailing zeros depending on asset, but 5f is okay. 
+        # Actually a dynamic round might be cleaner, but we can stick to 5f for now or use g
+        or_str = f"OR=[{snapshot.orb.or_low:g}...{snapshot.orb.or_high:g}]"
+
     logger.info(
         f"[SNAPSHOT] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
-        f"Bid/Ask={snapshot.bid:.5f}/{snapshot.ask:.5f} | TMS={snapshot.tms.bias} (age={snapshot.tms.bars_since_cross}) | "
+        f"Bid={snapshot.bid:g} | {or_str} | {ha_str} {tdi_str} {stoch_str} | "
+        f"TMS={snapshot.tms.bias} (age={snapshot.tms.bars_since_cross}) | "
         f"Regime={regime_str} (ER={er_str}) | Pos={pos_str} | Session={sess_str}"
     )
     # Deterministic Cycle Gate (Cost Gate - skip LLM when decision is deterministic)
