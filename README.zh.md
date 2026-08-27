@@ -457,6 +457,190 @@ python app/server.py
        --RiskPerTradePercent=0.2 \
        --TrendTpDisabled=true
      ```
+
+   * **GBPJPY (M15 - 伦敦时段 / 高波动交叉盘)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpjpy \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="gbpjpy_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=17 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=6.0 \
+       --MinOrWidthPips=15.0 \
+       --OrbBufferPips=2.0 \
+       --BreakevenTriggerPips=18.0 \
+       --BreakevenOffsetPips=2.0 \
+       --TrailTriggerPips=30.0 \
+       --TrailDistancePips=15.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=15.0 \
+       --MaxSlPips=35.0 \
+       --MinTpPips=25.0 \
+       --MaxTpPips=80.0 \
+       --MaxGivebackPips=15.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=6.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=5 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **EURJPY (M15 - 伦敦时段 / 高波动交叉盘)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurjpy \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="eurjpy_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=17 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=5.0 \
+       --MinOrWidthPips=12.0 \
+       --OrbBufferPips=1.5 \
+       --BreakevenTriggerPips=15.0 \
+       --BreakevenOffsetPips=1.5 \
+       --TrailTriggerPips=25.0 \
+       --TrailDistancePips=12.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=12.0 \
+       --MaxSlPips=30.0 \
+       --MinTpPips=20.0 \
+       --MaxTpPips=70.0 \
+       --MaxGivebackPips=12.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=5.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=5 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **USDCAD (M15 - 纽约时段 / 商品货币)**:
+     ```bash
+     docker run -d \
+       --name cbot-usdcad \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=USDCAD \
+       --period=m15 \
+       --full-access \
+       --BotId="usdcad_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork" \
+       --OrbStartHour=13 \
+       --SessionEndHour=21 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=4.0 \
+       --MinOrWidthPips=10.0 \
+       --OrbBufferPips=1.5 \
+       --BreakevenTriggerPips=12.0 \
+       --BreakevenOffsetPips=1.5 \
+       --TrailTriggerPips=20.0 \
+       --TrailDistancePips=10.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=10.0 \
+       --MaxSlPips=25.0 \
+       --MinTpPips=15.0 \
+       --MaxTpPips=50.0 \
+       --MaxGivebackPips=10.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=4.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=4 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **AUDUSD (M15 - 亚洲/东京时段 / 商品货币)**:
+     ```bash
+     docker run -d \
+       --name cbot-audusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=AUDUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="audusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="tokyo" \
+       --OrbStartHour=0 \
+       --SessionEndHour=9 \
+       --SessionDstRule="None" \
+       --MinDecisiveBreakoutPips=3.0 \
+       --MinOrWidthPips=8.0 \
+       --OrbBufferPips=1.0 \
+       --BreakevenTriggerPips=10.0 \
+       --BreakevenOffsetPips=1.0 \
+       --TrailTriggerPips=18.0 \
+       --TrailDistancePips=9.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=8.0 \
+       --MaxSlPips=20.0 \
+       --MinTpPips=12.0 \
+       --MaxTpPips=45.0 \
+       --MaxGivebackPips=8.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=3.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=3 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
 ### 5. 开始交易！🎉
 
 机器人将自动：
