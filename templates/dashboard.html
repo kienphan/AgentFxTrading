@@ -239,22 +239,29 @@
                         <span class="panel-title">🤖 Docker Bot Management</span>
                         <button id="add-bot-btn" class="log-btn" style="margin-left:auto;">+ Add Bot</button>
                     </div>
-                    <div class="panel-body">
-                        <div id="bot-add-form" style="display:none; margin-bottom: 16px; padding: 16px; background: var(--bg-surface-2); border-radius: 6px;">
-                            <h4 style="margin-top:0; margin-bottom:12px;">Add New Bot Configuration</h4>
-                            <div class="bot-form-grid">
-                                <div><label>Bot Name</label><input type="text" id="bot-name" class="log-input" style="width:100%" placeholder="cbot_1"></div>
-                                <div><label>Description</label><input type="text" id="bot-desc" class="log-input" style="width:100%" placeholder="EURUSD 1M Bot"></div>
+                    <div id="bot-form-container" style="display:none; margin-bottom: 16px; padding: 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;">
+                        <h4 id="bot-form-title" style="margin-top:0; margin-bottom:12px; color:var(--accent-bright);">Add New Bot Configuration</h4>
+                        <input type="hidden" id="bot-form-mode" value="add">
+                        <div class="bot-form-grid">
+                            <div>
+                                <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:4px;">Bot Name (Container Name)</label>
+                                <input type="text" id="bot-name" class="log-input" style="width:100%" placeholder="cbot-eurusd">
                             </div>
-                            <div style="margin-top: 12px;">
-                                <label>Docker Run Command (Full command)</label>
-                                <textarea id="bot-cmd" class="log-input" style="width:100%; height:60px; font-family:monospace" placeholder="docker run -d --name cbot_1 ..."></textarea>
-                            </div>
-                            <div style="margin-top: 12px; display:flex; gap: 8px;">
-                                <button id="save-bot-btn" class="log-btn" style="background:var(--color-profit); color:#000;">Save</button>
-                                <button id="cancel-bot-btn" class="log-btn">Cancel</button>
+                            <div>
+                                <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:4px;">Description</label>
+                                <input type="text" id="bot-desc" class="log-input" style="width:100%" placeholder="EURUSD M15 London Session">
                             </div>
                         </div>
+                        <div style="margin-top: 12px;">
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:4px;">Docker Run Command (Full command with parameters)</label>
+                            <textarea id="bot-cmd" class="log-input" style="width:100%; height:110px; font-family:var(--font-mono); font-size:0.75rem; line-height:1.4;" placeholder="docker run -d --name cbot-eurusd ..."></textarea>
+                        </div>
+                        <div style="margin-top: 14px; display:flex; gap: 8px; flex-wrap:wrap;">
+                            <button id="save-bot-btn" class="log-btn" style="background:var(--profit-soft); color:var(--profit); border-color:var(--profit);">💾 Save Only</button>
+                            <button id="save-restart-bot-btn" class="log-btn" style="background:var(--accent-soft); color:var(--accent-bright); border-color:var(--accent);">⚡ Save &amp; Restart Bot</button>
+                            <button id="cancel-bot-btn" class="log-btn">Cancel</button>
+                        </div>
+                    </div>
                         <div class="table-wrap">
                             <table class="data-table" id="bots-table">
                                 <thead>
@@ -369,19 +376,21 @@
             bots.forEach(b => {
                 const isRunning = b.status === "running";
                 const statusColor = isRunning ? "var(--color-profit)" : (b.status === "error" ? "var(--color-loss)" : "var(--color-dim)");
-                const escapedCmd = b.run_command.replace(/"/g, '&quot;');
+                const escapedCmd = (b.run_command || '').replace(/"/g, '&quot;');
+                const escapedDesc = (b.description || '').replace(/"/g, '&quot;');
                 
                 html += `<tr>
                     <td><strong>${b.name}</strong></td>
                     <td><span style="color:${statusColor}">${b.status}</span></td>
-                    <td class="td-dim">${b.container_id || "-"}</td>
+                    <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
                     <td class="td-dim">${b.description || "-"}</td>
-                    <td class="td-dim" style="font-family:monospace; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
-                    <td style="text-align:right">
+                    <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
+                    <td style="text-align:right; white-space:nowrap;">
                         ${isRunning 
-                            ? `<button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.2)">Stop</button>`
-                            : `<button class="log-btn action-start" data-name="${b.name}" style="background:rgba(125,189,30,0.2)">Start</button>`
+                            ? `<button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
+                            : `<button class="log-btn action-start" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit);">Start</button>`
                         }
+                        <button class="log-btn action-edit" data-name="${b.name}" data-desc="${escapedDesc}" data-cmd="${escapedCmd}" style="background:var(--bg-elevated); margin:0 4px;">Edit</button>
                         <button class="log-btn action-delete" data-name="${b.name}">Delete</button>
                     </td>
                 </tr>`;
@@ -391,6 +400,23 @@
             document.querySelectorAll(".action-start").forEach(btn => btn.addEventListener("click", e => actionBot(e.target.dataset.name, "start")));
             document.querySelectorAll(".action-stop").forEach(btn => btn.addEventListener("click", e => actionBot(e.target.dataset.name, "stop")));
             document.querySelectorAll(".action-delete").forEach(btn => btn.addEventListener("click", e => deleteBot(e.target.dataset.name)));
+            document.querySelectorAll(".action-edit").forEach(btn => btn.addEventListener("click", e => {
+                const bName = btn.dataset.name;
+                const bDesc = btn.dataset.desc;
+                const bCmd = btn.dataset.cmd;
+                
+                document.getElementById("bot-form-mode").value = "edit";
+                document.getElementById("bot-form-title").textContent = `Edit Bot Configuration: ${bName}`;
+                const nameInput = document.getElementById("bot-name");
+                nameInput.value = bName;
+                nameInput.disabled = true; // Bot name is key, don't change in-place
+                document.getElementById("bot-desc").value = bDesc;
+                document.getElementById("bot-cmd").value = bCmd;
+                
+                document.getElementById("bot-form-container").style.display = "block";
+                document.getElementById("save-restart-bot-btn").style.display = "inline-flex";
+                document.getElementById("bot-cmd").focus();
+            }));
         }
         async function actionBot(name, action) {
             try {
@@ -408,37 +434,61 @@
             } catch(e) { alert("Error: " + e); }
         }
         
+        async function submitBotForm(restart = false) {
+            const mode = document.getElementById("bot-form-mode").value;
+            const name = document.getElementById("bot-name").value.trim();
+            const desc = document.getElementById("bot-desc").value.trim();
+            const cmd = document.getElementById("bot-cmd").value.trim();
+            
+            if (!name || !cmd) return alert("Bot Name and Command are required.");
+            
+            try {
+                let res, data;
+                if (mode === "edit") {
+                    res = await fetch(`/api/bots/${name}/update`, {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ description: desc, run_command: cmd, restart: restart })
+                    });
+                } else {
+                    res = await fetch("/api/bots", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ name: name, description: desc, run_command: cmd })
+                    });
+                }
+                data = await res.json();
+                if (!data.success) {
+                    return alert(data.message || "Error saving bot");
+                }
+                document.getElementById("bot-form-container").style.display = "none";
+                fetchBots();
+            } catch(e) {
+                alert("Error saving bot: " + e);
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             fetchBots();
             setInterval(fetchBots, 10000); // Auto-refresh bot status
             
-            const form = document.getElementById("bot-add-form");
-            document.getElementById("add-bot-btn").addEventListener("click", () => form.style.display="block");
-            document.getElementById("cancel-bot-btn").addEventListener("click", () => form.style.display="none");
-            
-            document.getElementById("save-bot-btn").addEventListener("click", async () => {
-                const name = document.getElementById("bot-name").value.trim();
-                const desc = document.getElementById("bot-desc").value.trim();
-                const cmd = document.getElementById("bot-cmd").value.trim();
-                if(!name || !cmd) return alert("Name and Command required");
-                try {
-                    const res = await fetch("/api/bots", {
-                        method: "POST", 
-                        headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({name: name, description: desc, run_command: cmd})
-                    });
-                    const data = await res.json();
-                    if(!data.success) return alert(data.message);
-                    form.style.display = "none";
-                    document.getElementById("bot-name").value = "";
-                    document.getElementById("bot-desc").value = "";
-                    document.getElementById("bot-cmd").value = "";
-                    fetchBots();
-                } catch(e) { alert("Error: " + e); }
+            const formContainer = document.getElementById("bot-form-container");
+            document.getElementById("add-bot-btn").addEventListener("click", () => {
+                document.getElementById("bot-form-mode").value = "add";
+                document.getElementById("bot-form-title").textContent = "Add New Bot Configuration";
+                const nameInput = document.getElementById("bot-name");
+                nameInput.value = "";
+                nameInput.disabled = false;
+                document.getElementById("bot-desc").value = "";
+                document.getElementById("bot-cmd").value = "";
+                document.getElementById("save-restart-bot-btn").style.display = "none";
+                formContainer.style.display = "block";
             });
+            document.getElementById("cancel-bot-btn").addEventListener("click", () => formContainer.style.display = "none");
+            
+            document.getElementById("save-bot-btn").addEventListener("click", () => submitBotForm(false));
+            document.getElementById("save-restart-bot-btn").addEventListener("click", () => submitBotForm(true));
         });
-
-        function formatMoney(v){const n=Number(v)||0;const s=n>0?'+':'';return s+'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
         function pnlClass(v){return Number(v)>=0?'kpi-value--profit':'kpi-value--loss'}
         function accountBadge(t){return t==='live'?'<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>':'<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>'}
         function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${s}</span>`}

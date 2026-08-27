@@ -412,6 +412,11 @@ class BotConfigRequest(BaseModel):
     description: str = ""
     run_command: str
 
+class BotUpdateConfigRequest(BaseModel):
+    description: Optional[str] = ""
+    run_command: str
+    restart: bool = True
+
 @router.get("/api/bots")
 async def api_get_bots():
     pm = get_portfolio_manager()
@@ -431,6 +436,25 @@ async def api_add_bot(req: BotConfigRequest):
         return {"success": True, "message": "Bot config added"}
     return {"success": False, "message": "Bot name already exists"}
 
+@router.put("/api/bots/{name}")
+@router.post("/api/bots/{name}/update")
+async def api_update_bot(name: str, req: BotUpdateConfigRequest):
+    pm = get_portfolio_manager()
+    success = pm.update_cbot_config(name, req.description or "", req.run_command)
+    if not success:
+        return {"success": False, "message": f"Bot {name} not found"}
+    
+    if req.restart:
+        docker_manager.stop_container(name)
+        docker_manager.remove_container(name)
+        start_result = docker_manager.start_container(name, req.run_command)
+        return {
+            "success": True, 
+            "message": f"Bot {name} updated and restarted with new parameters.",
+            "start_result": start_result
+        }
+    
+    return {"success": True, "message": f"Bot {name} configuration updated."}
 @router.delete("/api/bots/{name}")
 async def api_delete_bot(name: str):
     pm = get_portfolio_manager()

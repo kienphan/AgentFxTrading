@@ -454,7 +454,20 @@ class PortfolioManager:
             return False # Name already exists
         finally:
             conn.close()
-            
+
+    def update_cbot_config(self, name: str, description: str, run_command: str) -> bool:
+        """Update existing bot configuration."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE cbot_configs SET description = ?, run_command = ? WHERE name = ?",
+                (description, run_command, name)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
     def delete_cbot_config(self, name: str) -> bool:
         conn = self._get_conn()
         try:
