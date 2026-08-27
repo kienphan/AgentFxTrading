@@ -6,19 +6,19 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **Trading Session** | New York | New York (Index) | New York (Index) | London |
 | **DST Rule** | `US` | `US` | `US` | `Europe` |
-| **Min Decisive Breakout** | `100.0 pips` | `300.0 pips` | `250.0 pips` | `200.0 pips` |
-| **Min OR Width** | `200.0 pips` | `800.0 pips` | `700.0 pips` | `600.0 pips` |
-| **ORB Buffer** | `30.0 pips` | `150.0 pips` | `120.0 pips` | `100.0 pips` |
-| **Breakeven Trigger** | `300.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
-| **Breakeven Offset** | `20.0 pips` | `200.0 pips` | `150.0 pips` | `150.0 pips` |
-| **Trail Trigger** | `500.0 pips` | `3500.0 pips` | `3000.0 pips` | `2500.0 pips` |
-| **Trail Distance** | `250.0 pips` | `1800.0 pips` | `1500.0 pips` | `1200.0 pips` |
-| **Min SL / Max SL** | `200.0 / 800.0 pips` | `2000.0 / 5000.0 pips` | `1800.0 / 4500.0 pips` | `1500.0 / 3500.0 pips` |
-| **Min TP / Max TP** | `300.0 / 2500.0 pips` | `4000.0 / 12000.0 pips` | `3500.0 / 10000.0 pips` | `3000.0 / 8000.0 pips` |
-| **Max Giveback** | `300.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
+| **Min Decisive Breakout** | `200.0 pips` | `300.0 pips` | `250.0 pips` | `200.0 pips` |
+| **Min OR Width** | `400.0 pips` | `800.0 pips` | `700.0 pips` | `600.0 pips` |
+| **ORB Buffer** | `50.0 pips` | `150.0 pips` | `120.0 pips` | `100.0 pips` |
+| **Breakeven Trigger** | `500.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
+| **Breakeven Offset** | `50.0 pips` | `200.0 pips` | `150.0 pips` | `150.0 pips` |
+| **Trail Trigger** | `800.0 pips` | `3500.0 pips` | `3000.0 pips` | `2500.0 pips` |
+| **Trail Distance** | `400.0 pips` | `1800.0 pips` | `1500.0 pips` | `1200.0 pips` |
+| **Min SL / Max SL** | `400.0 / 1500.0 pips` | `2000.0 / 5000.0 pips` | `1800.0 / 4500.0 pips` | `1500.0 / 3500.0 pips` |
+| **Min TP / Max TP** | `600.0 / 4000.0 pips` | `4000.0 / 12000.0 pips` | `3500.0 / 10000.0 pips` | `3000.0 / 8000.0 pips` |
+| **Max Giveback** | `500.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
 | **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`100.0 pips`) | `true` (`800.0 pips`) | `true` (`700.0 pips`) | `true` (`500.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`200.0 pips`) | `true` (`800.0 pips`) | `true` (`700.0 pips`) | `true` (`500.0 pips`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
