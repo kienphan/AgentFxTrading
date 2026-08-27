@@ -1298,7 +1298,8 @@ namespace cAlgo.Robots
             }
 
             // Report to portfolio manager
-            _ = ReportPositionClosed(args.Position, pnl);
+            double exitPrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+            _ = ReportPositionClosed(args.Position, pnl, exitPrice);
         }
 
         // ==========================================
@@ -1451,7 +1452,7 @@ namespace cAlgo.Robots
             }
         }
 
-        private async Task ReportPositionClosed(Position position, double pnl)
+        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice)
         {
             try
             {
@@ -1461,7 +1462,7 @@ namespace cAlgo.Robots
                     bot_id = BotId,
                     action = "close",
                     symbol = SymbolName,
-                    exit_price = position.EntryPrice, // Will be updated with actual exit price
+                    exit_price = exitPrice,
                     pnl = pnl,
                     account_number = Account.Number.ToString(),
                     account_type = Account.IsLive ? "live" : "demo",
