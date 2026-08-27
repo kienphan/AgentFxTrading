@@ -111,7 +111,7 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
     conn.row_factory = sqlite3.Row
     
     query = """
-        SELECT p.bot_id, p.symbol, p.side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
+        SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
                p.account_id, a.account_type, a.label as account_label
         FROM positions p
         LEFT JOIN accounts a ON p.account_id = a.account_id
@@ -180,7 +180,7 @@ def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
     conn.row_factory = sqlite3.Row
     
     query = """
-        SELECT p.bot_id, p.symbol, p.side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
+        SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
                p.account_id, a.account_type, a.label as account_label
         FROM positions p
         LEFT JOIN accounts a ON p.account_id = a.account_id
