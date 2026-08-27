@@ -421,10 +421,10 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --TrendTpDisabled=true
      ```
 
-   * **NAS100 (M5 - ニューヨークインデックスセッション)**:
+   * **USTEC / NAS100 (M5 - ニューヨークインデックスセッション)** *(注意：ブローカーによって `USTEC` または `NAS100` を使用)*:
      ```bash
      docker run -d \
-       --name cbot-nas100 \
+       --name cbot-ustec \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -434,10 +434,10 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=NAS100 \
+       --symbol=USTEC \
        --period=m5 \
        --full-access \
-       --BotId="nas100_m5" \
+       --BotId="ustec_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

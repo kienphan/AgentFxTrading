@@ -450,10 +450,10 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --TrendTpDisabled=true
      ```
 
-   * **NAS100 (M5 - New York Index Session)**:
+   * **USTEC / NAS100 (M5 - New York Index Session)** *(Note: Use `USTEC` or `NAS100` depending on your broker)*:
      ```bash
      docker run -d \
-       --name cbot-nas100 \
+       --name cbot-ustec \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -463,10 +463,10 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=NAS100 \
+       --symbol=USTEC \
        --period=m5 \
        --full-access \
-       --BotId="nas100_m5" \
+       --BotId="ustec_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

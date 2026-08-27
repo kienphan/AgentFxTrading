@@ -421,10 +421,10 @@ python app/server.py
        --TrendTpDisabled=true
      ```
 
-   * **NAS100 (M5 - Нью-Йоркская индексная сессия)**:
+   * **USTEC / NAS100 (M5 - Нью-Йоркская индексная сессия)** *(Примечание: используйте `USTEC` или `NAS100` в зависимости от брокера)*:
      ```bash
      docker run -d \
-       --name cbot-nas100 \
+       --name cbot-ustec \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -434,10 +434,10 @@ python app/server.py
        --ctid=your_email@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
-       --symbol=NAS100 \
+       --symbol=USTEC \
        --period=m5 \
        --full-access \
-       --BotId="nas100_m5" \
+       --BotId="ustec_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \

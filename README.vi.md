@@ -421,10 +421,10 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --TrendTpDisabled=true
      ```
 
-   * **NAS100 (M5 - Phiên New York Index)**:
+   * **USTEC / NAS100 (M5 - Phiên New York Index)** *(Lưu ý: Dùng mã `USTEC` hoặc `NAS100` tùy sàn cTrader)*:
      ```bash
      docker run -d \
-       --name cbot-nas100 \
+       --name cbot-ustec \
        --restart unless-stopped \
        --network host \
        -v $(pwd):/workspace \
@@ -434,10 +434,10 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --ctid=email_cua_ban@example.com \
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=SO_TAI_KHOAN \
-       --symbol=NAS100 \
+       --symbol=USTEC \
        --period=m5 \
        --full-access \
-       --BotId="nas100_m5" \
+       --BotId="ustec_m5" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \
