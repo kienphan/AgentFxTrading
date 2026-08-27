@@ -94,35 +94,75 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .hidden{display:none!important}
 
 
-.dashboard-columns {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
 
-.left-column {
+/* --- App Layout --- */
+.app-body {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.right-column {
-    display: flex;
-    flex-direction: column;
-}
-
-.log-section {
-    display: flex;
-    flex-direction: column;
-    min-height: 500px;
-}
-
-.log-panel-wrap {
-    display: flex;
-    flex-direction: column;
     flex: 1;
+    overflow: hidden;
+    flex-direction: column; /* Mobile first: content top, tabbar bottom */
 }
 
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 16px 80px 16px; /* padding-bottom for mobile tabbar */
+    width: 100%;
+}
+
+.view-section {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+.view-section.active {
+    display: block;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Mobile Bottom Tabbar --- */
+.sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0;
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    transition: all 0.2s;
+}
+.nav-item:hover {
+    color: var(--text-primary);
+}
+.nav-item.active {
+    color: var(--accent-bright);
+}
+.nav-icon {
+    font-size: 1.25rem;
+}
+.nav-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+/* Make bot-form-grid responsive */
 .bot-form-grid {
     display: grid;
     gap: 12px;
@@ -135,48 +175,67 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     }
 }
 
-@media(min-width: 1200px) {
-    .dashboard-columns {
-        display: grid;
-        grid-template-columns: 1fr 1fr; /* 50/50 split */
+/* --- Desktop Sidebar Layout --- */
+@media(min-width: 1024px) {
+    .app-body {
+        flex-direction: row;
+    }
+    
+    .sidebar {
+        position: relative;
+        bottom: auto;
+        width: 240px;
+        border-top: none;
+        border-right: 1px solid var(--border-subtle);
+        flex-direction: column;
+        justify-content: flex-start;
+        padding: 24px 12px;
+        box-shadow: none;
+        gap: 8px;
+    }
+    
+    .main-content {
+        padding: 24px 32px 32px 32px;
+    }
+    
+    .nav-item {
+        flex-direction: row;
+        gap: 12px;
+        padding: 12px 16px;
+    }
+    .nav-item.active {
+        background: var(--bg-elevated);
+        border-left: 3px solid var(--accent-bright);
+    }
+    .nav-icon {
+        font-size: 1.1rem;
+    }
+    .nav-label {
+        font-size: 0.85rem;
+    }
+    
+    /* Logs view should fill height on desktop */
+    #view-logs.active {
+        display: flex;
+        flex-direction: column;
         height: 100%;
-        overflow: hidden;
     }
-    
-    .left-column {
-        overflow-y: auto;
-        padding-right: 8px; /* space for scrollbar */
-        padding-bottom: 20px; /* prevent cut-off at bottom */
-    }
-    
-    .left-column::-webkit-scrollbar { width: 6px; }
-    .left-column::-webkit-scrollbar-track { background: transparent; }
-    .left-column::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
-    .left-column::-webkit-scrollbar-thumb:hover { background: var(--border); }
-    
-    .right-column {
-        overflow: hidden;
-        height: 100%;
-    }
-    
-    .log-section {
+    #view-logs .log-section {
         flex: 1;
+        display: flex;
+        flex-direction: column;
         margin-top: 0 !important;
         height: 100%;
+        min-height: 0;
     }
-    
-    .log-panel-wrap {
+    #view-logs .log-panel-wrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
     }
-    
-    .log-terminal {
+    #view-logs .log-terminal {
         flex: 1;
         overflow-y: auto;
-    }
-}
-
-@media(min-width: 1600px) {
-    .dashboard-columns {
-        grid-template-columns: 1.2fr 1fr; /* Left gets a bit more space */
     }
 }
