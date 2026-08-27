@@ -245,21 +245,21 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --OrbStartHour=13 \
        --SessionEndHour=21 \
        --SessionDstRule="US" \
-       --MinDecisiveBreakoutPips=10.0 \
-       --MinOrWidthPips=20.0 \
-       --OrbBufferPips=3.0 \
-       --BreakevenTriggerPips=30.0 \
-       --BreakevenOffsetPips=2.0 \
-       --TrailTriggerPips=50.0 \
-       --TrailDistancePips=25.0 \
+       --MinDecisiveBreakoutPips=100.0 \
+       --MinOrWidthPips=200.0 \
+       --OrbBufferPips=30.0 \
+       --BreakevenTriggerPips=300.0 \
+       --BreakevenOffsetPips=20.0 \
+       --TrailTriggerPips=500.0 \
+       --TrailDistancePips=250.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=20.0 \
-       --MaxSlPips=80.0 \
-       --MinTpPips=30.0 \
-       --MaxTpPips=250.0 \
-       --MaxGivebackPips=30.0 \
+       --MinSlPips=200.0 \
+       --MaxSlPips=800.0 \
+       --MinTpPips=300.0 \
+       --MaxTpPips=2500.0 \
+       --MaxGivebackPips=300.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=10.0 \
+       --PostTpPullbackPips=100.0 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=10 \
        --RiskPerTradePercent=0.2 \
@@ -909,19 +909,19 @@ ELSE:
 | :--- | :--- | :--- | :--- | :--- |
 | **Trading Session** | New York | New York (Index) | New York (Index) | London |
 | **DST Rule** | `US` | `US` | `US` | `Europe` |
-| **Min Decisive Breakout** | `10.0 pips` | `300.0 pips` | `250.0 pips` | `200.0 pips` |
-| **Min OR Width** | `20.0 pips` | `800.0 pips` | `700.0 pips` | `600.0 pips` |
-| **ORB Buffer** | `3.0 pips` | `150.0 pips` | `120.0 pips` | `100.0 pips` |
-| **Breakeven Trigger** | `30.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
-| **Breakeven Offset** | `2.0 pips` | `200.0 pips` | `150.0 pips` | `150.0 pips` |
-| **Trail Trigger** | `50.0 pips` | `3500.0 pips` | `3000.0 pips` | `2500.0 pips` |
-| **Trail Distance** | `25.0 pips` | `1800.0 pips` | `1500.0 pips` | `1200.0 pips` |
-| **Min SL / Max SL** | `20.0 / 80.0 pips` | `2000.0 / 5000.0 pips` | `1800.0 / 4500.0 pips` | `1500.0 / 3500.0 pips` |
-| **Min TP / Max TP** | `30.0 / 250.0 pips` | `4000.0 / 12000.0 pips` | `3500.0 / 10000.0 pips` | `3000.0 / 8000.0 pips` |
-| **Max Giveback** | `30.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
+| **Min Decisive Breakout** | `100.0 pips` | `300.0 pips` | `250.0 pips` | `200.0 pips` |
+| **Min OR Width** | `200.0 pips` | `800.0 pips` | `700.0 pips` | `600.0 pips` |
+| **ORB Buffer** | `30.0 pips` | `150.0 pips` | `120.0 pips` | `100.0 pips` |
+| **Breakeven Trigger** | `300.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
+| **Breakeven Offset** | `20.0 pips` | `200.0 pips` | `150.0 pips` | `150.0 pips` |
+| **Trail Trigger** | `500.0 pips` | `3500.0 pips` | `3000.0 pips` | `2500.0 pips` |
+| **Trail Distance** | `250.0 pips` | `1800.0 pips` | `1500.0 pips` | `1200.0 pips` |
+| **Min SL / Max SL** | `200.0 / 800.0 pips` | `2000.0 / 5000.0 pips` | `1800.0 / 4500.0 pips` | `1500.0 / 3500.0 pips` |
+| **Min TP / Max TP** | `300.0 / 2500.0 pips` | `4000.0 / 12000.0 pips` | `3500.0 / 10000.0 pips` | `3000.0 / 8000.0 pips` |
+| **Max Giveback** | `300.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
 | **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`10.0 pips`) | `true` (`800.0 pips`) | `true` (`700.0 pips`) | `true` (`500.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`100.0 pips`) | `true` (`800.0 pips`) | `true` (`700.0 pips`) | `true` (`500.0 pips`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
