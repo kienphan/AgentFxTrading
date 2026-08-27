@@ -411,7 +411,7 @@ namespace cAlgo.Robots
             UpdateLossStreak();
             var session = GetSessionInfo();
             // Cost Gate: Nếu không có vị thế mở và ngoài phiên (hoặc phiên sắp kết thúc), không cần gửi request
-            if (Positions.Count == 0 && (!session.is_trading_time || session.phase == "closed" || session.phase == "ending"))
+            if (GetBotPositions().Length == 0 && (!session.is_trading_time || session.phase == "closed" || session.phase == "ending"))
             {
                 return;
             }
@@ -1036,15 +1036,21 @@ namespace cAlgo.Robots
         // ==========================================
         // POSITION MEMORY (MFE / Giveback)
         // ==========================================
+        private Position[] GetBotPositions()
+        {
+            return Positions.FindAll("AI_Agent", SymbolName);
+        }
 
         private void UpdatePositionMemory()
         {
+            var botPositions = GetBotPositions();
+
             // Clean up closed positions
             var closedIds = new List<int>();
             foreach (var kvp in _positionMfe)
             {
                 bool found = false;
-                foreach (var pos in Positions)
+                foreach (var pos in botPositions)
                 {
                     if (pos.Id == kvp.Key) { found = true; break; }
                 }
@@ -1058,7 +1064,7 @@ namespace cAlgo.Robots
             }
 
             // Update MFE for open positions
-            foreach (var pos in Positions)
+            foreach (var pos in botPositions)
             {
                 double pnlPips = GetPnlPips(pos);
                 if (!_positionMfe.ContainsKey(pos.Id))
@@ -1083,9 +1089,10 @@ namespace cAlgo.Robots
 
         private PositionInfo GetPositionInfo(int index)
         {
-            if (Positions.Count == 0) return null;
+            var botPositions = GetBotPositions();
+            if (botPositions.Length == 0) return null;
 
-            var pos = Positions[0];
+            var pos = botPositions[0];
             double pnlPips = GetPnlPips(pos);
             double mfe = _positionMfe.ContainsKey(pos.Id) ? _positionMfe[pos.Id] : 0;
             double giveback = Math.Max(0, mfe - pnlPips);
@@ -1111,7 +1118,7 @@ namespace cAlgo.Robots
 
         private void ManageExits()
         {
-            foreach (var pos in Positions)
+            foreach (var pos in GetBotPositions())
             {
                 double pnlPips = GetPnlPips(pos);
 
@@ -1166,7 +1173,7 @@ namespace cAlgo.Robots
         {
             if (MaxGivebackPips <= 0) return;
 
-            foreach (var pos in Positions)
+            foreach (var pos in GetBotPositions())
             {
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
                 double mfe = _positionMfe[pos.Id];
@@ -1227,14 +1234,15 @@ namespace cAlgo.Robots
         private void CheckSessionEnd()
         {
             if (SessionEndHour == 0) return;
-            if (Positions.Count == 0) return;
+            var botPositions = GetBotPositions();
+            if (botPositions.Length == 0) return;
 
             var session = GetSessionInfo();
             
             // EOD Force-Flatten (Safety net theo mô hình dnse-kash): Đóng toàn bộ lệnh khi phiên kết thúc
             if (!session.is_trading_time)
             {
-                foreach (var pos in Positions)
+                foreach (var pos in botPositions)
                 {
                     pos.Close();
                     if (ShowLogs) Print($"[EOD Force-Flatten] Pos#{pos.Id} closed outside trading session (phase={session.phase}, UTC={Server.TimeInUtc:HH:mm:ss})");
@@ -1260,6 +1268,8 @@ namespace cAlgo.Robots
 
         private void OnPositionClosed(PositionClosedEventArgs args)
         {
+            if (args.Position.SymbolName != SymbolName || args.Position.Label != "AI_Agent")
+                return;
             double pnl = args.Position.NetProfit;
             _dayPnl += pnl;
             _tradesToday++;
@@ -1533,9 +1543,10 @@ namespace cAlgo.Robots
             }
 
             // Guardrail: bias alignment check
-            if (BiasFlipExit && Positions.Count > 0)
+            var botPositions = GetBotPositions();
+            if (BiasFlipExit && botPositions.Length > 0)
             {
-                var pos = Positions[0];
+                var pos = botPositions[0];
                 string bias = GetMacroTmsSignals().bias;
                 bool againstBias = (pos.TradeType == TradeType.Buy && bias == "BEARISH") ||
                                    (pos.TradeType == TradeType.Sell && bias == "BULLISH");
@@ -1550,7 +1561,7 @@ namespace cAlgo.Robots
             // CLOSE_ALL
             if (decision.action == "CLOSE_ALL")
             {
-                foreach (var pos in Positions) pos.Close();
+                foreach (var pos in GetBotPositions()) pos.Close();
                 return;
             }
 
@@ -1567,7 +1578,7 @@ namespace cAlgo.Robots
             if (decision.action == "HOLD" || decision.action == "NONE") return;
 
             // Entry
-            if (Positions.Count > 0) return;
+            if (GetBotPositions().Length > 0) return;
             if (decision.action != "BUY" && decision.action != "SELL") return;
 
             // Apply guardrails to SL/TP
