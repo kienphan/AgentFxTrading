@@ -679,6 +679,98 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --RiskPerTradePercent=0.2 \
        --TrendTpDisabled=true
      ```
+
+   * **GER40 / DAX40 (M5 - London/European Index Session)**:
+     ```bash
+     docker run -d \
+       --name cbot-ger40 \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GER40 \
+       --period=m5 \
+       --full-access \
+       --BotId="ger40_m5" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=16 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=10.0 \
+       --MinOrWidthPips=25.0 \
+       --OrbBufferPips=4.0 \
+       --BreakevenTriggerPips=35.0 \
+       --BreakevenOffsetPips=3.0 \
+       --TrailTriggerPips=60.0 \
+       --TrailDistancePips=30.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=20.0 \
+       --MaxSlPips=80.0 \
+       --MinTpPips=35.0 \
+       --MaxTpPips=250.0 \
+       --MaxGivebackPips=35.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=15.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=8 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **AUDJPY (M15 - Asian/Tokyo Session / Risk Barometer Cross)**:
+     ```bash
+     docker run -d \
+       --name cbot-audjpy \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=AUDJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="audjpy_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="tokyo" \
+       --OrbStartHour=0 \
+       --SessionEndHour=9 \
+       --SessionDstRule="None" \
+       --MinDecisiveBreakoutPips=4.0 \
+       --MinOrWidthPips=10.0 \
+       --OrbBufferPips=1.5 \
+       --BreakevenTriggerPips=12.0 \
+       --BreakevenOffsetPips=1.5 \
+       --TrailTriggerPips=22.0 \
+       --TrailDistancePips=11.0 \
+       --PartialCloseRatio=0.5 \
+       --MinSlPips=10.0 \
+       --MaxSlPips=25.0 \
+       --MinTpPips=18.0 \
+       --MaxTpPips=60.0 \
+       --MaxGivebackPips=10.0 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackPips=4.0 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=4 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
 ### 5. Start Trading! 🎉
 
 The bot will automatically:
