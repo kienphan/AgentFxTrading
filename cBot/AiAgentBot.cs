@@ -1177,7 +1177,10 @@ namespace cAlgo.Robots
             {
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
                 double mfe = _positionMfe[pos.Id];
-                if (mfe <= 0) continue;
+                
+                // Giveback protection only activates AFTER the trade has reached meaningful profit
+                double activationThreshold = BreakevenTriggerPips > 0 ? BreakevenTriggerPips : MaxGivebackPips;
+                if (mfe < activationThreshold) continue;
 
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
@@ -1185,7 +1188,7 @@ namespace cAlgo.Robots
                 if (giveback >= MaxGivebackPips)
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[Giveback] Pos#{pos.Id} closed: gave back {giveback:F1}pips (MFE={mfe:F1}p, now={pnlPips:F1}p)");
+                    if (ShowLogs) Print($"[Giveback] Pos#{pos.Id} closed: gave back {giveback:F1}pips from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
                 }
             }
         }
