@@ -136,7 +136,7 @@ namespace cAlgo.Robots
         [Parameter("Max Loss Streak", Group = "Guardrails", DefaultValue = 3, MinValue = 0)]
         public int MaxLossStreak { get; set; }
 
-        [Parameter("Loss Streak Threshold ($)", Group = "Guardrails", DefaultValue = -50.0, MinValue = -10000, Step = 5)]
+        [Parameter("Loss Streak Threshold ($)", Group = "Guardrails", DefaultValue = -0.5, MinValue = -10000, Step = 5)]
         public double LossStreakThreshold { get; set; }
 
         [Parameter("Bias Flip Exit", Group = "Guardrails", DefaultValue = true)]
