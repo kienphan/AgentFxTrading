@@ -49,6 +49,7 @@ def setup_agent_logging(level=logging.INFO):
 setup_agent_logging(logging.INFO)
 logger = logging.getLogger("AgentFxTrading")
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -71,6 +72,13 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="
 
 # Mount dashboard router
 app.include_router(dashboard_router)
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    favicon_path = PROJECT_ROOT / "static" / "favicon.png"
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    return ""
 # Initialize Account Registry
 account_registry = init_account_registry("portfolio.db")
 account_registry.seed_from_env()
