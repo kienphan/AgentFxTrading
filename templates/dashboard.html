@@ -230,69 +230,79 @@
                         <canvas id="pnl-chart"></canvas>
                     </div>
                 </section>
-                
             </div>
-                <section class="panel" style="margin-top: 16px;" id="bot-management-section">
-            <div class="panel-header">
-                <span class="panel-title">🤖 Docker Bot Management</span>
-                <button id="add-bot-btn" class="log-btn" style="margin-left:auto;">+ Add Bot</button>
+            
+            <!-- Docker Bots View -->
+            <div id="view-docker" class="view-section">
+                <section class="panel" id="bot-management-section">
+                    <div class="panel-header">
+                        <span class="panel-title">🤖 Docker Bot Management</span>
+                        <button id="add-bot-btn" class="log-btn" style="margin-left:auto;">+ Add Bot</button>
+                    </div>
+                    <div class="panel-body">
+                        <div id="bot-add-form" style="display:none; margin-bottom: 16px; padding: 16px; background: var(--bg-surface-2); border-radius: 6px;">
+                            <h4 style="margin-top:0; margin-bottom:12px;">Add New Bot Configuration</h4>
+                            <div class="bot-form-grid">
+                                <div><label>Bot Name</label><input type="text" id="bot-name" class="log-input" style="width:100%" placeholder="cbot_1"></div>
+                                <div><label>Description</label><input type="text" id="bot-desc" class="log-input" style="width:100%" placeholder="EURUSD 1M Bot"></div>
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <label>Docker Run Command (Full command)</label>
+                                <textarea id="bot-cmd" class="log-input" style="width:100%; height:60px; font-family:monospace" placeholder="docker run -d --name cbot_1 ..."></textarea>
+                            </div>
+                            <div style="margin-top: 12px; display:flex; gap: 8px;">
+                                <button id="save-bot-btn" class="log-btn" style="background:var(--color-profit); color:#000;">Save</button>
+                                <button id="cancel-bot-btn" class="log-btn">Cancel</button>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="data-table" id="bots-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bot Name</th>
+                                        <th>Status</th>
+                                        <th>Container ID</th>
+                                        <th>Description</th>
+                                        <th>Command</th>
+                                        <th style="text-align:right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bots-tbody">
+                                    <tr><td colspan="6" class="td-dim">Loading bots...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
-            <div class="panel-body">
-                <div id="bot-add-form" style="display:none; margin-bottom: 16px; padding: 16px; background: var(--bg-surface-2); border-radius: 6px;">
-                    <h4 style="margin-top:0; margin-bottom:12px;">Add New Bot Configuration</h4>
-                    <div class="bot-form-grid">
-                        <div><label>Bot Name</label><input type="text" id="bot-name" class="log-input" style="width:100%" placeholder="cbot_1"></div>
-                        <div><label>Description</label><input type="text" id="bot-desc" class="log-input" style="width:100%" placeholder="EURUSD 1M Bot"></div>
-                    </div>
-                    <div style="margin-top: 12px;">
-                        <label>Docker Run Command (Full command)</label>
-                        <textarea id="bot-cmd" class="log-input" style="width:100%; height:60px; font-family:monospace" placeholder="docker run -e API_KEY=xyz my-cbot-image"></textarea>
-                    </div>
-                    <div style="margin-top: 12px; display:flex; gap: 8px;">
-                        <button id="save-bot-btn" class="log-btn" style="background:var(--color-profit); color:#000;">Save</button>
-                        <button id="cancel-bot-btn" class="log-btn">Cancel</button>
-                    </div>
-                </div>
-                <div class="table-wrap">
-                    <table class="data-table" id="bots-table">
-                        <thead><tr>
-                            <th>Bot Name</th><th>Status</th><th>Container ID</th><th>Description</th><th>Command</th><th style="text-align:right">Actions</th>
-                        </tr></thead>
-                        <tbody id="bots-tbody">
-                            <tr><td colspan="6" class="td-dim">Loading bots...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-                    </div>
+            
+            <!-- Agent Logs View -->
             <div id="view-logs" class="view-section">
                 <section class="panel log-section">
-            <div class="panel-header">
-                <span class="panel-title">🧠 Agent Reasoning &amp; Live Logs</span>
-                <span id="log-status" class="td-dim">Auto-refreshing</span>
-            </div>
-            <div class="panel-body log-panel-wrap">
-                <div class="log-toolbar">
-                    <div class="log-toolbar-group">
-                        <label for="log-date-select" class="td-dim">Date:</label>
-                        <select id="log-date-select" class="log-select"></select>
-                        <input type="text" id="log-filter-input" class="log-input" placeholder="Filter logs (e.g. LLM, CYCLE, OPEN)..." style="min-width: 240px;">
+                    <div class="panel-header">
+                        <span class="panel-title">🧠 Agent Reasoning &amp; Live Logs</span>
+                        <span id="log-status" class="td-dim">Auto-refreshing</span>
                     </div>
-                    <div class="log-toolbar-group">
-                        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.75rem;">
-                            <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
-                        </label>
-                        <button id="log-refresh-btn" class="log-btn">Refresh</button>
-                        <button id="log-clear-btn" class="log-btn">Clear</button>
+                    <div class="panel-body log-panel-wrap">
+                        <div class="log-toolbar">
+                            <div class="log-toolbar-group">
+                                <label for="log-date-select" class="td-dim">Date:</label>
+                                <select id="log-date-select" class="log-select"></select>
+                                <input type="text" id="log-filter-input" class="log-input" placeholder="Filter logs (e.g. LLM, CYCLE, OPEN)..." style="min-width: 240px;">
+                            </div>
+                            <div class="log-toolbar-group">
+                                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.75rem;">
+                                    <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+                                </label>
+                                <button id="log-refresh-btn" class="log-btn">Refresh</button>
+                                <button id="log-clear-btn" class="log-btn">Clear</button>
+                            </div>
+                        </div>
+                        <div id="agent-log-box" class="log-terminal">
+                            <div class="log-line td-dim">Loading agent logs...</div>
+                        </div>
                     </div>
-                </div>
-                <div id="agent-log-box" class="log-terminal">
-                    <div class="log-line td-dim">Loading agent logs...</div>
-                </div>
-            </div>
-        </section>
+                </section>
             </div>
         </main>
     </div>
@@ -326,7 +336,15 @@
                 item.classList.add('active');
                 
                 // Show corresponding view
-                document.getElementById(targetId).classList.add('active');
+                const targetView = document.getElementById(targetId);
+                if (targetView) {
+                    targetView.classList.add('active');
+                    if (targetId === 'view-logs') {
+                        fetchAgentLogs(logDateSelect.value);
+                    } else if (targetId === 'view-docker') {
+                        fetchBots();
+                    }
+                }
             });
         });
         // --- Docker Bot Management ---
