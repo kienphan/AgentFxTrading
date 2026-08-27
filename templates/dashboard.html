@@ -32,9 +32,25 @@
             <span id="last-updated" class="last-updated"></span>
         </div>
     </header>
-    <main class="main-content">
-        <div class="dashboard-columns">
-        <div class="left-column">
+    
+    <div class="app-body">
+        <nav class="sidebar">
+            <a href="#" class="nav-item active" data-target="view-dashboard">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Overview</span>
+            </a>
+            <a href="#" class="nav-item" data-target="view-docker">
+                <span class="nav-icon">🤖</span>
+                <span class="nav-label">Docker Bots</span>
+            </a>
+            <a href="#" class="nav-item" data-target="view-logs">
+                <span class="nav-icon">🧠</span>
+                <span class="nav-label">Agent Logs</span>
+            </a>
+        </nav>
+        <main class="main-content">
+            <div id="view-dashboard" class="view-section active">
+
         <div class="kpi-grid">
             <div id="account-balance-card" class="kpi-card">
                 <div class="kpi-label">Balance</div>
@@ -94,7 +110,9 @@
             </div></div>
         </section>
         
-        <section class="panel" style="margin-top: 16px;" id="bot-management-section">
+                    </div>
+            <div id="view-docker" class="view-section">
+                <section class="panel" style="margin-top: 16px;" id="bot-management-section">
             <div class="panel-header">
                 <span class="panel-title">🤖 Docker Bot Management</span>
                 <button id="add-bot-btn" class="log-btn" style="margin-left:auto;">+ Add Bot</button>
@@ -128,9 +146,9 @@
             </div>
         </section>
 
-        </div>
-        <div class="right-column">
-        <section class="panel log-section">
+                    </div>
+            <div id="view-logs" class="view-section">
+                <section class="panel log-section">
             <div class="panel-header">
                 <span class="panel-title">🧠 Agent Reasoning &amp; Live Logs</span>
                 <span id="log-status" class="td-dim">Auto-refreshing</span>
@@ -155,11 +173,30 @@
                 </div>
             </div>
         </section>
-        </div>
-        </div>
-    </main>
+            </div>
+        </main>
+    </div>
 
     <script>
+
+        
+        // --- Sidebar Navigation ---
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                
+                // Remove active class from all nav items and views
+                document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+                document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
+                
+                // Add active class to clicked nav item
+                const targetId = item.getAttribute('data-target');
+                item.classList.add('active');
+                
+                // Show corresponding view
+                document.getElementById(targetId).classList.add('active');
+            });
+        });
 
         // --- Docker Bot Management ---
         async function fetchBots() {
