@@ -872,28 +872,76 @@ ELSE:
 | Bias Flip Exit | true | Автозакрытие при изменении bias |
 | Trend TP Disabled | true | Отключение фиксированного TP в тренде |
 
-### 📊 Рекомендуемые Пресеты по Инструментам
+### 📊 Recommended Presets by Symbol
 
-| Параметр | XAUUSD (Золото) | EURUSD | GBPUSD | USDJPY |
+#### Metals & Indices
+
+| Parameter | XAUUSD | US30 | USTEC | DE40 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Торговая Сессия** | Нью-Йорк (`13:00 - 21:00 UTC`) | Лондон (`08:00 - 17:00 UTC`) | Лондон (`08:00 - 17:00 UTC`) | Токио / NY (`00:00 - 09:00` / `13:00 - 21:00 UTC`) |
-| **Правило DST** | `US` | `Europe` | `Europe` | `None` (Токио) / `US` (NY) |
-| **Min Decisive Breakout** | `10.0 пипсов` | `3.0 пипса` | `4.5 пипса` | `4.0 пипса` |
-| **Min OR Width** | `20.0 пипсов` | `6.0 пипсов` | `10.0 пипсов` | `8.0 пипсов` |
-| **ORB Buffer** | `3.0 пипса` | `1.0 пипс` | `1.5 пипса` | `1.5 пипса` |
-| **Breakeven Trigger** | `30.0 пипсов` | `8.0 пипсов` | `12.0 пипсов` | `12.0 пипсов` |
-| **Breakeven Offset** | `2.0 пипса` | `1.0 пипс` | `1.5 пипса` | `1.5 пипса` |
-| **Trail Trigger** | `50.0 пипсов` | `15.0 пипсов` | `25.0 пипсов` | `25.0 пипсов` |
-| **Trail Distance** | `25.0 пипсов` | `8.0 пипсов` | `12.0 пипсов` | `12.0 пипсов` |
-| **Min SL / Max SL** | `20.0 / 80.0 пипсов` | `6.0 / 20.0 пипсов` | `8.0 / 30.0 пипсов` | `8.0 / 25.0 пипсов` |
-| **Min TP / Max TP** | `30.0 / 250.0 пипсов` | `10.0 / 50.0 pips` | `15.0 / 80.0 пипсов` | `15.0 / 70.0 пипсов` |
-| **Max Giveback** | `30.0 пипсов` | `8.0 пипсов` | `12.0 пипсов` | `12.0 пипсов` |
+| **Trading Session** | New York | New York (Index) | New York (Index) | London |
+| **DST Rule** | `US` | `US` | `US` | `Europe` |
+| **Min Decisive Breakout** | `10.0 pips` | `30.0 pips` | `25.0 pips` | `20.0 pips` |
+| **Min OR Width** | `20.0 pips` | `80.0 pips` | `70.0 pips` | `60.0 pips` |
+| **ORB Buffer** | `3.0 pips` | `15.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Breakeven Trigger** | `30.0 pips` | `200.0 pips` | `180.0 pips` | `150.0 pips` |
+| **Breakeven Offset** | `2.0 pips` | `20.0 pips` | `15.0 pips` | `15.0 pips` |
+| **Trail Trigger** | `50.0 pips` | `350.0 pips` | `300.0 pips` | `250.0 pips` |
+| **Trail Distance** | `25.0 pips` | `180.0 pips` | `150.0 pips` | `120.0 pips` |
+| **Min SL / Max SL** | `20.0 / 80.0 pips` | `200.0 / 500.0 pips` | `180.0 / 450.0 pips` | `150.0 / 350.0 pips` |
+| **Min TP / Max TP** | `30.0 / 250.0 pips` | `400.0 / 1200.0 pips` | `350.0 / 1000.0 pips` | `300.0 / 800.0 pips` |
+| **Max Giveback** | `30.0 pips` | `200.0 pips` | `180.0 pips` | `150.0 pips` |
+| **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`10.0 pips`) | `true` (`3.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`10.0 pips`) | `true` (`80.0 pips`) | `true` (`70.0 pips`) | `true` (`50.0 pips`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
-| **Таймфрейм** | `M5` или `M15` | `M15` | `M15` | `M15` |
+
+#### Forex Majors
+
+| Parameter | EURUSD | GBPUSD | USDJPY | USDCAD |
+| :--- | :--- | :--- | :--- | :--- |
+| **Trading Session** | London | London | Tokyo | New York |
+| **DST Rule** | `Europe` | `Europe` | `None` | `US` |
+| **Min Decisive Breakout** | `3.0 pips` | `4.5 pips` | `4.0 pips` | `4.0 pips` |
+| **Min OR Width** | `6.0 pips` | `10.0 pips` | `8.0 pips` | `10.0 pips` |
+| **ORB Buffer** | `1.0 pips` | `1.5 pips` | `1.5 pips` | `1.5 pips` |
+| **Breakeven Trigger** | `8.0 pips` | `12.0 pips` | `12.0 pips` | `12.0 pips` |
+| **Breakeven Offset** | `1.0 pips` | `1.5 pips` | `1.5 pips` | `1.5 pips` |
+| **Trail Trigger** | `15.0 pips` | `20.0 pips` | `25.0 pips` | `20.0 pips` |
+| **Trail Distance** | `8.0 pips` | `10.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Min SL / Max SL** | `6.0 / 20.0 pips` | `8.0 / 25.0 pips` | `8.0 / 25.0 pips` | `10.0 / 25.0 pips` |
+| **Min TP / Max TP** | `10.0 / 50.0 pips` | `15.0 / 60.0 pips` | `15.0 / 70.0 pips` | `15.0 / 50.0 pips` |
+| **Max Giveback** | `8.0 pips` | `10.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` |
+| **EMA Period** | `5` | `5` | `5` | `5` |
+| **Post-TP Gate / Pullback** | `true` (`3.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) | `true` (`4.0 pips`) |
+| **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
+| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
+| **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
+
+#### Forex Crosses
+
+| Parameter | GBPJPY | EURJPY | AUDJPY |
+| :--- | :--- | :--- | :--- |
+| **Trading Session** | London | London | Tokyo |
+| **DST Rule** | `Europe` | `Europe` | `None` |
+| **Min Decisive Breakout** | `6.0 pips` | `5.0 pips` | `4.0 pips` |
+| **Min OR Width** | `15.0 pips` | `12.0 pips` | `10.0 pips` |
+| **ORB Buffer** | `2.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Breakeven Trigger** | `18.0 pips` | `15.0 pips` | `12.0 pips` |
+| **Breakeven Offset** | `2.0 pips` | `1.5 pips` | `1.5 pips` |
+| **Trail Trigger** | `30.0 pips` | `25.0 pips` | `22.0 pips` |
+| **Trail Distance** | `15.0 pips` | `12.0 pips` | `11.0 pips` |
+| **Min SL / Max SL** | `15.0 / 35.0 pips` | `12.0 / 30.0 pips` | `10.0 / 25.0 pips` |
+| **Min TP / Max TP** | `25.0 / 80.0 pips` | `20.0 / 70.0 pips` | `18.0 / 60.0 pips` |
+| **Max Giveback** | `15.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Recommended Timeframe** | `M15` | `M15` | `M15` |
+| **EMA Period** | `5` | `5` | `5` |
+| **Post-TP Gate / Pullback** | `true` (`6.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) |
+| **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
+| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
+| **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` |
 ### Настройки Portfolio Manager
 
 Редактировать `app/portfolio.py`:
