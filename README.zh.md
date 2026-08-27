@@ -210,18 +210,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=200.0 \
        --MinOrWidthPips=400.0 \
        --OrbBufferPips=50.0 \
-       --BreakevenTriggerPips=500.0 \
-       --BreakevenOffsetPips=50.0 \
-       --TrailTriggerPips=800.0 \
-       --TrailDistancePips=400.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=400.0 \
-       --MaxSlPips=1500.0 \
-       --MinTpPips=600.0 \
-       --MaxTpPips=4000.0 \
-       --MaxGivebackPips=500.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=200.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=10 \
        --RiskPerTradePercent=0.2 \
@@ -256,18 +256,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=3.0 \
        --MinOrWidthPips=6.0 \
        --OrbBufferPips=1.0 \
-       --BreakevenTriggerPips=8.0 \
-       --BreakevenOffsetPips=1.0 \
-       --TrailTriggerPips=15.0 \
-       --TrailDistancePips=8.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=6.0 \
-       --MaxSlPips=20.0 \
-       --MinTpPips=10.0 \
-       --MaxTpPips=50.0 \
-       --MaxGivebackPips=8.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=3.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=5 \
        --RiskPerTradePercent=0.2 \
@@ -302,18 +302,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=4.5 \
        --MinOrWidthPips=10.0 \
        --OrbBufferPips=1.5 \
-       --BreakevenTriggerPips=12.0 \
-       --BreakevenOffsetPips=1.5 \
-       --TrailTriggerPips=20.0 \
-       --TrailDistancePips=10.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=8.0 \
-       --MaxSlPips=25.0 \
-       --MinTpPips=15.0 \
-       --MaxTpPips=60.0 \
-       --MaxGivebackPips=10.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=5.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=10 \
        --RiskPerTradePercent=0.2 \
@@ -348,18 +348,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=4.0 \
        --MinOrWidthPips=8.0 \
        --OrbBufferPips=1.5 \
-       --BreakevenTriggerPips=12.0 \
-       --BreakevenOffsetPips=1.5 \
-       --TrailTriggerPips=25.0 \
-       --TrailDistancePips=12.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=8.0 \
-       --MaxSlPips=25.0 \
-       --MinTpPips=15.0 \
-       --MaxTpPips=70.0 \
-       --MaxGivebackPips=12.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=4.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=3 \
        --RiskPerTradePercent=0.2 \
@@ -394,18 +394,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=30.0 \
        --MinOrWidthPips=80.0 \
        --OrbBufferPips=15.0 \
-       --BreakevenTriggerPips=200.0 \
-       --BreakevenOffsetPips=20.0 \
-       --TrailTriggerPips=350.0 \
-       --TrailDistancePips=180.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=200.0 \
-       --MaxSlPips=500.0 \
-       --MinTpPips=400.0 \
-       --MaxTpPips=1200.0 \
-       --MaxGivebackPips=200.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=80.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=30 \
        --RiskPerTradePercent=0.2 \
@@ -440,18 +440,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=25.0 \
        --MinOrWidthPips=70.0 \
        --OrbBufferPips=12.0 \
-       --BreakevenTriggerPips=180.0 \
-       --BreakevenOffsetPips=15.0 \
-       --TrailTriggerPips=300.0 \
-       --TrailDistancePips=150.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=180.0 \
-       --MaxSlPips=450.0 \
-       --MinTpPips=350.0 \
-       --MaxTpPips=1000.0 \
-       --MaxGivebackPips=180.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=70.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=25 \
        --RiskPerTradePercent=0.2 \
@@ -486,18 +486,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=6.0 \
        --MinOrWidthPips=15.0 \
        --OrbBufferPips=2.0 \
-       --BreakevenTriggerPips=18.0 \
-       --BreakevenOffsetPips=2.0 \
-       --TrailTriggerPips=30.0 \
-       --TrailDistancePips=15.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=15.0 \
-       --MaxSlPips=35.0 \
-       --MinTpPips=25.0 \
-       --MaxTpPips=80.0 \
-       --MaxGivebackPips=15.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=6.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=5 \
        --RiskPerTradePercent=0.2 \
@@ -532,18 +532,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=5.0 \
        --MinOrWidthPips=12.0 \
        --OrbBufferPips=1.5 \
-       --BreakevenTriggerPips=15.0 \
-       --BreakevenOffsetPips=1.5 \
-       --TrailTriggerPips=25.0 \
-       --TrailDistancePips=12.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=12.0 \
-       --MaxSlPips=30.0 \
-       --MinTpPips=20.0 \
-       --MaxTpPips=70.0 \
-       --MaxGivebackPips=12.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=5.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=5 \
        --RiskPerTradePercent=0.2 \
@@ -578,18 +578,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=4.0 \
        --MinOrWidthPips=10.0 \
        --OrbBufferPips=1.5 \
-       --BreakevenTriggerPips=12.0 \
-       --BreakevenOffsetPips=1.5 \
-       --TrailTriggerPips=20.0 \
-       --TrailDistancePips=10.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=10.0 \
-       --MaxSlPips=25.0 \
-       --MinTpPips=15.0 \
-       --MaxTpPips=50.0 \
-       --MaxGivebackPips=10.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=4.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=4 \
        --RiskPerTradePercent=0.2 \
@@ -624,18 +624,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=3.0 \
        --MinOrWidthPips=8.0 \
        --OrbBufferPips=1.0 \
-       --BreakevenTriggerPips=10.0 \
-       --BreakevenOffsetPips=1.0 \
-       --TrailTriggerPips=18.0 \
-       --TrailDistancePips=9.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=8.0 \
-       --MaxSlPips=20.0 \
-       --MinTpPips=12.0 \
-       --MaxTpPips=45.0 \
-       --MaxGivebackPips=8.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=3.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=3 \
        --RiskPerTradePercent=0.2 \
@@ -670,18 +670,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=20.0 \
        --MinOrWidthPips=60.0 \
        --OrbBufferPips=10.0 \
-       --BreakevenTriggerPips=150.0 \
-       --BreakevenOffsetPips=15.0 \
-       --TrailTriggerPips=250.0 \
-       --TrailDistancePips=120.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=150.0 \
-       --MaxSlPips=350.0 \
-       --MinTpPips=300.0 \
-       --MaxTpPips=800.0 \
-       --MaxGivebackPips=150.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=50.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=25 \
        --RiskPerTradePercent=0.2 \
@@ -716,18 +716,18 @@ python app/server.py
        --MinDecisiveBreakoutPips=4.0 \
        --MinOrWidthPips=10.0 \
        --OrbBufferPips=1.5 \
-       --BreakevenTriggerPips=12.0 \
-       --BreakevenOffsetPips=1.5 \
-       --TrailTriggerPips=22.0 \
-       --TrailDistancePips=11.0 \
+       --BreakevenTriggerAtr=1.2 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.0 \
+       --TrailDistanceAtr=1.0 \
        --PartialCloseRatio=0.5 \
-       --MinSlPips=10.0 \
-       --MaxSlPips=25.0 \
-       --MinTpPips=18.0 \
-       --MaxTpPips=60.0 \
-       --MaxGivebackPips=10.0 \
+       --MinSlAtr=0.8 \
+       --MaxSlAtr=3.0 \
+       --MinTpAtr=1.0 \
+       --MaxTpAtr=6.0 \
+       --MaxGivebackAtr=1.0 \
        --EnablePostTpGate=true \
-       --PostTpPullbackPips=4.0 \
+       --PostTpPullbackAtr=0.5 \
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=4 \
        --RiskPerTradePercent=0.2 \
@@ -851,6 +851,15 @@ ELSE:
 | ORB Buffer | 3.0 pips | 假突破缓冲 |
 | DST Rule | US | 自动夏令时调整 |
 
+#### 风险管理 (动态仓位 & ATR)
+| 参数 | 默认值 | 描述 |
+|------|--------|------|
+| Use ATR for SL/TP | true | 基于 ATR 计算动态止损/止盈 |
+| ATR Period | 14 | ATR 计算周期 |
+| ATR SL Multiplier | 1.5 | ATR 止损距离倍数 |
+| ATR TP Multiplier | 2.0 | ATR 止盈距离倍数 |
+| Risk per Trade (%) | 0.2 | 每笔交易风险资金占比 (%) |
+
 #### 防护栏
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
@@ -874,19 +883,23 @@ ELSE:
 | **Min Decisive Breakout** | `200.0 pips` | `300.0 pips` | `250.0 pips` | `200.0 pips` |
 | **Min OR Width** | `400.0 pips` | `800.0 pips` | `700.0 pips` | `600.0 pips` |
 | **ORB Buffer** | `50.0 pips` | `150.0 pips` | `120.0 pips` | `100.0 pips` |
-| **Breakeven Trigger** | `500.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
-| **Breakeven Offset** | `50.0 pips` | `200.0 pips` | `150.0 pips` | `150.0 pips` |
-| **Trail Trigger** | `800.0 pips` | `3500.0 pips` | `3000.0 pips` | `2500.0 pips` |
-| **Trail Distance** | `400.0 pips` | `1800.0 pips` | `1500.0 pips` | `1200.0 pips` |
-| **Min SL / Max SL** | `400.0 / 1500.0 pips` | `2000.0 / 5000.0 pips` | `1800.0 / 4500.0 pips` | `1500.0 / 3500.0 pips` |
-| **Min TP / Max TP** | `600.0 / 4000.0 pips` | `4000.0 / 12000.0 pips` | `3500.0 / 10000.0 pips` | `3000.0 / 8000.0 pips` |
-| **Max Giveback** | `500.0 pips` | `2000.0 pips` | `1800.0 pips` | `1500.0 pips` |
+| **Breakeven Trigger** | `1.2x ATR` | `1.2x ATR` | `1.2x ATR` | `1.2x ATR` |
+| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` | `0.1x ATR` | `0.1x ATR` |
+| **Trail Trigger** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
+| **Trail Distance** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
+| **Min SL / Max SL** | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` |
+| **Min TP / Max TP** | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` |
+| **Max Giveback** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
 | **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`200.0 pips`) | `true` (`800.0 pips`) | `true` (`700.0 pips`) | `true` (`500.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
+| **Use ATR for SL/TP** | `truex ATR` | `truex ATR` | `truex ATR` | `truex ATR` |
+| **ATR Period** | `14x ATR` | `14x ATR` | `14x ATR` | `14x ATR` |
+| **ATR SL Multiplier** | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
+| **ATR TP Multiplier** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
 
 #### Forex Majors
 
@@ -897,19 +910,23 @@ ELSE:
 | **Min Decisive Breakout** | `3.0 pips` | `4.5 pips` | `4.0 pips` | `4.0 pips` |
 | **Min OR Width** | `6.0 pips` | `10.0 pips` | `8.0 pips` | `10.0 pips` |
 | **ORB Buffer** | `1.0 pips` | `1.5 pips` | `1.5 pips` | `1.5 pips` |
-| **Breakeven Trigger** | `8.0 pips` | `12.0 pips` | `12.0 pips` | `12.0 pips` |
-| **Breakeven Offset** | `1.0 pips` | `1.5 pips` | `1.5 pips` | `1.5 pips` |
-| **Trail Trigger** | `15.0 pips` | `20.0 pips` | `25.0 pips` | `20.0 pips` |
-| **Trail Distance** | `8.0 pips` | `10.0 pips` | `12.0 pips` | `10.0 pips` |
-| **Min SL / Max SL** | `6.0 / 20.0 pips` | `8.0 / 25.0 pips` | `8.0 / 25.0 pips` | `10.0 / 25.0 pips` |
-| **Min TP / Max TP** | `10.0 / 50.0 pips` | `15.0 / 60.0 pips` | `15.0 / 70.0 pips` | `15.0 / 50.0 pips` |
-| **Max Giveback** | `8.0 pips` | `10.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Breakeven Trigger** | `1.2x ATR` | `1.2x ATR` | `1.2x ATR` | `1.2x ATR` |
+| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` | `0.1x ATR` | `0.1x ATR` |
+| **Trail Trigger** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
+| **Trail Distance** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
+| **Min SL / Max SL** | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` |
+| **Min TP / Max TP** | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` |
+| **Max Giveback** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
 | **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`3.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) | `true` (`4.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` | `0.2%` |
+| **Use ATR for SL/TP** | `truex ATR` | `truex ATR` | `truex ATR` | `truex ATR` |
+| **ATR Period** | `14x ATR` | `14x ATR` | `14x ATR` | `14x ATR` |
+| **ATR SL Multiplier** | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
+| **ATR TP Multiplier** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
 
 #### Forex Crosses
 
@@ -920,19 +937,23 @@ ELSE:
 | **Min Decisive Breakout** | `6.0 pips` | `5.0 pips` | `4.0 pips` |
 | **Min OR Width** | `15.0 pips` | `12.0 pips` | `10.0 pips` |
 | **ORB Buffer** | `2.0 pips` | `1.5 pips` | `1.5 pips` |
-| **Breakeven Trigger** | `18.0 pips` | `15.0 pips` | `12.0 pips` |
-| **Breakeven Offset** | `2.0 pips` | `1.5 pips` | `1.5 pips` |
-| **Trail Trigger** | `30.0 pips` | `25.0 pips` | `22.0 pips` |
-| **Trail Distance** | `15.0 pips` | `12.0 pips` | `11.0 pips` |
-| **Min SL / Max SL** | `15.0 / 35.0 pips` | `12.0 / 30.0 pips` | `10.0 / 25.0 pips` |
-| **Min TP / Max TP** | `25.0 / 80.0 pips` | `20.0 / 70.0 pips` | `18.0 / 60.0 pips` |
-| **Max Giveback** | `15.0 pips` | `12.0 pips` | `10.0 pips` |
+| **Breakeven Trigger** | `1.2x ATR` | `1.2x ATR` | `1.2x ATR` |
+| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` | `0.1x ATR` |
+| **Trail Trigger** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
+| **Trail Distance** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
+| **Min SL / Max SL** | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` | `0.8x / 3.0x ATR` |
+| **Min TP / Max TP** | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` | `1.0x / 6.0x ATR` |
+| **Max Giveback** | `1.0x ATR` | `1.0x ATR` | `1.0x ATR` |
 | **Recommended Timeframe** | `M15` | `M15` | `M15` |
 | **EMA Period** | `5` | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`6.0 pips`) | `true` (`5.0 pips`) | `true` (`4.0 pips`) |
+| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `true` (`1.5`) | `true` (`1.5`) | `true` (`1.5`) |
 | **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` | `0.5 (50%)` |
 | **Risk per Trade** | `0.2%` | `0.2%` | `0.2%` |
+| **Use ATR for SL/TP** | `truex ATR` | `truex ATR` | `truex ATR` |
+| **ATR Period** | `14x ATR` | `14x ATR` | `14x ATR` |
+| **ATR SL Multiplier** | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
+| **ATR TP Multiplier** | `2.0x ATR` | `2.0x ATR` | `2.0x ATR` |
 ### 投资组合管理器设置
 
 编辑`app/portfolio.py`：
