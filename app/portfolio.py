@@ -15,20 +15,9 @@ logger = logging.getLogger(__name__)
 
 class PortfolioConfig:
     """Portfolio risk limits."""
-    MAX_POSITIONS = 11
-    MAX_CURRENCY_EXPOSURE = 4  # max 2 positions with same base currency
-    MAX_CORRELATED_POSITIONS = 4  # max 2 positions with correlation > 0.7
     MAX_DAILY_LOSS = -200.0  # USD
     MAX_MARGIN_USAGE_PCT = 50.0  # % of account
     
-    # Correlation pairs (simplified - can be expanded)
-    HIGH_CORRELATION_PAIRS = {
-        ('EURUSD', 'GBPUSD'): 0.8,
-        ('EURUSD', 'AUDUSD'): 0.7,
-        ('GBPUSD', 'AUDUSD'): 0.7,
-        ('USDJPY', 'USDCAD'): 0.6,
-        ('XAUUSD', 'EURUSD'): 0.5,
-    }
 
 
 class PortfolioManager:
@@ -202,37 +191,6 @@ class PortfolioManager:
         try:
             conn = self._get_conn()
             
-            # 1. Max positions check
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM positions WHERE status = 'open' AND account_id = ?", (account_id,)
-            )
-            open_positions = cursor.fetchone()[0]
-            if open_positions >= self.config.MAX_POSITIONS:
-                conn.close()
-                return False, f"Max positions reached ({self.config.MAX_POSITIONS})"
-            
-            # 2. Currency exposure check
-            base_currency = symbol[:3]
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM positions 
-                WHERE status = 'open' AND (symbol LIKE ? OR symbol LIKE ?) AND account_id = ?
-            """, (f"{base_currency}%", f"%{base_currency}", account_id))
-            currency_count = cursor.fetchone()[0]
-            if currency_count >= self.config.MAX_CURRENCY_EXPOSURE:
-                conn.close()
-                return False, f"Max {base_currency} exposure ({self.config.MAX_CURRENCY_EXPOSURE})"
-            
-            # 3. Correlation check
-            for existing_symbol, _ in self._get_open_symbols(conn, account_id):
-                if self._is_highly_correlated(symbol, existing_symbol):
-                    cursor = conn.execute("""
-                        SELECT COUNT(*) FROM positions 
-                        WHERE status = 'open' AND symbol = ? AND account_id = ?
-                    """, (existing_symbol, account_id))
-                    if cursor.fetchone()[0] >= self.config.MAX_CORRELATED_POSITIONS:
-                        conn.close()
-                        return False, f"High correlation with {existing_symbol}"
-            
             # 4. Daily loss limit
             today = date.today().isoformat()
             cursor = conn.execute(
@@ -271,21 +229,7 @@ class PortfolioManager:
         """, (account_id,))
         return cursor.fetchall()
     
-    def _is_highly_correlated(self, symbol1: str, symbol2: str) -> bool:
-        """Check if two symbols have high correlation."""
-        if symbol1 == symbol2:
-            return False
         
-        # Check both orderings
-        pair1 = (symbol1, symbol2)
-        pair2 = (symbol2, symbol1)
-        
-        correlation = self.config.HIGH_CORRELATION_PAIRS.get(
-            pair1, self.config.HIGH_CORRELATION_PAIRS.get(pair2, 0)
-        )
-        
-        return correlation >= 0.7
-    
     def get_portfolio_status(self, account_id: Optional[str] = None) -> Dict:
         """Get current portfolio status."""
         try:
