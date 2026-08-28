@@ -428,13 +428,26 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
 
     # Gate 2.4: ORB Breakout Gate
     orb = snapshot.orb
-    if orb is None or not orb.breakout_direction or orb.breakout_direction.lower() == "none":
+    if orb is None:
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason="Cycle gate: Price inside Opening Range (no breakout)"
+            reason="Cycle gate: No ORB data available"
+        )
+    if not orb.breakout_direction or orb.breakout_direction.lower() == "none":
+        reason = (
+            f"Cycle gate: Price {orb.price_position} OR but breakout not active"
+            if orb.price_position in ("above", "below")
+            else "Cycle gate: Price inside Opening Range (no breakout)"
+        )
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=reason
         )
 
     # Post-TP Gate and Anti-Chase Bypass rule:
@@ -853,4 +866,5 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
 if __name__ == "__main__":
     host = os.getenv("SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("SERVER_PORT", "8000"))
-    uvicorn.run("app.server:app", host=host, port=port, reload=True)
+    reload = os.getenv("SERVER_RELOAD", "false").lower() in ("true", "1", "yes")
+    uvicorn.run("app.server:app", host=host, port=port, reload=reload, reload_dirs=["app"] if reload else None)
