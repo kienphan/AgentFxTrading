@@ -437,11 +437,12 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason="Cycle gate: No ORB data available"
         )
     if not orb.breakout_direction or orb.breakout_direction.lower() == "none":
-        reason = (
-            f"Cycle gate: Price {orb.price_position} OR but breakout not active"
-            if orb.price_position in ("above", "below")
-            else "Cycle gate: Price inside Opening Range (no breakout)"
-        )
+        if not orb.or_complete:
+            reason = "Cycle gate: Opening Range width too narrow (OR not valid/complete)"
+        elif orb.price_position in ("above", "below"):
+            reason = f"Cycle gate: Price {orb.price_position} OR but waiting for bar close confirmation (or breakout reset)"
+        else:
+            reason = "Cycle gate: Price inside Opening Range (no breakout)"
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
