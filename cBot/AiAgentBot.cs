@@ -466,6 +466,7 @@ namespace cAlgo.Robots
                 chart_tms = chartTms,
                 orb = GetOrbData(index),
                 market = GetMarketRegime(index),
+                position = GetPositionInfo(index),
                 session = GetSessionInfo()
             };
 
