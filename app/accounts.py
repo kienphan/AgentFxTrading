@@ -1,8 +1,8 @@
 import os
 import sqlite3
 import logging
-from typing import List, Dict, Optional
-
+from contextlib import contextmanager
+from typing import List, Dict, Optional, Generator
 logger = logging.getLogger(__name__)
 
 def parse_dashboard_accounts_env() -> List[Dict]:
@@ -45,10 +45,15 @@ class AccountRegistry:
         self.db_path = db_path
         self._init_schema()
         
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _init_schema(self):
         with self._get_connection() as conn:

@@ -139,26 +139,25 @@ class PortfolioManager:
                          volume: float, entry_price: float, 
                          sl_pips: float, tp_pips: float, account_id: str) -> bool:
         """Register new position after trade execution."""
+        conn = self._get_conn()
         try:
-            conn = self._get_conn()
             conn.execute("""
                 INSERT INTO positions (bot_id, symbol, side, volume, entry_price, 
                                      sl_pips, tp_pips, entry_time, status, account_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?)
             """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, account_id))
             conn.commit()
-            conn.close()
             logger.info(f"Position registered: {symbol} {side} {volume} lots by {bot_id} for account {account_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to register position: {e}")
             return False
-    
+        finally:
+            conn.close()
     def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float, account_id: str) -> bool:
         """Mark position as closed and update daily stats."""
+        conn = self._get_conn()
         try:
-            conn = self._get_conn()
-            
             # Update position
             conn.execute("""
                 UPDATE positions 
@@ -182,22 +181,21 @@ class PortfolioManager:
             """, (account_id, bot_id, today, pnl, pnl, pnl, pnl))
             
             conn.commit()
-            conn.close()
             logger.info(f"Position closed: {symbol} by {bot_id}, PnL: {pnl} for account {account_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to close position: {e}")
             return False
-    
+        finally:
+            conn.close()
     def check_risk(self, symbol: str, side: str, volume: float,
                    account_balance: float = 10000.0, account_id: str = "default") -> Tuple[bool, str]:
         """
         Check if new trade is safe at portfolio level.
         Returns (allowed: bool, reason: str)
         """
+        conn = self._get_conn()
         try:
-            conn = self._get_conn()
-            
             # 4. Daily loss limit
             today = date.today().isoformat()
             cursor = conn.execute(
@@ -208,7 +206,6 @@ class PortfolioManager:
             if row and row[0] is not None:
                 daily_pnl = row[0]
                 if daily_pnl <= self.config.MAX_DAILY_LOSS:
-                    conn.close()
                     return False, f"Daily loss limit reached ({daily_pnl:.2f})"
             
             # 5. Margin usage estimate (simplified)
@@ -219,16 +216,14 @@ class PortfolioManager:
             estimated_margin = (total_volume + volume) * 1000  # rough estimate
             margin_pct = (estimated_margin / account_balance) * 100
             if margin_pct > self.config.MAX_MARGIN_USAGE_PCT:
-                conn.close()
                 return False, f"Margin usage too high ({margin_pct:.1f}%)"
             
-            conn.close()
             return True, "OK"
-            
         except Exception as e:
             logger.error(f"Risk check failed: {e}")
             return False, f"Risk check error: {e}"
-    
+        finally:
+            conn.close()
     def _get_open_symbols(self, conn, account_id: str) -> List[Tuple[str, str]]:
         """Get list of (symbol, side) for open positions."""
         cursor = conn.execute("""
@@ -239,9 +234,8 @@ class PortfolioManager:
         
     def get_portfolio_status(self, account_id: Optional[str] = None) -> Dict:
         """Get current portfolio status."""
+        conn = self._get_conn()
         try:
-            conn = self._get_conn()
-            
             # Open positions
             query = """
                 SELECT bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, entry_time
@@ -312,15 +306,12 @@ class PortfolioManager:
             
             currency_exposure = {row[0]: row[1] for row in cursor.fetchall()}
             
-            conn.close()
-            
             return {
                 "open_positions": open_positions,
                 "daily_stats": daily_stats,
                 "currency_exposure": currency_exposure,
                 "total_positions": len(open_positions)
             }
-            
         except Exception as e:
             logger.error(f"Failed to get portfolio status: {e}")
             return {
@@ -330,11 +321,13 @@ class PortfolioManager:
                 "total_positions": 0,
                 "error": str(e)
             }
+        finally:
+            conn.close()
     
     def get_position_count(self, symbol: Optional[str] = None, account_id: Optional[str] = None) -> int:
         """Get count of open positions, optionally filtered by symbol."""
+        conn = self._get_conn()
         try:
-            conn = self._get_conn()
             query = "SELECT COUNT(*) FROM positions WHERE status = 'open'"
             params = []
             if symbol:
@@ -346,11 +339,12 @@ class PortfolioManager:
                 
             cursor = conn.execute(query, tuple(params))
             count = cursor.fetchone()[0]
-            conn.close()
             return count
         except Exception as e:
             logger.error(f"Failed to get position count: {e}")
             return 0
+        finally:
+            conn.close()
     # --- Cbot Config Management ---
     
     def get_cbot_configs(self) -> List[Dict]:

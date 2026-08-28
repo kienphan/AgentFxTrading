@@ -27,107 +27,109 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 def get_db():
     """Get database connection."""
-    return sqlite3.connect(DB_PATH)
-
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
 
 def get_portfolio_summary(account_id: str = "all") -> Dict:
     """Get portfolio summary statistics."""
     conn = get_db()
-    
-    params = []
-    account_filter = ""
-    if account_id and account_id != "all":
-        account_filter = " AND account_id = ?"
-        params.append(account_id)
+    try:
+        params = []
+        account_filter = ""
+        if account_id and account_id != "all":
+            account_filter = " AND account_id = ?"
+            params.append(account_id)
 
-    # Open positions count
-    cursor = conn.execute(f"SELECT COUNT(*) FROM positions WHERE status = 'open'{account_filter}", tuple(params))
-    open_positions = cursor.fetchone()[0]
-    
-    # Today's stats
-    today = date.today().isoformat()
-    cursor = conn.execute(
-        f"SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?{account_filter}",
-        (today, *params)
-    )
-    row = cursor.fetchone()
-    daily_pnl = row[0] if row and row[0] is not None else 0
-    trades_today = row[1] if row and row[1] is not None else 0
-    loss_streak = row[2] if row and row[2] is not None else 0
-    
-    # Total P&L (all time)
-    cursor = conn.execute(
-        f"SELECT SUM(pnl) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
-    )
-    row_pnl = cursor.fetchone()
-    total_pnl = row_pnl[0] if row_pnl and row_pnl[0] is not None else 0
-    
-    # Win rate
-    cursor = conn.execute(
-        f"SELECT COUNT(*) FROM positions WHERE status = 'closed' AND pnl > 0{account_filter}", tuple(params)
-    )
-    wins = cursor.fetchone()[0]
-    
-    cursor = conn.execute(
-        f"SELECT COUNT(*) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
-    )
-    total_trades = cursor.fetchone()[0]
-    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-    
-    # Fetch account balance/equity if specific account
-    # Fetch account balance/equity
-    account_balance = None
-    account_equity = None
-    if account_id and account_id != "all":
-        cursor = conn.execute("SELECT last_balance, last_equity FROM accounts WHERE account_id = ?", (account_id,))
-        acc_row = cursor.fetchone()
-        if acc_row:
-            account_balance = acc_row[0]
-            account_equity = acc_row[1]
-    else:
-        cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE last_balance > 0")
-        sum_row = cursor.fetchone()
-        if sum_row and sum_row[0] is not None:
-            account_balance = sum_row[0]
-            account_equity = sum_row[1]
-    conn.close()
-    
-    return {
-        "open_positions": open_positions,
-        "daily_pnl": round(daily_pnl, 2),
-        "trades_today": trades_today,
-        "loss_streak": loss_streak,
-        "total_pnl": round(total_pnl, 2),
-        "win_rate": round(win_rate, 1),
-        "account_id": account_id,
-        "account_balance": account_balance,
-        "account_equity": account_equity
-    }
+        # Open positions count
+        cursor = conn.execute(f"SELECT COUNT(*) FROM positions WHERE status = 'open'{account_filter}", tuple(params))
+        open_positions = cursor.fetchone()[0]
+        
+        # Today's stats
+        today = date.today().isoformat()
+        cursor = conn.execute(
+            f"SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?{account_filter}",
+            (today, *params)
+        )
+        row = cursor.fetchone()
+        daily_pnl = row[0] if row and row[0] is not None else 0
+        trades_today = row[1] if row and row[1] is not None else 0
+        loss_streak = row[2] if row and row[2] is not None else 0
+        
+        # Total P&L (all time)
+        cursor = conn.execute(
+            f"SELECT SUM(pnl) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
+        )
+        row_pnl = cursor.fetchone()
+        total_pnl = row_pnl[0] if row_pnl and row_pnl[0] is not None else 0
+        
+        # Win rate
+        cursor = conn.execute(
+            f"SELECT COUNT(*) FROM positions WHERE status = 'closed' AND pnl > 0{account_filter}", tuple(params)
+        )
+        wins = cursor.fetchone()[0]
+        
+        cursor = conn.execute(
+            f"SELECT COUNT(*) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
+        )
+        total_trades = cursor.fetchone()[0]
+        win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+        
+        # Fetch account balance/equity
+        account_balance = None
+        account_equity = None
+        if account_id and account_id != "all":
+            cursor = conn.execute("SELECT last_balance, last_equity FROM accounts WHERE account_id = ?", (account_id,))
+            acc_row = cursor.fetchone()
+            if acc_row:
+                account_balance = acc_row[0]
+                account_equity = acc_row[1]
+        else:
+            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE last_balance > 0")
+            sum_row = cursor.fetchone()
+            if sum_row and sum_row[0] is not None:
+                account_balance = sum_row[0]
+                account_equity = sum_row[1]
+        
+        return {
+            "open_positions": open_positions,
+            "daily_pnl": round(daily_pnl, 2),
+            "trades_today": trades_today,
+            "loss_streak": loss_streak,
+            "total_pnl": round(total_pnl, 2),
+            "win_rate": round(win_rate, 1),
+            "account_id": account_id,
+            "account_balance": account_balance,
+            "account_equity": account_equity
+        }
+    finally:
+        conn.close()
 
 
 def get_active_positions(account_id: str = "all") -> List[Dict]:
     """Get all active positions."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    
-    query = """
-        SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
-               p.account_id, a.account_type, a.label as account_label
-        FROM positions p
-        LEFT JOIN accounts a ON p.account_id = a.account_id
-        WHERE p.status = 'open'
-    """
-    params = []
-    if account_id and account_id != "all":
-        query += " AND p.account_id = ?"
-        params.append(account_id)
+    positions = []
+    try:
+        query = """
+            SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
+                   p.account_id, a.account_type, a.label as account_label
+            FROM positions p
+            LEFT JOIN accounts a ON p.account_id = a.account_id
+            WHERE p.status = 'open'
+        """
+        params = []
+        if account_id and account_id != "all":
+            query += " AND p.account_id = ?"
+            params.append(account_id)
+            
+        query += " ORDER BY p.entry_time DESC"
         
-    query += " ORDER BY p.entry_time DESC"
-    
-    cursor = conn.execute(query, tuple(params))
-    positions = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-
+        cursor = conn.execute(query, tuple(params))
+        positions = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
     pm = get_portfolio_manager()
     for pos in positions:
         symbol = pos.get("symbol", "")
@@ -178,31 +180,30 @@ def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
     """Get recent trade history."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    
-    query = """
-        SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
-               p.account_id, a.account_type, a.label as account_label
-        FROM positions p
-        LEFT JOIN accounts a ON p.account_id = a.account_id
-        WHERE p.status = 'closed'
-    """
-    params = []
-    if account_id and account_id != "all":
-        query += " AND p.account_id = ?"
-        params.append(account_id)
-        
-    query += " ORDER BY p.exit_time DESC LIMIT ?"
-    params.append(limit)
-    
-    cursor = conn.execute(query, tuple(params))
-    
     trades = []
-    for row in cursor.fetchall():
-        d = dict(row)
-        d["pnl"] = round(d["pnl"], 2) if d["pnl"] is not None else 0
-        trades.append(d)
-    
-    conn.close()
+    try:
+        query = """
+            SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
+                   p.account_id, a.account_type, a.label as account_label
+            FROM positions p
+            LEFT JOIN accounts a ON p.account_id = a.account_id
+            WHERE p.status = 'closed'
+        """
+        params = []
+        if account_id and account_id != "all":
+            query += " AND p.account_id = ?"
+            params.append(account_id)
+            
+        query += " ORDER BY p.exit_time DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor = conn.execute(query, tuple(params))
+        for row in cursor.fetchall():
+            d = dict(row)
+            d["pnl"] = round(d["pnl"], 2) if d["pnl"] is not None else 0
+            trades.append(d)
+    finally:
+        conn.close()
     return trades
 
 
@@ -210,30 +211,29 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
     """Get daily P&L for the last N days."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    
-    query = """
-        SELECT date, SUM(total_pnl) as pnl, SUM(trades_count) as trades
-        FROM daily_stats
-    """
-    params = []
-    if account_id and account_id != "all":
-        query += " WHERE account_id = ?"
-        params.append(account_id)
-        
-    query += " GROUP BY date ORDER BY date DESC LIMIT ?"
-    params.append(days)
-    
-    cursor = conn.execute(query, tuple(params))
-    
     history = []
-    for row in cursor.fetchall():
-        history.append({
-            "date": row["date"],
-            "pnl": round(row["pnl"], 2) if row["pnl"] is not None else 0,
-            "trades": row["trades"]
-        })
-    
-    conn.close()
+    try:
+        query = """
+            SELECT date, SUM(total_pnl) as pnl, SUM(trades_count) as trades
+            FROM daily_stats
+        """
+        params = []
+        if account_id and account_id != "all":
+            query += " WHERE account_id = ?"
+            params.append(account_id)
+            
+        query += " GROUP BY date ORDER BY date DESC LIMIT ?"
+        params.append(days)
+        
+        cursor = conn.execute(query, tuple(params))
+        for row in cursor.fetchall():
+            history.append({
+                "date": row["date"],
+                "pnl": round(row["pnl"], 2) if row["pnl"] is not None else 0,
+                "trades": row["trades"]
+            })
+    finally:
+        conn.close()
     return list(reversed(history))  # Reverse to chronological order
 
 @router.get("/", response_class=HTMLResponse)
