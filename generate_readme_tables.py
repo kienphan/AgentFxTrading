@@ -51,9 +51,10 @@ def format_val(val, param):
     if val == "N/A": return "`N/A`"
     if "Pips" in param:
         return f"`{val} pips`"
+    if param in ("UseAtr", "AtrPeriod"):
+        return f"`{val}`"
     if "Atr" in param:
         return f"`{val}x ATR`"
-    if param == "BounceDistanceThreshold":
         return f"`true` (`{val}`)"
     if param == "PartialCloseRatio":
         return f"`{val} ({int(float(val)*100)}%)`"
