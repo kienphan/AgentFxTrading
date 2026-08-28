@@ -133,7 +133,9 @@ namespace cAlgo.Robots
         [Parameter("Partial Close at BE (0-1)", Group = "Risk Management", DefaultValue = 0.5, MinValue = 0, MaxValue = 1.0, Step = 0.1)]
         public double PartialCloseRatio { get; set; }
 
-        // ---- Guardrails (ATR Multipliers) ----
+        [Parameter("Use OR Boundary SL", Group = "Risk Management", DefaultValue = true)]
+        public bool UseOrBoundarySl { get; set; }
+
         [Parameter("Min SL Multiplier (x ATR)", Group = "Guardrails", DefaultValue = 0.8, MinValue = 0.1, Step = 0.1)]
         public double MinSlAtr { get; set; }
 
@@ -1634,7 +1636,7 @@ namespace cAlgo.Robots
             // Entry
             if (GetBotPositions().Length > 0) return;
             if (decision.action != "BUY" && decision.action != "SELL") return;
-
+            double currentPrice = (decision.action == "BUY") ? Symbol.Ask : Symbol.Bid;
             double atrValue = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 
                 ? _atr.Result.LastValue 
                 : (decision.sl_pips > 0 ? decision.sl_pips * Symbol.PipSize / 1.5 : 10 * Symbol.PipSize);
@@ -1656,9 +1658,34 @@ namespace cAlgo.Robots
             double maxTpPips = MaxTpAtr * atrInPips;
 
             slPips = Math.Max(minSlPips, Math.Min(maxSlPips, slPips));
-            tpPips = Math.Max(minTpPips, Math.Min(maxTpPips, tpPips));
 
-            // Risk-based Sizing overriding LLM volume
+            // Hybrid Structural OR Stop Loss:
+            // For BUY: Invalidation is at OR Low - Buffer. Distance = (Ask - OR_Low) / PipSize + Buffer
+            // For SELL: Invalidation is at OR High + Buffer. Distance = (OR_High - Bid) / PipSize + Buffer
+            if (UseOrBoundarySl)
+            {
+                double bufferPips = OrbBufferPips;
+                if (decision.action == "BUY" && _orLow < double.MaxValue)
+                {
+                    double orSlPips = ((currentPrice - _orLow) / Symbol.PipSize) + bufferPips;
+                    if (orSlPips > 0)
+                    {
+                        slPips = Math.Max(slPips, orSlPips);
+                    }
+                }
+                else if (decision.action == "SELL" && _orHigh > double.MinValue)
+                {
+                    double orSlPips = ((_orHigh - currentPrice) / Symbol.PipSize) + bufferPips;
+                    if (orSlPips > 0)
+                    {
+                        slPips = Math.Max(slPips, orSlPips);
+                    }
+                }
+            }
+
+            // Scale TP to maintain favorable Risk:Reward ratio relative to SL
+            double targetRrRatio = (AtrTpMultiplier > 0 && AtrSlMultiplier > 0) ? (AtrTpMultiplier / AtrSlMultiplier) : 1.5;
+            tpPips = Math.Max(minTpPips, Math.Max(tpPips, slPips * targetRrRatio));
             double riskAmount = Account.Balance * (RiskPerTradePercent / 100.0);
             
             // Volume = Risk / (SL * PipValue)
