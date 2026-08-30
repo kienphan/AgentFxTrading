@@ -1,5 +1,32 @@
 ### 📊 Recommended Presets by Symbol
 
+#### Cryptocurrency
+
+| Parameter | BTCUSD | ETHUSD |
+| :--- | :--- | :--- |
+| **Trading Session** | New York | New York |
+| **DST Rule** | `US` | `US` |
+| **Min Decisive Breakout** | `150.0 pips` | `80.0 pips` |
+| **Min OR Width** | `300.0 pips` | `150.0 pips` |
+| **ORB Buffer** | `50.0 pips` | `25.0 pips` |
+| **Breakeven Trigger** | `1.5x ATR` | `1.5x ATR` |
+| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` |
+| **Trail Trigger** | `2.5x ATR` | `2.5x ATR` |
+| **Trail Distance** | `1.5x ATR` | `1.5x ATR` |
+| **Min SL / Max SL** | `1.0x / 4.0x ATR` | `1.0x / 4.0x ATR` |
+| **Min TP / Max TP** | `1.5x / 8.0x ATR` | `1.5x / 8.0x ATR` |
+| **Max Giveback** | `1.5x ATR` | `1.5x ATR` |
+| **Recommended Timeframe** | `M15` | `M15` |
+| **EMA Period** | `5` | `5` |
+| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
+| **TDI Bounce Trade** | `1.5` | `1.5` |
+| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` |
+| **Risk per Trade** | `0.2%` | `0.2%` |
+| **Use ATR for SL/TP** | `true` | `true` |
+| **ATR Period** | `14` | `14` |
+| **ATR SL Multiplier** | `2.0x ATR` | `2.0x ATR` |
+| **ATR TP Multiplier** | `3.5x ATR` | `3.5x ATR` |
+
 #### Metals & Indices
 
 | Parameter | XAUUSD | US30 | USTEC | DE40 |
@@ -16,7 +43,7 @@
 | **Min SL / Max SL** | `0.8x / 3.0x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` |
 | **Min TP / Max TP** | `1.0x / 6.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` |
 | **Max Giveback** | `1.0x ATR` | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
-| **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
+| **Recommended Timeframe** | `M15` | `M15` | `M5` | `M15` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
 | **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `1.5` | `1.5` | `1.5` | `1.5` |

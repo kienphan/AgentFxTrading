@@ -8,6 +8,7 @@ bots = {row[0].replace('cbot-', '').upper(): row[1] for row in c.fetchall()}
 conn.close()
 
 groups = {
+    "Cryptocurrency": ["BTCUSD", "ETHUSD"],
     "Metals & Indices": ["XAUUSD", "US30", "USTEC", "DE40"],
     "Forex Majors": ["EURUSD", "GBPUSD", "USDJPY", "USDCAD"],
     "Forex Crosses": ["GBPJPY", "EURJPY", "AUDJPY"]

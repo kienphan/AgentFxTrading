@@ -366,7 +366,7 @@ python app/server.py
        --TrendTpDisabled=true
      ```
 
-   * **US30 (M5 - 纽约指数时段)**:
+   * **US30 (M15 - 纽约指数时段)**:
      ```bash
      docker run -d \
        --name cbot-us30 \
@@ -380,9 +380,9 @@ python app/server.py
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
        --symbol=US30 \
-       --period=m5 \
+       --period=m15 \
        --full-access \
-       --BotId="us30_m5" \
+       --BotId="us30_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \
@@ -656,9 +656,9 @@ python app/server.py
        --pwd-file=/root/ctrader_data/ctid_pwd \
        --account=YOUR_ACCOUNT_ID \
        --symbol=DE40 \
-       --period=m5 \
+       --period=m15 \
        --full-access \
-       --BotId="de40_m5" \
+       --BotId="de40_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --TmsTimeFrame="Hour" \
@@ -731,6 +731,106 @@ python app/server.py
        --BounceTradeEnabled=true \
        --BounceDistanceThreshold=4 \
        --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
+   * **BTCUSD (M15 - 纽约时段 / 加密货币动量)**:
+     ```bash
+     docker run -d \
+       --name cbot-btcusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=BTCUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="btcusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork" \
+       --OrbStartHour=13 \
+       --SessionEndHour=22 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=150.0 \
+       --MinOrWidthPips=300.0 \
+       --OrbBufferPips=50.0 \
+       --PartialCloseRatio=0.5 \
+       --EnablePostTpGate=true \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=1.5 \
+       --RiskPerTradePercent=0.2 \
+       --UseAtr=true \
+       --AtrPeriod=14 \
+       --AtrSlMultiplier=2.0 \
+       --AtrTpMultiplier=3.5 \
+       --BreakevenTriggerAtr=1.5 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.5 \
+       --TrailDistanceAtr=1.5 \
+       --MinSlAtr=1.0 \
+       --MaxSlAtr=4.0 \
+       --MinTpAtr=1.5 \
+       --MaxTpAtr=8.0 \
+       --MaxGivebackAtr=1.5 \
+       --PostTpPullbackAtr=0.5 \
+       --TrendTpDisabled=true
+     ```
+
+   * **ETHUSD (M15 - 纽约时段 / 加密货币动量)**:
+     ```bash
+     docker run -d \
+       --name cbot-ethusd \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=ETHUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="ethusd_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="newyork" \
+       --OrbStartHour=13 \
+       --SessionEndHour=22 \
+       --SessionDstRule="US" \
+       --MinDecisiveBreakoutPips=80.0 \
+       --MinOrWidthPips=150.0 \
+       --OrbBufferPips=25.0 \
+       --PartialCloseRatio=0.5 \
+       --EnablePostTpGate=true \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=1.5 \
+       --RiskPerTradePercent=0.2 \
+       --UseAtr=true \
+       --AtrPeriod=14 \
+       --AtrSlMultiplier=2.0 \
+       --AtrTpMultiplier=3.5 \
+       --BreakevenTriggerAtr=1.5 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=2.5 \
+       --TrailDistanceAtr=1.5 \
+       --MinSlAtr=1.0 \
+       --MaxSlAtr=4.0 \
+       --MinTpAtr=1.5 \
+       --MaxTpAtr=8.0 \
+       --MaxGivebackAtr=1.5 \
+       --PostTpPullbackAtr=0.5 \
        --TrendTpDisabled=true
      ```
 ### 5. 开始交易！🎉
@@ -874,6 +974,33 @@ ELSE:
 
 ### 📊 Recommended Presets by Symbol
 
+#### Cryptocurrency
+
+| Parameter | BTCUSD | ETHUSD |
+| :--- | :--- | :--- |
+| **Trading Session** | New York | New York |
+| **DST Rule** | `US` | `US` |
+| **Min Decisive Breakout** | `150.0 pips` | `80.0 pips` |
+| **Min OR Width** | `300.0 pips` | `150.0 pips` |
+| **ORB Buffer** | `50.0 pips` | `25.0 pips` |
+| **Breakeven Trigger** | `1.5x ATR` | `1.5x ATR` |
+| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` |
+| **Trail Trigger** | `2.5x ATR` | `2.5x ATR` |
+| **Trail Distance** | `1.5x ATR` | `1.5x ATR` |
+| **Min SL / Max SL** | `1.0x / 4.0x ATR` | `1.0x / 4.0x ATR` |
+| **Min TP / Max TP** | `1.5x / 8.0x ATR` | `1.5x / 8.0x ATR` |
+| **Max Giveback** | `1.5x ATR` | `1.5x ATR` |
+| **Recommended Timeframe** | `M15` | `M15` |
+| **EMA Period** | `5` | `5` |
+| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
+| **TDI Bounce Trade** | `1.5` | `1.5` |
+| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` |
+| **Risk per Trade** | `0.2%` | `0.2%` |
+| **Use ATR for SL/TP** | `true` | `true` |
+| **ATR Period** | `14` | `14` |
+| **ATR SL Multiplier** | `2.0x ATR` | `2.0x ATR` |
+| **ATR TP Multiplier** | `3.5x ATR` | `3.5x ATR` |
+
 #### Metals & Indices
 
 | Parameter | XAUUSD | US30 | USTEC | DE40 |
@@ -890,7 +1017,7 @@ ELSE:
 | **Min SL / Max SL** | `0.8x / 3.0x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` |
 | **Min TP / Max TP** | `1.0x / 6.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` |
 | **Max Giveback** | `1.0x ATR` | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
-| **Recommended Timeframe** | `M15` | `M5` | `M5` | `M5` |
+| **Recommended Timeframe** | `M15` | `M15` | `M5` | `M15` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
 | **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `1.5` | `1.5` | `1.5` | `1.5` |

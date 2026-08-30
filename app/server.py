@@ -227,8 +227,19 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
     Dynamic System Prompt Factory (inspired by dnse-kash architecture).
     Bakes live asset characteristics, market regime guidelines, and quantitative edge-case rules directly into context.
     """
-    is_gold = "XAU" in snapshot.symbol.upper() or "GOLD" in snapshot.symbol.upper()
-    asset_type = "Gold (Commodity/Metals)" if is_gold else "Forex Major/Cross"
+    sym_up = snapshot.symbol.upper()
+    is_gold = "XAU" in sym_up or "GOLD" in sym_up
+    is_crypto = any(cr in sym_up for cr in ["BTC", "ETH", "SOL", "XRP", "CRYPTO"])
+    is_index = any(idx in sym_up for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"])
+
+    if is_crypto:
+        asset_type = "Cryptocurrency (High Volatility Momentum)"
+    elif is_gold:
+        asset_type = "Gold (Commodity/Metals)"
+    elif is_index:
+        asset_type = "Stock Index (High Beta Momentum)"
+    else:
+        asset_type = "Forex Major/Cross"
 
     current_regime = snapshot.market.regime if snapshot.market else "mixed"
     regime_guideline = ""
