@@ -917,7 +917,7 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
 ### Quantitative Edge-Case Rules
 - **BIAS-FRESH Exception**: When a TDI cross just occurred ($\le 1$ bar ago), early momentum is treated as the **start of a fresh trend leg**, not an extended move → Favors entering immediately.
 - **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a pullback, **DO NOT chase** at extremes → Holds and waits for a pullback.
-- **Position Memory & Giveback Floor**: Tracks Peak Profit ($MFE$) on every tick. If floating profit drops below the maximum giveback threshold, the position is closed immediately to lock in gains.
+- **Position Breathing Room & Giveback Floor**: Provides breathing room for normal intraday fluctuations (especially on Crypto and Indices). Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on large winning trades ($\ge 1.5\times$ ATR or BE trigger reached) to lock in gains if giveback exceeds threshold with confirmed reversal.
 
 ### Entry Rules
 
@@ -936,12 +936,12 @@ ELSE:
 
 | Condition | Action |
 |-----------|--------|
-| TDI Green flat/hook/checkmark | CLOSE_ALL |
+| Confirmed TDI Reversal (Cross opposite Red / Severe OB-OS reversal losing EMA) | CLOSE_ALL |
 | Bias reverses | Auto close |
 | Session ends (EOD) | Auto close (EOD Force-Flatten safety net) |
 | Profit ≥ 1.2x ATR | Move SL to breakeven (+0.1x ATR offset) |
 | Profit ≥ 2.0x ATR | Trail SL by 1.0x ATR |
-| Giveback ≥ 1.0x ATR | Auto close (Max giveback protection) |
+| Giveback ≥ 1.0x ATR (after reaching BE trigger) | Auto close (Max giveback protection) |
 
 ---
 

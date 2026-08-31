@@ -888,7 +888,7 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
 ### Quy Tắc Xử Lý Ngoại Lệ Thực Chiến (Edge-Case Rules)
 - **Ngoại lệ BIAS-FRESH**: Khi giao cắt TDI vừa mới xảy ra ($\le 1$ nến trước), xung lực bứt phá sớm được xem là **bắt đầu một con sóng mới** chứ không phải nến quá mua/quá bán → Ưu tiên vào lệnh ngay.
 - **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback.
-- **Position Memory & Giveback Floor**: Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Nếu lợi nhuận tụt từ đỉnh quá ngưỡng giveback, bot sẽ tự động đóng lệnh để bảo toàn thành quả.
+- **Position Breathing Room & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn (đặc biệt với Crypto và Chỉ số). Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế Giveback Floor chỉ kích hoạt với các lệnh thắng lớn ($\ge 1.5\times$ ATR hoặc đã chạm BE trigger) để chốt lời khi giveback vượt ngưỡng kèm đảo chiều xác nhận.
 
 ### Quy Tắc Vào Lệnh
 
@@ -907,12 +907,12 @@ ELSE:
 
 | Điều Kiện | Hành Động |
 |-----------|-----------|
-| TDI Green flat/hook/checkmark | CLOSE_ALL |
+| Đảo chiều TDI xác nhận (TDI cắt ngược đường Đỏ / Quá mua-quá bán đảo chiều mất EMA) | CLOSE_ALL |
 | Bias đảo ngược | Tự động đóng |
 | Phiên kết thúc (EOD) | Tự động đóng toàn bộ lệnh (EOD Force-Flatten safety net) |
 | Lợi nhuận ≥ 1.2x ATR | Di chuyển SL về breakeven (+0.1x ATR offset) |
 | Lợi nhuận ≥ 2.0x ATR | Trail SL 1.0x ATR |
-| Giveback ≥ 30p | Tự động đóng (Max giveback protection) |
+| Giveback ≥ 1.0x ATR (sau khi đã đạt ngưỡng BE) | Tự động đóng (Max giveback protection) |
 
 ---
 

@@ -300,15 +300,21 @@ You analyze market structure and propose trade actions. The deterministic execut
 - **BIAS-FRESH Exception**: When a TMS cross JUST occurred (bars_since_cross <= 1), treat early breakout momentum as the START of a new trend leg rather than an extended move. Entering in the fresh bias direction is strongly favored.
 - **TDI BOUNCE EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce** is confirmed (`tdi_bounce_bull` or `tdi_bounce_bear`), the pullback has occurred and resolved in favor of the trend -> Enter on the bounce.
 - **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback/bounce, DO NOT chase at extremes. Declare HOLD.
+- **POSITION BREATHING ROOM & PATIENCE**:
+  - Trading requires room for normal market fluctuations. Never prematurely cut an open position on minor pullbacks or single-candle noise if price is still structurally valid and aligned with the macro trend. Stop Loss and Trailing Stop are dynamically managed by the engine via ATR.
 - **POSITION MEMORY & GIVEBACK FLOOR**:
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
-  - **Golden Rule**: Never let a large winning trade turn into a losing trade without a deliberate technical reason. If giveback is high and momentum slope turns negative, declare CLOSE_ALL to protect capital.
+  - **Golden Rule**: Giveback protection ONLY applies to LARGE winning trades that reached significant profit (e.g. >= 1.5x ATR or BE trigger reached) and are now giving back >= 60-70% of peak gains accompanied by confirmed trend reversal. Do NOT panic-close trades that have only moved slightly or are oscillating near entry.
+- **ASSET SCALE AWARENESS (CRYPTO / INDICES / METALS / FOREX)**:
+  - Pip definitions vary widely across asset classes:
+    * Forex (EURUSD, GBPUSD, etc.): 1 pip = 0.0001 (50 pips = 0.5% move).
+    * Crypto (BTCUSD, ETHUSD): 1 pip = $0.01 (500 pips on ETH = $5.00 = ~0.2% move; 1000 pips on BTC = $10.00 = ~0.01% move).
+    * Indices (US30, DE40, USTEC): 1 pip = 0.1 to 1.0 index point.
+    * Metals (XAUUSD): 1 pip = $0.01 ($1.00 gold move = 100 pips).
+  - On Crypto and Indices, several hundred pips is minimal noise (a small fraction of 1 ATR). Evaluate the actual chart trend structure rather than panicking over raw pip counts.
 - **POST-TP GATE (Anti-FOMO)**: Once a trade hits Take Profit, the deterministic engine ARMS a blocker (`post_tp_gate_active = true`) preventing immediate re-entry in the same direction (`post_tp_gate_side`). It unlocks automatically only when a Pullback, OR Touch, TDI Bounce, or Bias Flip occurs.
   - **Golden Rule**: If `post_tp_gate_active` is true and you want to enter in the `post_tp_gate_side` direction, you MUST declare HOLD and wait for the pullback/bounce to unlock the gate.
-- **MOMENTUM SLOPE AS EARLIEST EXIT WARNING**:
-  - green_tf_slope turning negative for a BUY position (or positive for a SELL position) is the earliest warning that momentum is exhausting before full TDI cross confirms.
-
 ### 6. Risk & Sizing (handled by the engine — context only)
 - SL/TP distances are computed by the cBot ATR engine (ATR on the chart timeframe); you do NOT provide them.
 - Position volume is computed by the engine from risk-per-trade % and ATR-based SL. `volume_lots` you return is a *relative* suggestion only and may be overridden.
@@ -325,9 +331,10 @@ You analyze market structure and propose trade actions. The deterministic execut
 4. Loss streak < 3.
 -> Any mismatch or conflicting signal -> HOLD.
 ### Exit Criteria:
-1. exit_long = true (for BUY) or exit_short = true (for SELL) -> CLOSE_ALL.
-2. green_tf_slope turning sharply against position -> CLOSE_ALL (early momentum exit).
-3. session.phase = "ending" -> CLOSE_ALL (EOD safety).
+1. session.phase = "ending" -> CLOSE_ALL (EOD safety).
+2. Confirmed Reversal Signal: exit_long = true (for BUY) or exit_short = true (for SELL) indicating a true TDI cross / momentum reversal -> CLOSE_ALL.
+3. Significant Giveback on Big Winner: Trade achieved major profit (MFE >= 1.5 ATR / BE triggered) and gives back >= 60% of peak with clear reversal -> CLOSE_ALL.
+4. Otherwise (trade in normal consolidation or healthy pullback within trend) -> HOLD (let ATR SL/TP and Trailing Stop manage the trade).
 
 ## Output Format (JSON only)
 
@@ -822,11 +829,9 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
             "### Position",
             f"- Side: {pos.side}",
             f"- Entry: {pos.entry_price:.5f}",
-            f"- PnL: {pos.unrealized_pnl:.2f} ({pos.unrealized_pnl_pips:.1f} pips)",
-            f"- MFE: {pos.mfe_pips:.1f} pips",
-            f"- Giveback: {pos.giveback_pips:.1f} pips",
-            f"- SL: {pos.sl_price:.5f}",
-            f"- TP: {pos.tp_price:.5f}",
+            f"- PnL: ${pos.unrealized_pnl:.2f} ({pos.unrealized_pnl_pips:.1f} pips)",
+            f"- Peak MFE: {pos.mfe_pips:.1f} pips | Giveback: {pos.giveback_pips:.1f} pips",
+            f"- SL: {pos.sl_price:.5f} | TP: {pos.tp_price:.5f}",
             f"- Bars held: {pos.bars_held}",
         ])
     else:
@@ -860,12 +865,13 @@ def build_user_prompt(snapshot: MarketSnapshot) -> str:
         "## YOUR TASK",
         "",
         "Based on the pre-computed signals:",
-        "1. If exit_long/exit_short is true and position open → CLOSE_ALL",
-        "2. If session.phase = 'ending' and position open → CLOSE_ALL",
-        "3. If long_entry=true and TMS BULLISH and ORB breakout UP and is_decisive → BUY",
-        "4. If short_entry=true and TMS BEARISH and ORB breakout DOWN and is_decisive → SELL",
-        "5. If loss_streak >= 3 → HOLD",
-        "6. Otherwise → HOLD",
+        "1. If session.phase = 'ending' and position open → CLOSE_ALL",
+        "2. If position is open and a confirmed reversal occurred (exit_long=true for BUY, exit_short=true for SELL) → CLOSE_ALL",
+        "3. If position is open and within normal trend fluctuation → HOLD (allow ATR Stop Loss / Trailing Stop to operate)",
+        "4. If long_entry=true and TMS BULLISH and ORB breakout UP and is_decisive → BUY",
+        "5. If short_entry=true and TMS BEARISH and ORB breakout DOWN and is_decisive → SELL",
+        "6. If loss_streak >= 3 → HOLD",
+        "7. Otherwise → HOLD",
         "",
         "SL/TP pips are ignored by the engine (ATR-based) — set sl_pips/tp_pips to 0.",
         "",

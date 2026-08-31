@@ -545,8 +545,7 @@ namespace cAlgo.Robots
 
             bool exitLong, exitShort;
             string exitReason;
-            CheckExit(g, g1, g2, out exitLong, out exitShort, out exitReason);
-
+            CheckExit(g, g1, g2, r, r1, aboveEma, belowEma, haGreen, haTurnedRed, haTurnedGreen, out exitLong, out exitShort, out exitReason);
             string tdiLevel = "neutral";
             if (g < 32) tdiLevel = "oversold";
             else if (g > 68) tdiLevel = "overbought";
@@ -900,21 +899,43 @@ namespace cAlgo.Robots
             else return (g2 - g) >= MinAngleDelta;
         }
 
-        private void CheckExit(double g, double g1, double g2, out bool exitLong, out bool exitShort, out string reason)
+        private void CheckExit(double g, double g1, double g2, double r, double r1, bool aboveEma, bool belowEma, bool haGreen, bool haTurnedRed, bool haTurnedGreen, out bool exitLong, out bool exitShort, out string reason)
         {
-            bool flat = Math.Abs(g - g1) < FlatThreshold;
-            bool hookUp = g1 < g2 && g > g1;
-            bool hookDn = g1 > g2 && g < g1;
-            bool checkUp = hookUp && (g - g2) >= CheckMarkThreshold;
-            bool checkDn = hookDn && (g2 - g) >= CheckMarkThreshold;
+            // Valid Long Exit Conditions:
+            // 1. Decisive TDI Cross down below Red line
+            bool crossDn = (g1 >= r1 && g < r) || (g < r && (r - g) >= 0.5);
+            // 2. Severe Overbought Reversal confirmation:
+            //    Green was in extreme overbought (>= 68) and has dropped significantly below 60 while losing EMA5 or HA turned red
+            bool overboughtExit = (g1 >= 68 || g2 >= 68) && g < 60 && (g1 - g >= 3.0) && (!aboveEma || haTurnedRed);
+            // 3. Loss of Momentum below EMA: TDI Green below Red line AND price dropped below EMA5 with red candle
+            bool lostMomentumLong = g < r && !aboveEma && (haTurnedRed || !haGreen);
 
-            exitLong = flat || hookDn || checkDn;
-            exitShort = flat || hookUp || checkUp;
+            exitLong = crossDn || overboughtExit || lostMomentumLong;
+
+            // Valid Short Exit Conditions:
+            // 1. Decisive TDI Cross up above Red line
+            bool crossUp = (g1 <= r1 && g > r) || (g > r && (g - r) >= 0.5);
+            // 2. Severe Oversold Reversal confirmation:
+            //    Green was in extreme oversold (<= 32) and has risen significantly above 40 while reclaiming EMA5 or HA turned green
+            bool oversoldExit = (g1 <= 32 || g2 <= 32) && g > 40 && (g - g1 >= 3.0) && (!belowEma || haTurnedGreen);
+            // 3. Loss of Momentum above EMA: TDI Green above Red line AND price rose above EMA5 with green candle
+            bool lostMomentumShort = g > r && !belowEma && (haTurnedGreen || haGreen);
+
+            exitShort = crossUp || oversoldExit || lostMomentumShort;
 
             reason = "";
-            if (flat) reason = "flat";
-            else if (checkDn || checkUp) reason = "checkmark";
-            else if (hookDn || hookUp) reason = "hook";
+            if (exitLong)
+            {
+                if (crossDn) reason = "tdi_cross_down";
+                else if (overboughtExit) reason = "overbought_reversal";
+                else if (lostMomentumLong) reason = "lost_momentum_below_ema";
+            }
+            else if (exitShort)
+            {
+                if (crossUp) reason = "tdi_cross_up";
+                else if (oversoldExit) reason = "oversold_reversal";
+                else if (lostMomentumShort) reason = "lost_momentum_above_ema";
+            }
         }
 
 

@@ -888,7 +888,7 @@ O sistema calcula métricas de eficiência em tempo real para adaptar o comporta
 ### Regras Quantitativas para Casos Especiais (Edge-Case Rules)
 - **Exceção BIAS-FRESH**: Quando um cruzamento TDI acabou de ocorrer ($\le 1$ candle atrás), o impulso inicial de rompimento é tratado como o **início de uma nova onda de tendência**, e não como esticado → Favorece a entrada imediata.
 - **Regra ANTI-CHASE**: Quando o preço já rompeu há $\ge 4$ candles sob um viés antigo sem pullback, **NÃO persiga nos extremos** → Mantenha `HOLD` e aguarde uma retração.
-- **Memória de Posição e Giveback Floor**: Rastreia o lucro máximo flutuante ($MFE$) a cada tick. Se o lucro cair do pico além do limite de giveback, a posição é encerrada imediatamente para garantir os ganhos.
+- **Espaço para Respiração da Posição e Giveback Floor**: Oferece tolerância a oscilações normais de curto prazo (especialmente em Cripto e Índices). Rastreia o lucro máximo flutuante ($MFE$) a cada tick, ativando proteção de giveback apenas em posições com lucros expressivos ($\ge 1.5\times$ ATR ou após atingir o gatilho de BE) para garantir os ganhos caso haja reversão confirmada.
 
 ### Regras de Entrada
 
@@ -907,12 +907,12 @@ ELSE:
 
 | Condição | Ação |
 |----------|------|
-| TDI Green flat/hook/checkmark | CLOSE_ALL |
+| Reversão TDI Confirmada (Cruzamento oposto à linha Vermelha / Reversão de Sobrecompra-Sobrevenda perdendo EMA) | CLOSE_ALL |
 | Viés reverte | Fechamento automático |
 | Sessão termina (EOD) | Fechamento automático total (Rede de segurança EOD Force-Flatten) |
-| Lucro ≥ 30p | Mover SL para breakeven (+2p offset) |
-| Lucro ≥ 50p | Trail SL 25p |
-| Giveback ≥ 30p | Fechamento automático (Proteção máxima de giveback) |
+| Lucro ≥ 1.2x ATR | Mover SL para breakeven (+0.1x ATR offset) |
+| Lucro ≥ 2.0x ATR | Trail SL 1.0x ATR |
+| Giveback ≥ 1.0x ATR (após atingir BE) | Fechamento automático (Proteção máxima de giveback) |
 
 ---
 
