@@ -885,11 +885,12 @@ O sistema calcula métricas de eficiência em tempo real para adaptar o comporta
   - **`mixed`**: Disciplina padrão de negociação ($R:R \ge 1.5$).
   - **`forming`**: Fase inicial de formação do range ($< 6$ candles).
 
-### Regras Quantitativas para Casos Especiais (Edge-Case Rules)
+### Modelos de Entrada e Disciplina Quantitativa
+- **Modelo 1: Rompimento Direto por Momentum (Direct Breakout)**: Preço fecha decisivamente além do Opening Range dentro da janela de entrada ($\le 5$ candles).
+- **Modelo 2: Reteste de Rompimento + TDI Bounce (Pullback Continuation)**: Quando o rompimento é antigo ($> 5$ candles), a entrada só é permitida se ocorrer um **TDI Bounce** verificado (`tdi_bounce_bull` / `tdi_bounce_bear`) E o preço estiver estruturalmente alinhado próximo à EMA5 (`price_above_ema` para BUY / `price_below_ema` para SELL), evitando entradas em pontos de exaustão extrema.
 - **Exceção BIAS-FRESH**: Quando um cruzamento TDI acabou de ocorrer ($\le 1$ candle atrás), o impulso inicial de rompimento é tratado como o **início de uma nova onda de tendência**, e não como esticado → Favorece a entrada imediata.
-- **Regra ANTI-CHASE**: Quando o preço já rompeu há $\ge 4$ candles sob um viés antigo sem pullback, **NÃO persiga nos extremos** → Mantenha `HOLD` e aguarde uma retração.
+- **Regra ANTI-CHASE**: Quando o preço já rompeu há $\ge 4$ candles sob um viés antigo sem pullback/bounce válido, **NÃO persiga nos extremos** → Mantenha `HOLD` e aguarde uma retração estruturada.
 - **Espaço para Respiração da Posição e Giveback Floor**: Oferece tolerância a oscilações normais de curto prazo (especialmente em Cripto e Índices). Rastreia o lucro máximo flutuante ($MFE$) a cada tick, ativando proteção de giveback apenas em posições com lucros expressivos ($\ge 1.5\times$ ATR ou após atingir o gatilho de BE) para garantir os ganhos caso haja reversão confirmada.
-
 ### Regras de Entrada
 
 ```

@@ -556,12 +556,11 @@ namespace cAlgo.Robots
             // TF Green State: current value + slope (momentum direction)
             double greenTfValue = Math.Round(g, 2);
             double greenTfSlope = Math.Round(g - g1, 3);
-            // TDI Bounce Detection (dnse-kash): Green approached Red then bounced back along original trend
+            // TDI Bounce Detection (dnse-kash): Green approached Red then bounced back along original trend with price structure validation
             double distCurr = Math.Abs(g - r);
             double distPrev = Math.Abs(g1 - r1);
-            bool bounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev);
-            bool bounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev);
-
+            bool bounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev) && aboveEma && !haTurnedRed;
+            bool bounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (distPrev <= BounceDistanceThreshold) && (distCurr > distPrev) && belowEma && !haTurnedGreen;
 
             return new TmsSignals
             {
@@ -788,9 +787,8 @@ namespace cAlgo.Robots
             // Macro TDI Bounce Detection
             double macroDistCurr = Math.Abs(g - r);
             double macroDistPrev = Math.Abs(g1 - r1);
-            bool macroBounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev);
-            bool macroBounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev);
-
+            bool macroBounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev) && !haTurnedRed;
+            bool macroBounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev) && !haTurnedGreen;
 
             return new TmsSignals
             {

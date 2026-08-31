@@ -876,11 +876,12 @@ ORB提供**精确的入场时机**：
   - **`mixed`**：标准交易纪律 ($R:R \ge 1.5$)。
   - **`forming`**：开盘初期区间形成阶段 ($< 6$ 根K线)。
 
-### 实战量化特殊规则 (Edge-Case Rules)
+### 入场模型与量化纪律 (Entry Models)
+- **Model 1: 直接动量突破 (Direct Momentum Breakout)**: 价格在入场窗口期内（$\le 5$ 根K线）以强劲动量决定性突破开盘区间边界。
+- **Model 2: 突破回踩 + TDI反弹 (Pullback Continuation)**: 当突破时间已久（$> 5$ 根K线），仅在出现经过验证的 **TDI Bounce**（`tdi_bounce_bull` / `tdi_bounce_bear`）且价格在结构上贴近5 EMA（多头为 `price_above_ema` / 空头为 `price_below_ema`）时才允许入场，杜绝在极值衰竭点追单。
 - **BIAS-FRESH 新偏向例外**：当TDI交叉刚刚发生（$\le 1$ 根K线前），早期的突破冲力被视为**新趋势浪的起点**而非追高 → 优先顺势入场。
-- **ANTI-CHASE 防追高规则**：当价格已在旧偏向中突破 $\ge 4$ 根K线且未出现回调时，**严禁在极值位追单** → 保持 `HOLD` 等待回调。
+- **ANTI-CHASE 防追高规则**：当价格已在旧偏向中突破 $\ge 4$ 根K线且未出现有效回调/反弹时，**严禁在极值位追单** → 保持 `HOLD` 等待结构化回调。
 - **持仓呼吸空间与回撤底线 (Position Breathing Room & Giveback Floor)**：为持仓在短期正常波动（特别是加密货币与股指的噪点）中提供足够呼吸空间。逐Tick追踪最高浮盈 ($MFE$)，仅在大盈利头寸（$\ge 1.5\times$ ATR 或触及保本后）且出现明确反转信号时才触发回撤平仓保护。
-
 ### 入场规则
 
 ```

@@ -885,11 +885,12 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
   - **`mixed`**: Kỷ luật giao dịch tiêu chuẩn; chỉ vào lệnh khi setup được xác nhận.
   - **`forming`**: Giai đoạn mở phiên tích lũy ($< 6$ nến).
 
-### Quy Tắc Xử Lý Ngoại Lệ Thực Chiến (Edge-Case Rules)
+### Mô Hình Vào Lệnh & Kỷ Luật Định Lượng
+- **Model 1: Phá vỡ xung lực trực tiếp (Direct Breakout)**: Giá đóng cửa dứt khoát ra ngoài Opening Range trong cửa sổ vào lệnh ($\le 5$ nến).
+- **Model 2: Hồi quy + TDI Bounce (Pullback Continuation)**: Khi breakout đã cũ ($> 5$ nến), chỉ cho phép vào lệnh nếu có tín hiệu **TDI Bounce** chuẩn xác (`tdi_bounce_bull` / `tdi_bounce_bear`) VÀ giá được xác nhận cấu trúc nằm sát/đúng chiều EMA5 (`price_above_ema` cho BUY / `price_below_ema` cho SELL), ngăn chặn việc vào lệnh tại các vùng giá kiệt sức ở đáy/đỉnh.
 - **Ngoại lệ BIAS-FRESH**: Khi giao cắt TDI vừa mới xảy ra ($\le 1$ nến trước), xung lực bứt phá sớm được xem là **bắt đầu một con sóng mới** chứ không phải nến quá mua/quá bán → Ưu tiên vào lệnh ngay.
-- **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback.
+- **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi/bounce hợp lệ, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback có xác nhận.
 - **Position Breathing Room & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn (đặc biệt với Crypto và Chỉ số). Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế Giveback Floor chỉ kích hoạt với các lệnh thắng lớn ($\ge 1.5\times$ ATR hoặc đã chạm BE trigger) để chốt lời khi giveback vượt ngưỡng kèm đảo chiều xác nhận.
-
 ### Quy Tắc Vào Lệnh
 
 ```

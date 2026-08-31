@@ -914,11 +914,12 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
   - **`mixed`**: Standard trading discipline; entries only on confirmed setups.
   - **`forming`**: Early session range formation ($< 6$ bars).
 
-### Quantitative Edge-Case Rules
+### Entry Models & Quantitative Discipline
+- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond Opening Range boundary with strong momentum within entry window ($\le 5$ bars).
+- **Model 2: Breakout Retest + TDI Bounce (Pullback Continuation)**: When a breakout is aged ($> 5$ bars), entry is only permitted if a verified **TDI Bounce** occurs (`tdi_bounce_bull` / `tdi_bounce_bear`) and price is structurally confirmed near EMA5 (`price_above_ema` for BUY / `price_below_ema` for SELL), preventing entries at overextended exhaustion points.
 - **BIAS-FRESH Exception**: When a TDI cross just occurred ($\le 1$ bar ago), early momentum is treated as the **start of a fresh trend leg**, not an extended move → Favors entering immediately.
-- **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a pullback, **DO NOT chase** at extremes → Holds and waits for a pullback.
+- **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a valid pullback/bounce, **DO NOT chase** at extremes → Holds and waits for a structured retest.
 - **Position Breathing Room & Giveback Floor**: Provides breathing room for normal intraday fluctuations (especially on Crypto and Indices). Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on large winning trades ($\ge 1.5\times$ ATR or BE trigger reached) to lock in gains if giveback exceeds threshold with confirmed reversal.
-
 ### Entry Rules
 
 ```

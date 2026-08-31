@@ -287,10 +287,10 @@ You analyze market structure and propose trade actions. The deterministic execut
 ### 3. ENTRY MODELS (DIRECT BREAKOUT vs RETEST + TDI BOUNCE)
 - **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`).
 - **Model 2: Breakout Retest + TDI Bounce (High R:R Continuation)**:
-  - Price broke out of OR, pulled back toward OR boundary (or consolidation zone) without breaking opposite structure.
-  - **TDI Bounce Trigger**: `tdi_bounce_bull = true` (Green was near Red and bounced up continuing Bullish trend) or `tdi_bounce_bear = true` (Green was near Red and bounced down continuing Bearish trend).
-  - When a TDI Bounce occurs in alignment with Macro Bias, this confirms trend continuation after pullback -> Strongly favors BUY / SELL even if `bars_since_breakout > 5`.
-
+  - Price broke out of OR, pulled back toward OR boundary / EMA5 without breaking opposite structure.
+  - **TDI Bounce Trigger**: `tdi_bounce_bull = true` (Bullish continuation) or `tdi_bounce_bear = true` (Bearish continuation).
+  - **Strict Price Action Verification**: A TDI Bounce is ONLY valid when price is properly positioned relative to the 5 EMA (`price_above_ema = true` for BUY, `price_below_ema = true` for SELL). NEVER enter a bounce trade when price is overextended far from EMA5 or floating at extreme exhaustion levels without pullback confirmation.
+  - When a valid, verified TDI Bounce occurs in alignment with Macro Bias, this confirms trend continuation after pullback -> Favors BUY / SELL even if `bars_since_breakout > 5`.
 ### 4. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
 - **er_session / er_recent**: Kaufman Efficiency Ratio (|net move| / total path, 1.0 = pure directional trend, ~0 = pure oscillation).
 - **or_flips**: Number of times price broke outside OR and closed back inside (flips >= 5 indicates chop trap day).
@@ -325,7 +325,7 @@ You analyze market structure and propose trade actions. The deterministic execut
 1. TMS Bias is clearly BULLISH (for BUY) or BEARISH (for SELL).
 2. Valid Entry Trigger (Any of the following models):
    - **Model 1 (Direct Breakout)**: ORB Breakout (is_decisive = true, in_entry_window = true) AND price agrees with 5 EMA (price_above_ema = true for BUY, price_below_ema = true for SELL).
-   - **Model 2 (Retest + TDI Bounce)**: Breakout Retest/Continuation with confirmed TDI Bounce (`tdi_bounce_bull` for BUY, `tdi_bounce_bear` for SELL).
+   - **Model 2 (Retest + TDI Bounce)**: Breakout Retest/Continuation with confirmed TDI Bounce (`tdi_bounce_bull` for BUY, `tdi_bounce_bear` for SELL) AND price alignment with 5 EMA (`price_above_ema` for BUY, `price_below_ema` for SELL).
    - **Model 3 (Fakeout Trap / Liquidity Sweep)**: Market is choppy (`or_flips > 0`), price recently broke opposite to Macro Bias (hunting liquidity), but immediately recovered back over 50% OR to trigger a Breakout aligned with Macro Bias.
 3. Session is active (not ending / not closed).
 4. Loss streak < 3.
@@ -469,11 +469,18 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason=reason
         )
 
-    # Post-TP Gate and Anti-Chase Bypass rule:
-    # If there is a TDI Bounce, we ignore the Entry Window constraint AND the Decisive constraint!
-    has_bounce = (bias == "BULLISH" and snapshot.tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.tms.tdi_bounce_bear)
-    if snapshot.chart_tms:
-        has_bounce = has_bounce or (bias == "BULLISH" and snapshot.chart_tms.tdi_bounce_bull) or (bias == "BEARISH" and snapshot.chart_tms.tdi_bounce_bear)
+    # Post-TP Gate and Anti-Chase Bypass rule (Qualified TDI Bounce):
+    # A TDI Bounce is ONLY qualified if price is structurally aligned with EMA (price_above_ema for BUY, price_below_ema for SELL).
+    chart_tms = snapshot.chart_tms or snapshot.tms
+    has_bounce = False
+    if bias == "BULLISH":
+        bounce_signal = snapshot.tms.tdi_bounce_bull or (snapshot.chart_tms and snapshot.chart_tms.tdi_bounce_bull)
+        if bounce_signal and chart_tms.price_above_ema:
+            has_bounce = True
+    elif bias == "BEARISH":
+        bounce_signal = snapshot.tms.tdi_bounce_bear or (snapshot.chart_tms and snapshot.chart_tms.tdi_bounce_bear)
+        if bounce_signal and chart_tms.price_below_ema:
+            has_bounce = True
 
     if not orb.is_decisive and not has_bounce:
         return AgentDecision(
@@ -490,9 +497,8 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no Bounce"
+            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no qualified Bounce"
         )
-
 
     # Gate 2.5: Directional Alignment Gate (TMS vs ORB)
     orb_dir = orb.breakout_direction.lower()
