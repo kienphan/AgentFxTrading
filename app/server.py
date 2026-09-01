@@ -92,16 +92,25 @@ llm_client = create_llm_client()
 
 # ---- Data Models (from cBot) ----
 class BarData(BaseModel):
-    ha_color: str
-    tdi_green: float
-    tdi_red: float
-    stoch_k: float
-    stoch_d: float
+    # TMS Heikin-Ashi / Stoch / TDI fields
+    ha_color: Optional[str] = None
+    tdi_green: Optional[float] = None
+    tdi_red: Optional[float] = None
+    stoch_k: Optional[float] = None
+    stoch_d: Optional[float] = None
+
+    # Standard OHLCV fields (used in Judas Sweep / SMC)
+    time: Optional[str] = None
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    close: Optional[float] = None
+    volume: Optional[float] = None
 
 class TmsSignals(BaseModel):
     # Bias
-    bias: str  # "BULLISH", "BEARISH", "NEUTRAL"
-    bars_since_cross: int
+    bias: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
+    bars_since_cross: int = 0
     cross_direction: Optional[str] = None
 
     # Current signals
@@ -141,44 +150,124 @@ class TmsSignals(BaseModel):
     post_tp_gate_active: bool = False
     post_tp_gate_side: Optional[str] = None
 
-
 class MarketRegimeInfo(BaseModel):
     regime: str = "forming"  # "forming", "trending", "choppy", "mixed"
     er_session: Optional[float] = None
     er_recent: Optional[float] = None
     or_flips: int = 0
+
 class OrbData(BaseModel):
-    or_high: float
-    or_low: float
-    or_mid: float
-    or_width: float
-    or_complete: bool
+    or_high: float = 0.0
+    or_low: float = 0.0
+    or_mid: float = 0.0
+    or_width: float = 0.0
+    or_complete: bool = False
     breakout_direction: Optional[str] = None  # "up", "down", null
-    breakout_price: float = 0
-    breakout_distance_pips: float = 0  # how far price is beyond OR boundary
+    breakout_price: float = 0.0
+    breakout_distance_pips: float = 0.0  # how far price is beyond OR boundary
     bars_since_breakout: int = 0
     in_entry_window: bool = False
     is_decisive: bool = False  # breakout_distance >= MinDecisiveBreakoutPips
     price_position: str = "inside"
 
 class PositionInfo(BaseModel):
-    side: str  # "BUY", "SELL"
-    entry_price: float
-    unrealized_pnl: float
-    unrealized_pnl_pips: float
-    mfe_pips: float  # Maximum Favorable Excursion
-    giveback_pips: float  # MFE - current profit
-    sl_price: float
-    tp_price: float
-    bars_held: int
+    side: Optional[str] = None  # "BUY", "SELL"
+    type: Optional[str] = None  # Alias for side used in some cBots
+    id: Optional[int] = None
+    entry_price: float = 0.0
+    current_price: Optional[float] = None
+    unrealized_pnl: float = 0.0
+    unrealized_pnl_pips: float = 0.0
+    pnl: Optional[float] = None  # Alias for unrealized_pnl
+    mfe_pips: float = 0.0  # Maximum Favorable Excursion
+    giveback_pips: float = 0.0  # MFE - current profit
+    sl_price: float = 0.0
+    tp_price: float = 0.0
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    bars_held: int = 0
+    duration_minutes: float = 0.0
+    volume: Optional[float] = None
+
+    @property
+    def resolved_side(self) -> str:
+        return (self.side or self.type or "BUY").upper()
+
+    @property
+    def resolved_pnl(self) -> float:
+        return self.unrealized_pnl if self.unrealized_pnl != 0.0 else (self.pnl or 0.0)
 
 class SessionInfo(BaseModel):
-    session_name: str  # "london", "newyork", "tokyo", etc.
-    phase: str  # "pre", "active", "ending", "closed"
-    minutes_to_end: int
-    is_trading_time: bool
+    session_name: str = "london"  # "london", "newyork", "tokyo", etc.
+    phase: str = "active"  # "pre", "active", "ending", "closed"
+    minutes_to_end: int = 0
+    is_trading_time: bool = True
+
+# ---- Judas Sweep / Smart Money Concepts (SMC) Data Models ----
+class StrategyData(BaseModel):
+    tema1: float = 0.0
+    tema2: float = 0.0
+    rsi: float = 0.0
+    adx: float = 0.0
+    atr: float = 0.0
+    recent_high: float = 0.0
+    recent_low: float = 0.0
+    asian_high: float = 0.0
+    asian_low: float = 0.0
+    asian_range_pips: float = 0.0
+    killzone_session: str = "NONE"
+    bias_direction: str = "NONE"
+    traditional_signal: str = "NONE"
+    signal_window_bars: int = 0
+
+class SwingStructure(BaseModel):
+    last_swing_high: float = 0.0
+    swing_high_type: Optional[str] = None
+    last_swing_low: float = 0.0
+    swing_low_type: Optional[str] = None
+    prev_swing_high: float = 0.0
+    prev_swing_low: float = 0.0
+    market_structure: Optional[str] = None
+
+class TimeframeContext(BaseModel):
+    timeframe: Optional[str] = None
+    fast_tema: float = 0.0
+    slow_tema: float = 0.0
+    rsi: float = 0.0
+    trend_bias: Optional[str] = None
+    high_35: float = 0.0
+    low_35: float = 0.0
+    close: float = 0.0
+    swing_structure: Optional[SwingStructure] = None
+
+class MultiTimeframeData(BaseModel):
+    current_tf: Optional[TimeframeContext] = None
+    h1_tf: Optional[TimeframeContext] = None
+    h4_tf: Optional[TimeframeContext] = None
+
+class ActivePosition(BaseModel):
+    id: Optional[int] = None
+    symbol: Optional[str] = None
+    trade_type: Optional[str] = None
+    volume: float = 0.0
+    entry_price: float = 0.0
+    sl: float = 0.0
+    tp: float = 0.0
+    entry_time: Optional[str] = None
+
+class HistoricalTrade(BaseModel):
+    position_id: Optional[int] = None
+    symbol: Optional[str] = None
+    trade_type: Optional[str] = None
+    volume: float = 0.0
+    entry_price: float = 0.0
+    exit_price: float = 0.0
+    pnl: float = 0.0
+    entry_time: Optional[str] = None
+    exit_time: Optional[str] = None
 
 class MarketSnapshot(BaseModel):
+    request_id: Optional[str] = None
     bot_id: str = "default"  # Bot identifier for portfolio tracking
     symbol: str
     timeframe: str
@@ -186,15 +275,19 @@ class MarketSnapshot(BaseModel):
     ask: float
     bid: float
     atr_pips: Optional[float] = None
-    bars: List[BarData]
-    tms: TmsSignals
+    bars: List[BarData] = []
+    tms: Optional[TmsSignals] = None
     chart_tms: Optional[TmsSignals] = None
     orb: Optional[OrbData] = None
     market: Optional[MarketRegimeInfo] = None
     position: Optional[PositionInfo] = None
     session: Optional[SessionInfo] = None
+    strategy: Optional[StrategyData] = None
+    multi_timeframe: Optional[MultiTimeframeData] = None
+    active_positions: Optional[List[ActivePosition]] = None
+    recent_history: Optional[List[HistoricalTrade]] = None
     loss_streak: int = 0
-    day_pnl: float = 0
+    day_pnl: float = 0.0
     trades_today: int = 0
     account_id: Optional[str] = None
     account_number: str = "0"
@@ -215,14 +308,31 @@ class MarketSnapshot(BaseModel):
             return None
         cleaned = str(v).strip().strip("\"'“”`")
         return cleaned or None
+
 # ---- Output Format ----
 class AgentDecision(BaseModel):
-    action: str  # "BUY", "SELL", "CLOSE_ALL", "HOLD"
+    action: str  # "BUY", "SELL", "CLOSE_ALL", "HOLD", "ADJUST"
     volume_lots: float = 0.01
     sl_pips: float = 0.0
     tp_pips: float = 0.0
+    new_sl_price: float = 0.0
+    new_tp_price: float = 0.0
+    confidence: float = 80.0
     reason: str
+    request_id: Optional[str] = None
+    bot_id: Optional[str] = None
+    symbol: Optional[str] = None
+    timeframe: Optional[str] = None
 
+def is_judas_sweep_bot(snapshot: MarketSnapshot) -> bool:
+    """Detect whether snapshot belongs to an Asian Range Judas Sweep / SMC bot."""
+    if snapshot.strategy is not None and (
+        snapshot.strategy.asian_high > 0 or 
+        snapshot.strategy.killzone_session not in ("NONE", "Outside Killzones", "")
+    ):
+        return True
+    bot_name = (snapshot.bot_id or "").lower()
+    return "judas" in bot_name or "asian" in bot_name or "sweep" in bot_name
 def build_system_prompt(snapshot: MarketSnapshot) -> str:
     """
     Dynamic System Prompt Factory (inspired by dnse-kash architecture).
@@ -355,12 +465,93 @@ def _resolve_account(snapshot: MarketSnapshot) -> str:
         equity=snapshot.account_equity,
     )
 
+def evaluate_judas_sweep_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
+    """
+    Deterministic Gate for SMC / Asian Range Judas Sweep Bot.
+    Filters out invalid setups before querying LLM.
+    """
+    strat = snapshot.strategy
+    if strat is None:
+        return None
+
+    has_open_pos = (
+        snapshot.position is not None
+        or (snapshot.active_positions is not None and len(snapshot.active_positions) > 0)
+    )
+
+    # When NO open positions exist (New Entry Discovery Mode):
+    if not has_open_pos:
+        # Gate 1: No Sweep detected or outside Killzone
+        if strat.bias_direction == "NONE":
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                confidence=90.0,
+                reason="Judas Sweep Gate: Outside Killzone or no liquidity sweep detected",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+        # Gate 2: Pre-filter mode is MANAGE_ONLY
+        if strat.bias_direction == "MANAGE_ONLY":
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                confidence=90.0,
+                reason="Judas Sweep Gate: Pre-filter is MANAGE_ONLY with no open positions to manage",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+        # Gate 3: Stale Sweep Signal (> 3 bars since Judas Sweep occurred)
+        if strat.signal_window_bars > 3:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                confidence=85.0,
+                reason=f"Judas Sweep Gate: Signal is stale ({strat.signal_window_bars} bars elapsed since sweep > 3 max)",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+        # Gate 4: Invalid Asian Range width (too narrow < 20 pips or too wide > 600 pips on Gold)
+        if strat.asian_range_pips > 0 and (strat.asian_range_pips < 20.0 or strat.asian_range_pips > 600.0):
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                confidence=85.0,
+                reason=f"Judas Sweep Gate: Asian Range width abnormal ({strat.asian_range_pips:.0f} pips not in 20-600p valid range)",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+    return None
+
 def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     """
-    Deterministic Cycle Gate (Cost Gate).
+    Deterministic Cycle Gate (Cost Gate) for TMS + ORB Strategy.
     Evaluates whether an expensive LLM call can be safely bypassed with an immediate deterministic action.
     Returns AgentDecision if gated, or None if LLM call is required.
     """
+    if not snapshot.tms:
+        return None
+
     # 1. When we HAVE an open position:
     if snapshot.position is not None:
         # Check if session is ending -> Deterministic CLOSE_ALL
@@ -373,7 +564,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 reason=f"Cycle gate: Session {snapshot.session.phase} (EOD close)"
             )
         # Check if explicit TMS exit signal fired for current position side
-        pos_side = snapshot.position.side.upper()
+        pos_side = snapshot.position.resolved_side
         if (pos_side == "BUY" and snapshot.tms.exit_long) or (pos_side == "SELL" and snapshot.tms.exit_short):
             return AgentDecision(
                 action="CLOSE_ALL",
@@ -402,6 +593,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 )
         # Position is open and needs active LLM monitoring (momentum slope, MFE giveback, etc.)
         return None
+
     # 2. When we DO NOT have an open position (Flat):
     # Only candidate setups with aligned TMS + ORB should reach LLM.
 
@@ -413,42 +605,21 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 volume_lots=0.01,
                 sl_pips=0.0,
                 tp_pips=0.0,
-                reason=f"Cycle gate: Outside trading session (phase={snapshot.session.phase})"
-            )
-        if snapshot.session.phase == "ending":
-            return AgentDecision(
-                action="HOLD",
-                volume_lots=0.01,
-                sl_pips=0.0,
-                tp_pips=0.0,
-                reason=f"Cycle gate: Session ending ({snapshot.session.minutes_to_end}m remaining, no new entries)"
+                reason=f"Cycle gate: Market outside trading session (phase={snapshot.session.phase}, is_trading_time={snapshot.session.is_trading_time})"
             )
 
-    # Gate 2.2: Loss Streak Gate
+    # Gate 2.2: Loss Streak Gate (Circuit breaker)
     if snapshot.loss_streak >= 3:
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason=f"Cycle gate: Loss streak protection active ({snapshot.loss_streak} consecutive losses)"
+            reason=f"Cycle gate: Loss streak active ({snapshot.loss_streak} consecutive losses)"
         )
-    bias = (snapshot.tms.bias or "NEUTRAL").upper()
 
     # Gate 2.3: TMS Bias Gate
-
-    # Gate 2.3.1: Post-TP Gate (Anti-FOMO)
-    if snapshot.tms.post_tp_gate_active:
-        gate_side = (snapshot.tms.post_tp_gate_side or "").upper()
-        if gate_side == bias: # Block entry if gate is active and bias matches
-            return AgentDecision(
-                action="HOLD",
-                volume_lots=0.01,
-                sl_pips=0.0,
-                tp_pips=0.0,
-                reason=f"Cycle gate: Post-TP Gate is ACTIVE blocking {gate_side} (waiting for Pullback/Bounce)"
-            )
-
+    bias = snapshot.tms.bias.upper()
     if bias == "NEUTRAL":
         return AgentDecision(
             action="HOLD",
@@ -458,43 +629,35 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason="Cycle gate: TMS bias is NEUTRAL"
         )
 
-    # Gate 2.4: ORB Breakout Gate
+    # Gate 2.3.1: Post-TP Gate (Anti-FOMO / Structural Pullback Re-entry Check)
+    if snapshot.tms.post_tp_gate_active:
+        blocked_side = (snapshot.tms.post_tp_gate_side or "").upper()
+        if (blocked_side == "BUY" and bias == "BULLISH") or (blocked_side == "SELL" and bias == "BEARISH") or not blocked_side:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Post-TP Protection active (blocking {blocked_side or 're-entry'} until valid structural pullback >= 0.5x ATR occurs)"
+            )
+
+    # Gate 2.4: ORB State Gate
     orb = snapshot.orb
-    if orb is None:
+    if orb is None or not orb.or_complete or orb.breakout_direction is None:
         return AgentDecision(
             action="HOLD",
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason="Cycle gate: No ORB data available"
-        )
-    if not orb.breakout_direction or orb.breakout_direction.lower() == "none":
-        if not orb.or_complete:
-            reason = "Cycle gate: Opening Range width too narrow (OR not valid/complete)"
-        elif orb.price_position in ("above", "below"):
-            reason = f"Cycle gate: Price {orb.price_position} OR but waiting for bar close confirmation (or breakout reset)"
-        else:
-            reason = "Cycle gate: Price inside Opening Range (no breakout)"
-        return AgentDecision(
-            action="HOLD",
-            volume_lots=0.01,
-            sl_pips=0.0,
-            tp_pips=0.0,
-            reason=reason
+            reason="Cycle gate: No active decisive ORB breakout"
         )
 
-    # Post-TP Gate and Anti-Chase Bypass rule (Qualified TDI Bounce):
-    # A TDI Bounce is ONLY qualified if price is structurally aligned with EMA (price_above_ema for BUY, price_below_ema for SELL).
+    # Check if a qualified TDI Bounce is active
     chart_tms = snapshot.chart_tms or snapshot.tms
-    has_bounce = False
-    if bias == "BULLISH":
-        bounce_signal = snapshot.tms.tdi_bounce_bull or (snapshot.chart_tms and snapshot.chart_tms.tdi_bounce_bull)
-        if bounce_signal and chart_tms.price_above_ema:
-            has_bounce = True
-    elif bias == "BEARISH":
-        bounce_signal = snapshot.tms.tdi_bounce_bear or (snapshot.chart_tms and snapshot.chart_tms.tdi_bounce_bear)
-        if bounce_signal and chart_tms.price_below_ema:
-            has_bounce = True
+    has_bounce = (
+        (bias == "BULLISH" and chart_tms.tdi_bounce_bull and chart_tms.price_above_ema) or
+        (bias == "BEARISH" and chart_tms.tdi_bounce_bear and chart_tms.price_below_ema)
+    )
 
     # Gate 2.4.1: Anti-Overextension / Max Breakout Distance Filter
     atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else None
@@ -544,6 +707,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 tp_pips=0.0,
                 reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no qualified Bounce"
             )
+
     # Gate 2.5: Directional Alignment Gate (TMS vs ORB)
     orb_dir = orb.breakout_direction.lower()
     if bias == "BULLISH" and orb_dir != "up":
@@ -576,67 +740,256 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     # All entry criteria met! Valid candidate setup -> Invoke LLM for entry sizing & SL/TP validation
     return None
 
+def build_judas_sweep_system_prompt(snapshot: MarketSnapshot) -> str:
+    return "You are an elite Algorithmic Trading AI Co-Pilot for cTrader. Analyze the real-time market snapshot and output strictly valid JSON format with keys: \"action\" (\"BUY\"|\"SELL\"|\"HOLD\"|\"ADJUST\"|\"CLOSE_ALL\"), \"volume_lots\" (number), \"sl_pips\" (number), \"tp_pips\" (number), \"new_sl_price\" (number), \"new_tp_price\" (number), \"confidence\" (number between 0 and 100), \"reason\" (concise technical rationale). Output NO markdown explanations outside the JSON object."
+
+def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
+    strat = snapshot.strategy or StrategyData()
+    sym_up = snapshot.symbol.upper()
+    if "XAU" in sym_up or "GOLD" in sym_up:
+        spread_pips = round(abs(snapshot.ask - snapshot.bid) / 0.01, 1)
+    elif any(idx in sym_up for idx in ["US30", "USTEC", "DE40", "NAS100"]):
+        spread_pips = round(abs(snapshot.ask - snapshot.bid), 1)
+    elif any(cr in sym_up for cr in ["BTC", "ETH"]):
+        spread_pips = round(abs(snapshot.ask - snapshot.bid), 1)
+    else:
+        spread_pips = round(abs(snapshot.ask - snapshot.bid) / 0.0001, 1)
+
+    atr_pips = strat.atr if strat.atr > 0 else (snapshot.atr_pips or 0.0)
+    open_pos_count = len(snapshot.active_positions) if snapshot.active_positions else (1 if snapshot.position else 0)
+    has_open_pos = open_pos_count > 0 or snapshot.position is not None
+
+    # 1. Format 50 chronological bars
+    bar_lines = []
+    if snapshot.bars:
+        max_bars = min(50, len(snapshot.bars))
+        chronological_bars = snapshot.bars[-max_bars:]
+        for i, b in enumerate(chronological_bars):
+            bar_idx = -(max_bars - 1 - i)
+            o_val = b.open if b.open is not None else 0.0
+            h_val = b.high if b.high is not None else 0.0
+            l_val = b.low if b.low is not None else 0.0
+            c_val = b.close if b.close is not None else 0.0
+            v_val = b.volume if b.volume is not None else 0.0
+            bar_lines.append(f"Bar[{bar_idx}]: O={o_val:.2f}, H={h_val:.2f}, L={l_val:.2f}, C={c_val:.2f}, V={v_val:.0f}")
+    bars_formatted = "\n".join(bar_lines) if bar_lines else "No OHLCV bars available."
+
+    # 2. Format recent trade history
+    history_formatted = "No recent trades in the last 24h."
+    if snapshot.recent_history:
+        total_pnl = sum(h.pnl for h in snapshot.recent_history)
+        win_count = sum(1 for h in snapshot.recent_history if h.pnl > 0)
+        loss_count = sum(1 for h in snapshot.recent_history if h.pnl < 0)
+        summary_header = f"[Session Performance: 24h PnL = {'+' if total_pnl >= 0 else ''}${total_pnl:.2f} | Wins: {win_count}, Losses: {loss_count}]"
+        hist_lines = [
+            f"  - {h.trade_type} {h.volume:.2f} lots @ {h.entry_price:.2f} -> Exit {h.exit_price:.2f} | PnL: {'+' if h.pnl >= 0 else ''}${h.pnl:.2f} | Closed: {h.exit_time}"
+            for h in snapshot.recent_history
+        ]
+        history_formatted = summary_header + "\n" + "\n".join(hist_lines)
+
+    # 3. Multi-timeframe summary
+    mtf_summary = "Current Timeframe Only"
+    if snapshot.multi_timeframe:
+        cur = snapshot.multi_timeframe.current_tf
+        h1 = snapshot.multi_timeframe.h1_tf
+        h4 = snapshot.multi_timeframe.h4_tf
+        lines = []
+        for tf_ctx, label in [(cur, f"Current ({cur.timeframe if cur and cur.timeframe else 'M15'})"), (h1, "Higher TF (H1)"), (h4, "Major TF (H4)")]:
+            if tf_ctx:
+                sw_str = ""
+                if tf_ctx.swing_structure:
+                    sw = tf_ctx.swing_structure
+                    sw_str = f" | Swings: High={sw.last_swing_high} ({sw.swing_high_type}), Low={sw.last_swing_low} ({sw.swing_low_type}), PrevH={sw.prev_swing_high}, PrevL={sw.prev_swing_low} [Struct: {sw.market_structure}]"
+                lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={tf_ctx.fast_tema:.2f} | SlowMA={tf_ctx.slow_tema:.2f} | RSI={tf_ctx.rsi:.1f}{sw_str}")
+        if lines:
+            mtf_summary = "\n".join(lines)
+
+    if not has_open_pos:
+        return f"""You are a World-Class Institutional Forex Specialist & Quantitative Trader using SMART MONEY CONCEPTS (SMC) & Asian Range Judas Sweep.
+
+=== NEW ENTRY DISCOVERY MODE ===
+The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian Range Liquidity Sweep and identify high-probability Sniper entries.
+
+=== 1. MARKET SNAPSHOT ===
+- Symbol: {snapshot.symbol} | Timeframe: {snapshot.timeframe}
+- Current Market Prices: Ask={snapshot.ask:.2f}, Bid={snapshot.bid:.2f} | Spread: {spread_pips:.1f} pips
+- Account: Balance=${snapshot.account_balance:.2f} | Equity=${snapshot.account_equity:.2f}
+
+=== 2. ASIAN RANGE & JUDAS SWEEP GATE CONTEXT ===
+- Asian Session Range (00:00 - 06:00 UTC): High={strat.asian_high:.2f} | Low={strat.asian_low:.2f} | Range={strat.asian_range_pips:.0f} pips
+- Active Killzone Window: {strat.killzone_session}
+- Gate Signal Trigger: {strat.traditional_signal} (Bias: {strat.bias_direction})
+- Bars Since Sweep: {strat.signal_window_bars} bar(s)
+⚠️ CONSTRAINT:
+  - Gate=BUY -> Price swept Asian Low & rejected back up. You MAY ONLY suggest 'BUY' or 'HOLD'. NEVER 'SELL'.
+  - Gate=SELL -> Price swept Asian High & rejected back down. You MAY ONLY suggest 'SELL' or 'HOLD'. NEVER 'BUY'.
+  - Gate=MANAGE_ONLY -> Do NOT open new positions. Only 'ADJUST', 'HOLD', or 'CLOSE_ALL'.
+  - Bars Since Sweep > 3 -> Signal is STALE. Strongly prefer 'HOLD'.
+  - volume_lots -> Always output 0. Volume is controlled by the cBot risk engine.
+
+=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+{mtf_summary}
+
+=== 4. TECHNICAL INDICATORS & SWINGS ===
+- Fast EMA: {strat.tema1:.2f} | Slow EMA: {strat.tema2:.2f}
+- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.0f} pips
+- Major Swing High (BSL / Resistance): {strat.recent_high:.2f}
+- Major Swing Low (SSL / Support): {strat.recent_low:.2f}
+
+=== 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
+{bars_formatted}
+
+=== 6. RECENT TRADE HISTORY (Last 24h, Max 5 trades) ===
+{history_formatted}
+
+=== 7. SMART MONEY CONCEPTS (SMC) & JUDAS SWEEP RULES ===
+1. Judas Swing Reversal: Price fakeouts above Asian High or below Asian Low during London/NY Killzones, sweeps liquidity (BSL/SSL), and rejects back inside range.
+2. Entry Confirmation: Validated Order Block, Fair Value Gap (FVG), or pinbar rejection on M15.
+3. Technical SL & TP: Place SL safely beyond the sweep extreme spike (min floor 200 pips); TP targeted at opposing Asian Range boundary (Asian Low for SELL, Asian High for BUY) or target liquidity pool. For XAUUSD, $1.00 move = 100 pips.
+
+=== 8. VALID ACTIONS ===
+- BUY: Validated Bullish Judas Sweep (Asian Low fakeout) + Order Block bounce.
+- SELL: Validated Bearish Judas Sweep (Asian High fakeout) + Order Block rejection.
+- HOLD: Choppy consolidation inside Asian Range, no sweep, or conflicting HTF bias.
+
+Reply strictly with JSON object."""
+    else:
+        pos_lines = []
+        if snapshot.position:
+            pos = snapshot.position
+            pos_lines.append(f"- Primary Position: {pos.resolved_side} {pos.volume or 0.01:.2f} lots @ Entry={pos.entry_price:.2f} | CurrentPrice={pos.current_price or snapshot.bid:.2f} | PnL=${pos.resolved_pnl:.2f} | SL={pos.sl or pos.sl_price} | TP={pos.tp or pos.tp_price} | Duration={pos.duration_minutes:.1f} mins")
+        if snapshot.active_positions:
+            for p in snapshot.active_positions:
+                pos_lines.append(f"- Position ID {p.id}: {p.trade_type} {p.volume:.2f} lots @ Entry={p.entry_price:.2f} | SL={p.sl:.2f} | TP={p.tp:.2f} | Opened={p.entry_time}")
+        running_pos_str = "\n".join(pos_lines) if pos_lines else "No position details."
+
+        return f"""You are a World-Class Institutional Forex Specialist & Quantitative Risk Manager using SMART MONEY CONCEPTS (SMC) & Price Action.
+
+=== ACTIVE POSITION MANAGEMENT MODE ===
+The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is to EVALUATE AND MANAGE THESE EXISTING POSITIONS (Protect capital, lock in profits, adjust SL/TP, or exit safely).
+
+=== 1. ACTIVE ORDER BOOK SNAPSHOT ===
+- Symbol: {snapshot.symbol} | Timeframe: {snapshot.timeframe}
+- Current Market Prices: Ask={snapshot.ask:.2f}, Bid={snapshot.bid:.2f} | Spread: {spread_pips:.1f} pips
+- Account: Balance=${snapshot.account_balance:.2f} | Equity=${snapshot.account_equity:.2f}
+- Running Positions:
+{running_pos_str}
+
+=== 2. TRADITIONAL STRATEGY GATE — MANDATORY CONSTRAINT ===
+- Gate Direction: {strat.bias_direction}
+- Signal Type: {strat.traditional_signal}
+- Bars Since Cross: {strat.signal_window_bars} bar(s)
+⚠️ CONSTRAINT:
+  - Gate=MANAGE_ONLY → Focus on managing existing positions. Do NOT open new ones.
+  - volume_lots → Always output 0. Volume is controlled by the cBot risk engine.
+
+=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+{mtf_summary}
+
+=== 4. TECHNICAL INDICATORS & SWINGS ===
+- Fast EMA: {strat.tema1:.2f} | Slow EMA: {strat.tema2:.2f}
+- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.0f} pips
+- Major Swing High (Resistance): {strat.recent_high:.2f}
+- Major Swing Low (Support): {strat.recent_low:.2f}
+
+=== 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
+{bars_formatted}
+
+=== 6. POSITION MANAGEMENT EVALUATION RULES ===
+1. Trend & Structure Health: Check if current structure still favors the open position.
+2. Action Decisions:
+   - HOLD: Position healthy and progressing towards TP.
+   - ADJUST: Move SL to Break-Even (when in >= 1:1 RR profit) or Trailing Stop behind new Order Block. Specify new_sl_price and/or new_tp_price (or sl_pips/tp_pips).
+   - CLOSE_ALL: Emergency exit if major opposing CHoCH reversal occurs against the position.
+   - BUY / SELL: Scale-in ONLY if trend is extremely strong with fresh unmitigated Order Block.
+
+Reply strictly with JSON object."""
 
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
     account_id = _resolve_account(snapshot)
-    regime_str = snapshot.market.regime if snapshot.market else "N/A"
-    er_str = f"{snapshot.market.er_session:.2f}" if snapshot.market and snapshot.market.er_session is not None else "N/A"
-    pos_str = f"{snapshot.position.side} pnl={snapshot.position.unrealized_pnl_pips:.1f}p" if snapshot.position else "FLAT"
-    sess_str = f"{snapshot.session.phase} ({snapshot.session.minutes_to_end}m)" if snapshot.session else "N/A"
+    is_judas = is_judas_sweep_bot(snapshot)
     
     pos_data = None
     if snapshot.position:
         pos_data = {
-            "side": snapshot.position.side,
+            "side": snapshot.position.resolved_side,
             "entry_price": snapshot.position.entry_price,
-            "unrealized_pnl": snapshot.position.unrealized_pnl,
+            "unrealized_pnl": snapshot.position.resolved_pnl,
             "unrealized_pnl_pips": snapshot.position.unrealized_pnl_pips,
             "mfe_pips": snapshot.position.mfe_pips,
             "giveback_pips": snapshot.position.giveback_pips,
-            "sl_price": snapshot.position.sl_price,
-            "tp_price": snapshot.position.tp_price,
+            "sl_price": snapshot.position.sl or snapshot.position.sl_price,
+            "tp_price": snapshot.position.tp or snapshot.position.tp_price,
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data)
 
-    ha_str = "N/A"
-    tdi_str = "N/A"
-    stoch_str = "N/A"
-    if snapshot.bars and len(snapshot.bars) > 0:
-        b = snapshot.bars[-1]
-        ha_icon = "🟢" if str(b.ha_color).lower() == "green" else "🔴" if str(b.ha_color).lower() == "red" else str(b.ha_color)
-        ha_str = f"HA={ha_icon}"
-        tdi_str = f"TDI_G={b.tdi_green:.2f} TDI_R={b.tdi_red:.2f}"
-        stoch_str = f"Stoch=%K={b.stoch_k:.1f} %D={b.stoch_d:.1f}"
-    
-    or_str = "OR=N/A"
-    if snapshot.orb:
-        # Use formatting that drops trailing zeros depending on asset, but 5f is okay. 
-        # Actually a dynamic round might be cleaner, but we can stick to 5f for now or use g
-        or_str = f"OR=[{snapshot.orb.or_low:g}...{snapshot.orb.or_high:g}]"
+    if is_judas:
+        strat = snapshot.strategy
+        asian_str = f"Asian=[{strat.asian_low:g}...{strat.asian_high:g}] ({strat.asian_range_pips:.0f}p)" if strat else "Asian=N/A"
+        kz_str = strat.killzone_session if strat else "N/A"
+        bias_str = f"{strat.bias_direction} ({strat.traditional_signal})" if strat else "N/A"
+        pos_str = f"{snapshot.position.resolved_side} pnl=${snapshot.position.resolved_pnl:.2f}" if snapshot.position else "FLAT"
+        
+        logger.info(
+            f"[SNAPSHOT SMC] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
+            f"Bid={snapshot.bid:g} Ask={snapshot.ask:g} | {asian_str} | KZ={kz_str} | Gate={bias_str} | Pos={pos_str}"
+        )
 
-    logger.info(
-        f"[SNAPSHOT] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
-        f"Bid={snapshot.bid:g} | {or_str} | {ha_str} {tdi_str} {stoch_str} | "
-        f"TMS={snapshot.tms.bias} (age={snapshot.tms.bars_since_cross}) | "
-        f"Regime={regime_str} (ER={er_str}) | Pos={pos_str} | Session={sess_str}"
-    )
-    # Deterministic Cycle Gate (Cost Gate - skip LLM when decision is deterministic)
-    gated_decision = evaluate_cycle_gate(snapshot)
-    if gated_decision is not None:
-        logger.info(f"[CYCLE GATE] GATED: {gated_decision.action} | Reason: {gated_decision.reason}")
-        return gated_decision
+        # SMC Judas Sweep Gate Evaluation
+        gated_decision = evaluate_judas_sweep_gate(snapshot)
+        if gated_decision is not None:
+            logger.info(f"[JUDAS GATE] GATED: {gated_decision.action} | Reason: {gated_decision.reason}")
+            return gated_decision
+
+        system_prompt = build_judas_sweep_system_prompt(snapshot)
+        user_prompt = build_judas_sweep_user_prompt(snapshot)
+    else:
+        # TMS + ORB Strategy Flow
+        regime_str = snapshot.market.regime if snapshot.market else "N/A"
+        er_str = f"{snapshot.market.er_session:.2f}" if snapshot.market and snapshot.market.er_session is not None else "N/A"
+        pos_str = f"{snapshot.position.resolved_side} pnl={snapshot.position.unrealized_pnl_pips:.1f}p" if snapshot.position else "FLAT"
+        sess_str = f"{snapshot.session.phase} ({snapshot.session.minutes_to_end}m)" if snapshot.session else "N/A"
+        
+        ha_str = "N/A"
+        tdi_str = "N/A"
+        stoch_str = "N/A"
+        if snapshot.bars and len(snapshot.bars) > 0:
+            b = snapshot.bars[-1]
+            if b.ha_color is not None:
+                ha_icon = "🟢" if str(b.ha_color).lower() == "green" else "🔴" if str(b.ha_color).lower() == "red" else str(b.ha_color)
+                ha_str = f"HA={ha_icon}"
+            if b.tdi_green is not None and b.tdi_red is not None:
+                tdi_str = f"TDI_G={b.tdi_green:.2f} TDI_R={b.tdi_red:.2f}"
+            if b.stoch_k is not None and b.stoch_d is not None:
+                stoch_str = f"Stoch=%K={b.stoch_k:.1f} %D={b.stoch_d:.1f}"
+        
+        or_str = "OR=N/A"
+        if snapshot.orb:
+            or_str = f"OR=[{snapshot.orb.or_low:g}...{snapshot.orb.or_high:g}]"
+
+        logger.info(
+            f"[SNAPSHOT TMS] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
+            f"Bid={snapshot.bid:g} | {or_str} | {ha_str} {tdi_str} {stoch_str} | "
+            f"TMS={snapshot.tms.bias if snapshot.tms else 'N/A'} (age={snapshot.tms.bars_since_cross if snapshot.tms else 0}) | "
+            f"Regime={regime_str} (ER={er_str}) | Pos={pos_str} | Session={sess_str}"
+        )
+
+        gated_decision = evaluate_cycle_gate(snapshot)
+        if gated_decision is not None:
+            logger.info(f"[CYCLE GATE] GATED: {gated_decision.action} | Reason: {gated_decision.reason}")
+            return gated_decision
+
+        system_prompt = build_system_prompt(snapshot)
+        user_prompt = build_user_prompt(snapshot)
 
     # Check portfolio risk before allowing new trades
-    if snapshot.position is None:  # No open position, might want to open new one
-        portfolio_status = portfolio_manager.get_portfolio_status(account_id=account_id)
-        open_positions = portfolio_status['total_positions']
-        
-        # Check if we can open a new position
+    has_open = snapshot.position is not None or (snapshot.active_positions is not None and len(snapshot.active_positions) > 0)
+    if not has_open:
         can_trade, reason = portfolio_manager.check_risk(
             symbol=snapshot.symbol,
-            side="BUY",  # Will be determined by LLM, just checking capacity
-            volume=0.01,  # Minimum volume
+            side="BUY",  # Will be determined by LLM, checking capacity
+            volume=0.01,
             account_balance=snapshot.account_balance,
             account_id=account_id
         )
@@ -648,32 +1001,43 @@ async def trade_decision(snapshot: MarketSnapshot):
                 volume_lots=0.01,
                 sl_pips=0,
                 tp_pips=0,
-                reason=f"Portfolio constraint: {reason}"
+                reason=f"Portfolio constraint: {reason}",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
             )
 
-    user_prompt = build_user_prompt(snapshot)
-
     try:
-        # Use abstracted LLM client (supports Qwen, OpenAI, Claude, Gemini, DeepSeek)
-        system_prompt = build_system_prompt(snapshot)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
         
-        # Qwen/OpenAI support response_format, Claude/Gemini don't - handle both
         kwargs = {"temperature": 0.1}
         if hasattr(llm_client, 'client') and hasattr(llm_client.client, 'chat'):
             kwargs["response_format"] = {"type": "json_object"}
         
         result_str = await llm_client.chat(messages, **kwargs)
-        
-        # Parse JSON (handles markdown code blocks, etc.)
         decision_dict = JSONResponseParser.parse(result_str)
+        
+        # Inject metadata if not in response
+        if "request_id" not in decision_dict or not decision_dict["request_id"]:
+            decision_dict["request_id"] = snapshot.request_id
+        if "bot_id" not in decision_dict or not decision_dict["bot_id"]:
+            decision_dict["bot_id"] = snapshot.bot_id
+        if "symbol" not in decision_dict or not decision_dict["symbol"]:
+            decision_dict["symbol"] = snapshot.symbol
+        if "timeframe" not in decision_dict or not decision_dict["timeframe"]:
+            decision_dict["timeframe"] = snapshot.timeframe
+        if "confidence" not in decision_dict:
+            decision_dict["confidence"] = 80.0
+
         logger.info(
-            f"[LLM DECISION] {account_id}/{snapshot.bot_id} -> Action: {decision_dict['action']} | "
+            f"[LLM DECISION] {account_id}/{snapshot.bot_id} -> Action: {decision_dict.get('action', 'HOLD')} | "
             f"Vol: {decision_dict.get('volume_lots', 0.01)} lots | SL: {decision_dict.get('sl_pips', 0)}p | "
-            f"TP: {decision_dict.get('tp_pips', 0)}p | Reason: {decision_dict.get('reason', '')}"
+            f"TP: {decision_dict.get('tp_pips', 0)}p | Conf: {decision_dict.get('confidence', 80.0):.1f}% | "
+            f"Reason: {decision_dict.get('reason', '')}"
         )
 
         return AgentDecision(**decision_dict)
@@ -684,9 +1048,51 @@ async def trade_decision(snapshot: MarketSnapshot):
             volume_lots=0.01,
             sl_pips=0,
             tp_pips=0,
-            reason=f"Error: {e}"
+            reason=f"Error: {e}",
+            request_id=snapshot.request_id,
+            bot_id=snapshot.bot_id,
+            symbol=snapshot.symbol,
+            timeframe=snapshot.timeframe
         )
 
+@app.post("/api/tick")
+@app.post("/api/telemetry_tick")
+async def handle_telemetry_tick(request: dict):
+    """
+    Direct tick telemetry endpoint from cBots (TMS or Judas Sweep).
+    Updates account equity/balance and live market prices in portfolio manager.
+    """
+    try:
+        bot_id = sanitize_bot_id(request.get("bot_id", "default"))
+        account_number = str(request.get("account_number", "0"))
+        account_type = str(request.get("account_type", "demo"))
+        account_label = request.get("account_label")
+        balance = float(request.get("balance", request.get("equity", 0.0)) or 0.0)
+        equity = float(request.get("equity", request.get("balance", 0.0)) or 0.0)
+        
+        registry = get_account_registry()
+        account_id = registry.upsert_from_bot(
+            account_number=account_number,
+            account_type=account_type,
+            label=account_label,
+            balance=balance,
+            equity=equity
+        )
+        
+        symbol = request.get("symbol")
+        bid = float(request.get("bid", 0.0) or 0.0)
+        ask = float(request.get("ask", 0.0) or 0.0)
+        if symbol and (bid > 0 or ask > 0):
+            portfolio_manager.update_market_price(symbol, bid, ask, bot_id=bot_id)
+        try:
+            await broadcast_update()
+        except Exception:
+            pass
+            
+        return {"status": "ok", "account_id": account_id}
+    except Exception as e:
+        logger.error(f"Telemetry tick error: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.post("/portfolio/report")
 async def report_position(request: dict):
@@ -801,7 +1207,7 @@ async def api_dashboard_accounts():
 
 def build_user_prompt(snapshot: MarketSnapshot) -> str:
     """Build structured prompt from pre-computed signals."""
-    tms = snapshot.tms
+    tms = snapshot.tms or TmsSignals()
     macro_tf = snapshot.tms_timeframe or "Macro"
 
     lines = [
