@@ -1089,7 +1089,7 @@ ELSE:
 | **Min SL / Max SL** | `0.8x / 3.0x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` | `1.5x / 4.5x ATR` |
 | **Min TP / Max TP** | `1.0x / 6.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` | `2.0x / 8.0x ATR` |
 | **Max Giveback** | `1.0x ATR` | `1.5x ATR` | `1.5x ATR` | `1.5x ATR` |
-| **Recommended Timeframe** | `M15` | `M15` | `M5` | `M15` |
+| **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` |
 | **EMA Period** | `5` | `5` | `5` | `5` |
 | **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
 | **TDI Bounce Trade** | `1.5` | `1.5` | `1.5` | `1.5` |
