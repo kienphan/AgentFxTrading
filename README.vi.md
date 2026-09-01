@@ -215,6 +215,138 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --UseAiGateMode=true
      ```
 
+   * **GBPUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=GBPUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpusd-judas" \
+       --label="cbot-gbpusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=EURUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurusd-judas" \
+       --label="cbot-eurusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **GBPJPY Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=GBPJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpjpy-judas" \
+       --label="cbot-gbpjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURJPY Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=EURJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurjpy-judas" \
+       --label="cbot-eurjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
    * **XAUUSD TMS+ORB (M15 - Phiên New York)**:
      ```bash
      docker run -d \
@@ -1044,8 +1176,23 @@ ELSE:
 | `riskFactor` | `10.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh |
 | `enableBreakEvenPrice` | `true` | Tự động dời SL về hòa vốn khi đạt mục tiêu |
 | `breakEvenTrigger` | `250.0 pips` | Điểm kích hoạt hòa vốn ($2.50 trên Vàng) |
-### 📊 Recommended Presets by Symbol
+### 🏹 Bảng Cấu Hình Preset Cho Asian Range Judas Sweep
 
+| Tham Số | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Khung Thời Gian** | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **Phiên Á (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **Khung Giờ Killzones** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **Biên Độ Phiên Á (Min / Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **Độ Sâu Râu Quét (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **Sàn SL Tối Thiểu (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Stop Loss Mặc Định** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Take Profit Mặc Định** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **Điểm Kích Hoạt Hòa Vốn (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
+| **Điểm Tin Cậy AI Tối Thiểu** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **Tỷ Lệ Rủi Ro / Lệnh** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+
+### 📊 Bảng Cấu Hình Preset Cho TMS + ORB (Theo Từng Mã)
 #### Cryptocurrency
 
 | Parameter | BTCUSD | ETHUSD |

@@ -207,6 +207,138 @@ python app/server.py
        --UseAiGateMode=true
      ```
 
+   * **GBPUSD 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpusd-judas" \
+       --label="cbot-gbpusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURUSD 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurusd-judas" \
+       --label="cbot-eurusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **GBPJPY 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpjpy-judas" \
+       --label="cbot-gbpjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURJPY 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurjpy-judas" \
+       --label="cbot-eurjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
    * **XAUUSD TMS+ORB (M15 - 纽约时段)**:
      ```bash
      docker run -d \
@@ -1036,8 +1168,23 @@ ELSE:
 | `riskFactor` | `10.0` | 每笔交易风险资金分配系数 (%) |
 | `enableBreakEvenPrice` | `true` | 盈利达到目标后自动将止损移至保本 |
 | `breakEvenTrigger` | `250.0 pips` | 触发保本的盈利距离（黄金 $2.50） |
-### 📊 Recommended Presets by Symbol
+### 🏹 亚洲时段流动性猎杀推荐预设参数表 (Asian Range Judas Sweep)
 
+| 参数 | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **推荐时间框架** | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **亚盘时段 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **猎杀时段 (Killzones)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **亚盘幅度限制 (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **扫荡引线深度 (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **AI SL 保底地板 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **默认止损 (Stop Loss)** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **默认止盈 (Take Profit)** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **保本触发点 (BE Trigger)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
+| **最低 AI 置信度评分** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **单笔风险占比** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+
+### 📊 TMS + ORB 推荐预设参数表 (按品种)
 #### Cryptocurrency
 
 | Parameter | BTCUSD | ETHUSD |

@@ -216,6 +216,138 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --UseAiGateMode=true
      ```
 
+   * **GBPUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpusd-judas" \
+       --label="cbot-gbpusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurusd-judas" \
+       --label="cbot-eurusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **GBPJPY アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=GBPJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpjpy-judas" \
+       --label="cbot-gbpjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURJPY アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=EURJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurjpy-judas" \
+       --label="cbot-eurjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
    * **XAUUSD TMS+ORB (M15 - ニューヨークセッション)**:
      ```bash
      docker run -d \
@@ -1045,8 +1177,23 @@ ELSE:
 | `riskFactor` | `10.0` | 1トレードあたりの口座リスク配分割合 (%) |
 | `enableBreakEvenPrice` | `true` | 目標到達時にSLを自動で建値に移動 |
 | `breakEvenTrigger` | `250.0 pips` | 建値移動を発動する利益距離（ゴールド $2.50） |
-### 📊 Recommended Presets by Symbol
+### 🏹 アジアンレンジ・ジューダススイープ推奨プリセット表 (Asian Range Judas Sweep)
 
+| パラメータ | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **推奨時間枠** | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **アジア時間 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **キルゾーン (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **アジアレンジ幅 (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **スイープヒゲ深さ (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **AI SL 保護床 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **デフォルト損切り (SL)** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **デフォルト利確 (TP)** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **建値移動発動距離 (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
+| **最低 AI 信頼度スコア** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **1トレードリスク割合** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+
+### 📊 TMS + ORB 推奨プリセット表 (銘柄別)
 #### Cryptocurrency
 
 | Parameter | BTCUSD | ETHUSD |

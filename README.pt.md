@@ -216,6 +216,138 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --UseAiGateMode=true
      ```
 
+   * **GBPUSD Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=seu_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=ID_DA_CONTA \
+       --symbol=GBPUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpusd-judas" \
+       --label="cbot-gbpusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURUSD Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=seu_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=ID_DA_CONTA \
+       --symbol=EURUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurusd-judas" \
+       --label="cbot-eurusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=15.0 \
+       --maxAsianRangePips=45.0 \
+       --sweepBufferPips=3.5 \
+       --AiSlMinFloorPips=15.0 \
+       --breakEvenTrigger=20.0 \
+       --stoplossPip=15.0 \
+       --takeprofitPip=35.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **GBPJPY Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-gbpjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=seu_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=ID_DA_CONTA \
+       --symbol=GBPJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-gbpjpy-judas" \
+       --label="cbot-gbpjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
+   * **EURJPY Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-eurjpy-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=seu_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=ID_DA_CONTA \
+       --symbol=EURJPY \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-eurjpy-judas" \
+       --label="cbot-eurjpy-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=25.0 \
+       --maxAsianRangePips=70.0 \
+       --sweepBufferPips=5.0 \
+       --AiSlMinFloorPips=25.0 \
+       --breakEvenTrigger=30.0 \
+       --stoplossPip=25.0 \
+       --takeprofitPip=50.0 \
+       --enableBreakEvenPrice=true
+     ```
+
    * **XAUUSD TMS+ORB (M15 - Sessão de Nova York)**:
      ```bash
      docker run -d \
@@ -1045,8 +1177,23 @@ ELSE:
 | `riskFactor` | `10.0` | Fator de alocação de risco da conta por operação (%) |
 | `enableBreakEvenPrice` | `true` | Move automaticamente o SL para o zero ao atingir a meta |
 | `breakEvenTrigger` | `250.0 pips` | Distância de lucro para acionar o breakeven ($2.50 no Ouro) |
-### 📊 Recommended Presets by Symbol
+### 🏹 Tabela de Parâmetros Recomendados para Asian Range Judas Sweep
 
+| Parâmetro | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Timeframe Recomendado** | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **Sessão Asiática (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **Range Asiático (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **Profundidade do Pavio (Buffer)**| `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **Piso de SL AI (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Stop Loss Padrão** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Take Profit Padrão** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **Gatilho de Breakeven (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
+| **Confiança Mínima da IA** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **Risco por Operação** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+
+### 📊 Presets Recomendados para TMS + ORB (Por Símbolo)
 #### Cryptocurrency
 
 | Parameter | BTCUSD | ETHUSD |
