@@ -1201,7 +1201,7 @@ ELSE:
 | `nyStartHour` | `12` | New York Overlap Killzone Start Hour (UTC) |
 | `nyEndHour` | `16` | New York Overlap Killzone End Hour (UTC) |
 | `sweepBufferPips` | `15.0` | Minimum wick penetration beyond Asian High/Low (pips) |
-| `riskFactor` | `10.0` | Account risk allocation factor (%) |
+| `riskFactor` | `1.0` | Account risk allocation factor (%) (Recommended: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move SL to breakeven after trigger |
 | `breakEvenTrigger` | `250.0 pips` | Profit distance to activate breakeven ($2.50 on Gold) |
 
@@ -1219,7 +1219,7 @@ ELSE:
 | **Default Take Profit** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Breakeven Trigger** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **AI Confidence Threshold** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Risk per Trade** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+| **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
 
 ### 📊 Recommended Presets for TMS + ORB (by Symbol)
 #### Cryptocurrency

@@ -71,6 +71,6 @@ Tài liệu thiết kế kiến trúc và chiến thuật giao dịch cho **Asia
 | `nyEndHour` | `int` | `16` | Giờ kết thúc New York Overlap Killzone (UTC) |
 | `sweepBufferPips` | `double` | `15.0` | Biên độ quét râu tối thiểu vượt đỉnh/đáy Á (pips) |
 | `drawAsianRangeVisuals` | `bool` | `true` | Vẽ đường biên High/Low phiên Á trực quan lên biểu đồ |
-| `riskFactor` | `double` | `10.0` | Tỷ lệ rủi ro (%) tài khoản trên mỗi lệnh |
-| `enableBreakEvenPrice` | `bool` | `false` | Dời SL về hòa vốn khi đạt mục tiêu |
-| `breakEvenTrigger` | `double` | `250.0` | Điểm kích hoạt hòa vốn (pips) |
+| `riskFactor` | `double` | `1.0` | Tỷ lệ rủi ro (%) tài khoản trên mỗi lệnh (Khuyến nghị 0.5% – 1.0%) |
+| `enableBreakEvenPrice` | `bool` | `true` | Dời SL về hòa vốn khi đạt mục tiêu |
+| `breakEvenTrigger` | `double` | `250.0` | Điểm kích hoạt hòa vốn (pips, $2.50 cho Vàng) |

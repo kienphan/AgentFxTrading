@@ -196,7 +196,7 @@ namespace cAlgo.Robots
         [Parameter("Enable Volume by % risk of account ?", Group = "Setting Trading Volume", DefaultValue = true)]
         public bool _voltoAccount { get; set; }
 
-        [Parameter("[%] Risk of account", Group = "Setting Trading Volume", DefaultValue = 10.0, MinValue = 0.1, MaxValue = 100, Step = 0.1)]
+        [Parameter("[%] Risk of account", Group = "Setting Trading Volume", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 100, Step = 0.1)]
         public double riskFactor { get; set; }
         #endregion
 

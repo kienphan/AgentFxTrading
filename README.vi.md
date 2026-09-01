@@ -1173,7 +1173,7 @@ ELSE:
 | `nyStartHour` | `12` | Giờ bắt đầu New York Overlap Killzone (UTC) |
 | `nyEndHour` | `16` | Giờ kết thúc New York Overlap Killzone (UTC) |
 | `sweepBufferPips` | `15.0` | Biên độ quét râu tối thiểu vượt đỉnh/đáy Á (pips) |
-| `riskFactor` | `10.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh |
+| `riskFactor` | `1.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh (Khuyến nghị: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Tự động dời SL về hòa vốn khi đạt mục tiêu |
 | `breakEvenTrigger` | `250.0 pips` | Điểm kích hoạt hòa vốn ($2.50 trên Vàng) |
 ### 🏹 Bảng Cấu Hình Preset Cho Asian Range Judas Sweep
@@ -1190,7 +1190,7 @@ ELSE:
 | **Take Profit Mặc Định** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Điểm Kích Hoạt Hòa Vốn (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **Điểm Tin Cậy AI Tối Thiểu** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Tỷ Lệ Rủi Ro / Lệnh** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+| **Tỷ Lệ Rủi Ro / Lệnh** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
 
 ### 📊 Bảng Cấu Hình Preset Cho TMS + ORB (Theo Từng Mã)
 #### Cryptocurrency

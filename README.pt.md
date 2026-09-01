@@ -1174,7 +1174,7 @@ ELSE:
 | `nyStartHour` | `12` | Hora de início do Killzone de Nova York (UTC) |
 | `nyEndHour` | `16` | Hora de término do Killzone de Nova York (UTC) |
 | `sweepBufferPips` | `15.0` | Penetração mínima do pavio além das máximas/mínimas asiáticas (pips) |
-| `riskFactor` | `10.0` | Fator de alocação de risco da conta por operação (%) |
+| `riskFactor` | `1.0` | Fator de alocação de risco da conta por operação (%) (Recomendado: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move automaticamente o SL para o zero ao atingir a meta |
 | `breakEvenTrigger` | `250.0 pips` | Distância de lucro para acionar o breakeven ($2.50 no Ouro) |
 ### 🏹 Tabela de Parâmetros Recomendados para Asian Range Judas Sweep
@@ -1191,7 +1191,7 @@ ELSE:
 | **Take Profit Padrão** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Gatilho de Breakeven (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **Confiança Mínima da IA** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Risco por Operação** | `10.0%` | `10.0%` | `10.0%` | `10.0%` | `10.0%` |
+| **Risco por Operação** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
 
 ### 📊 Presets Recomendados para TMS + ORB (Por Símbolo)
 #### Cryptocurrency
