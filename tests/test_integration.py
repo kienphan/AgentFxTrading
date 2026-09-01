@@ -180,15 +180,30 @@ def test_judas_sweep_llm_active_entry():
         assert data["request_id"] == "test_req_002"
         assert data["new_sl_price"] == 2880.5
 
+def cleanup_test_data():
+    import sqlite3
+    try:
+        conn = sqlite3.connect(root / 'portfolio.db', timeout=5.0)
+        c = conn.cursor()
+        c.execute("DELETE FROM positions WHERE account_id IN ('demo-123456', 'demo-999999')")
+        c.execute("DELETE FROM accounts WHERE account_id IN ('demo-123456', 'demo-999999')")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 if __name__ == "__main__":
-    test_judas_sweep_gated()
-    print("✓ test_judas_sweep_gated PASSED")
-    test_telemetry_tick()
-    print("✓ test_telemetry_tick PASSED")
-    test_portfolio_reports()
-    print("✓ test_portfolio_reports PASSED")
-    test_tms_orb_backward_compatibility()
-    print("✓ test_tms_orb_backward_compatibility PASSED")
-    test_judas_sweep_llm_active_entry()
-    print("✓ test_judas_sweep_llm_active_entry PASSED")
-    print("\n>>> ALL TESTS PASSED SUCCESSFULLY! <<<")
+    try:
+        test_judas_sweep_gated()
+        print("✓ test_judas_sweep_gated PASSED")
+        test_telemetry_tick()
+        print("✓ test_telemetry_tick PASSED")
+        test_portfolio_reports()
+        print("✓ test_portfolio_reports PASSED")
+        test_tms_orb_backward_compatibility()
+        print("✓ test_tms_orb_backward_compatibility PASSED")
+        test_judas_sweep_llm_active_entry()
+        print("✓ test_judas_sweep_llm_active_entry PASSED")
+        print("\n>>> ALL TESTS PASSED SUCCESSFULLY! <<<")
+    finally:
+        cleanup_test_data()
