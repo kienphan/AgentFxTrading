@@ -52,19 +52,11 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 
 ## 🚀 Features
 
-### 🤖 AI-Powered Decision Making
-- **Multi-LLM Support**: Qwen, OpenAI GPT-4, Claude, Gemini, DeepSeek
-- **Context-Aware Analysis**: Analyzes 3 bars of historical data
-- **Confidence Scoring**: Only trades when confidence > 70%
-- **Adaptive Learning**: Prompt engineering for continuous improvement
-
-### 📊 Advanced Technical Analysis
-- **TMS Indicators**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **ORB Logic**: Opening Range detection with decisive breakout filter
-- **Momentum Tracking**: TF Green State with slope analysis
-- **Market Regime Detection**: Kaufman Efficiency Ratio (`er_session`, `er_recent`) & failed breakout counter (`or_flips`) to classify market into `trending`, `choppy`, `mixed`, `forming`
-
-### 💼 Portfolio Management
+### 🤖 Dual AI Strategy Engines
+- **1. TMS + ORB Engine (`AiAgentBot`)**: Trend Momentum Signal (Heikin Ashi + TDI + Stochastic) combined with Opening Range Breakout and dynamic Kaufman Efficiency Regimes.
+- **2. Asian Range Judas Sweep Engine (`AsianRangeJudasSweepBot`)**: ICT Smart Money Concepts capturing liquidity sweeps of Asian Session High/Low (00:00–06:00 UTC) during London (07:00–10:00 UTC) and New York (12:30–16:00 UTC) Killzones with Order Block/FVG confirmation.
+- **Multi-LLM Support**: Qwen, OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini 2.0 Flash, DeepSeek V3/R1.
+- **Context-Aware Analysis**: Multi-timeframe trend alignment (M15 + H1 + H4), swing structure, and real-time news filter.
 - **Multi-Symbol Trading**: Run multiple bots on different pairs
 - **Currency Exposure Control**: Prevents over-exposure to single currency
 - **Correlation Detection**: Blocks highly correlated positions
@@ -210,19 +202,52 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
    chmod 600 /root/ctrader_data/ctid_pwd
    ```
 
-2. **Build/Compile the `.algo` package**:
+2. **Build/Compile the `.algo` packages**:
    ```bash
+   # 1. Build TMS+ORB Bot (AiAgentBot)
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
    cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
    cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
-   ```
 
+   # 2. Build Asian Range Judas Sweep Bot (AsianRangeJudasSweepBot)
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AsianRangeJudasSweepBot
+   cp cBot/AsianRangeJudasSweepBot.cs /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
+   cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
+   ```
 3. **Run Multi-Instance Docker Containers**:
 
-   * **XAUUSD (M15 - New York Session)**:
+   * **XAUUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-xauusd-judas" \
+       --label="cbot-xauusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true
+     ```
+
+   * **XAUUSD TMS+ORB (M15 - New York Session)**:
      ```bash
      docker run -d \
        --name cbot-xauusd \
@@ -238,12 +263,6 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --symbol=XAUUSD \
        --period=m15 \
        --full-access \
-       --BotId="xauusd_m15" \
-       --ApiUrl="http://127.0.0.1:8000/trade" \
-       --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
-       --SessionName="newyork" \
        --OrbStartHour=13 \
        --SessionEndHour=21 \
        --SessionDstRule="US" \
@@ -924,6 +943,23 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
 - **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a valid pullback/bounce, **DO NOT chase** at extremes → Holds and waits for a structured retest.
 - **Post-TP Gate (Anti-FOMO)**: Once a trade hits TP or closes after a major win, re-entry in the same direction is strictly blocked until a genuine structural pullback ($\ge 0.5\times$ ATR), OR touch, or bias flip occurs.
 - **Profit Lock-In & Giveback Floor**: Provides breathing room for normal intraday fluctuations. Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on winning trades ($MFE \ge 0.8\times$ ATR) to lock in gains if giveback reaches $\ge 40\%$ of peak MFE or momentum stalls/reverses.
+
+### 🏹 Asian Range Judas Sweep Strategy (ICT Smart Money Concepts)
+
+The **Asian Range Judas Sweep AI Bot** implements an institutional liquidity-hunting reversal model on **XAUUSD (Gold M15)**:
+
+1. **Asian Range Tracking (`00:00 – 06:00 UTC`)**:
+   - Establishes the liquidity boundaries: `Asian High` (Buy-Side Liquidity / BSL) and `Asian Low` (Sell-Side Liquidity / SSL).
+   - Validates that Asian Range width is within acceptable limits (`50` to `350` pips).
+2. **Golden Killzones**:
+   - **London Open Killzone**: `07:00 – 10:00 UTC` (Peak liquidity sweep window).
+   - **New York Overlap Killzone**: `12:30 – 16:00 UTC` (US institutional entry).
+3. **Pre-Filter Gate (Judas Swing Detection)**:
+   - **SELL Sweep Trigger (`JUDAS_SWEEP_SELL`)**: Price wicks above `Asian High + sweepBufferPips (15 pips)` to trap breakout buyers, then closes back *inside* the Asian Range.
+   - **BUY Sweep Trigger (`JUDAS_SWEEP_BUY`)**: Price wicks below `Asian Low - sweepBufferPips (15 pips)` to trap breakout sellers, then closes back *inside* the Asian Range.
+4. **AI Agent Sniper Decision**:
+   - Evaluates Order Block (OB), Fair Value Gap (FVG), multi-timeframe swing structure (M15 + H1 + H4), and 50 chronological OHLCV bars.
+   - Places Stop Loss behind the sweep spike (minimum floor `200 pips` / $2.00 USD on Gold) and Take Profit at the opposing Asian boundary.
 ### Entry Rules
 
 ```
@@ -1015,6 +1051,27 @@ ELSE:
 | Max Loss Streak | 3 | Block after N consecutive losses |
 | Bias Flip Exit | true | Auto close on bias change |
 | Trend TP Disabled | true | Disable fixed TP in trending regime |
+
+### Asian Range Judas Sweep Parameters
+
+| Parameter | Default | Description |
+|:---|:---:|:---|
+| `UseDirectAiApi` | `false` | `false` = Local Server Hub (`http://127.0.0.1:8000`), `true` = Direct Cloud API |
+| `UseAiGateMode` | `true` | Two-tier gate: Judas Sweep triggers gate → AI Agent confirms entry |
+| `AiConfidenceThreshold` | `70.0%` | Minimum AI confidence score required to execute BUY/SELL |
+| `AiSlMinFloorPips` | `200.0` | Minimum SL floor ($2.00 on XAUUSD) to prevent noise stop-outs |
+| `asianStartHour` | `0` | Asian Session Start Hour (UTC) |
+| `asianEndHour` | `6` | Asian Session End Hour (UTC) |
+| `minAsianRangePips` | `50.0` | Minimum Asian Range width to consider valid setup |
+| `maxAsianRangePips` | `350.0` | Maximum Asian Range width (skips overextended Asian sessions) |
+| `londonStartHour` | `7` | London Open Killzone Start Hour (UTC) |
+| `londonEndHour` | `10` | London Open Killzone End Hour (UTC) |
+| `nyStartHour` | `12` | New York Overlap Killzone Start Hour (UTC) |
+| `nyEndHour` | `16` | New York Overlap Killzone End Hour (UTC) |
+| `sweepBufferPips` | `15.0` | Minimum wick penetration beyond Asian High/Low (pips) |
+| `riskFactor` | `10.0` | Account risk allocation factor (%) |
+| `enableBreakEvenPrice` | `true` | Move SL to breakeven after trigger |
+| `breakEvenTrigger` | `250.0 pips` | Profit distance to activate breakeven ($2.50 on Gold) |
 
 ### 📊 Recommended Presets by Symbol
 

@@ -52,19 +52,11 @@ AgentFxTradingは、AIの力を実証済みのテクニカル分析戦略と組�
 
 ## 🚀 機能
 
-### 🤖 AIによる意思決定
-- **マルチLLM対応**：Qwen、OpenAI GPT-4、Claude、Gemini、DeepSeek
-- **コンテキスト認識分析**：3本のバーの履歴データを分析
-- **信頼度スコアリング**：信頼度>70%の場合のみ取引
-- **適応学習**：継続的改善のためのプロンプトエンジニアリング
-
-### 📊 高度なテクニカル分析
-- **TMS指標**：Heiken Ashi、TDI（RSI + Signal）、Stochastic
-- **ORBロジック**：決定的ブレイクアウトフィルタ付きオープニングレンジ検出
-- **モメンタム追跡**：傾き分析付きTF Green状態
-- **市場レジーム検出 (Market Regime)**：カウフマン効率比率 (`er_session`, `er_recent`) と騙しブレイクアウトカウンター (`or_flips`) で `trending`, `choppy`, `mixed`, `forming` を分類
-- **マルチタイムフレーム**：M15、H1、H4タイムフレームで動作
-
+### 🤖 デュアルAI戦略エンジン
+- **1. TMS + ORB エンジン (`AiAgentBot`)**: トレンドモメンタムシグナル（Heikin Ashi + TDI + Stochastic）とオープニングレンジブレイクアウトを組み合わせ、動的カウフマン効率相場判定を実装。
+- **2. アジアンレンジ・ジューダススイープ エンジン (`AsianRangeJudasSweepBot`)**: ICTスマートマネーコンセプト（SMC）に基づき、東京・アジアセッション高値・安値（00:00–06:00 UTC）の流動性ハント（ダマシ）をロンドン（07:00–10:00 UTC）およびNY重なり（12:30–16:00 UTC）キルゾーンで捕らえ、Order Block / FVGで高R:Rスナイパー反転を狙う。
+- **マルチLLM対応**：Qwen、OpenAI GPT-4o、Claude 3.5 Sonnet、Gemini 2.0 Flash、DeepSeek V3/R1。
+- **マルチタイムフレーム分析**：M15 + H1 + H4のトレンド同期、スイング構造分析、リアルタイム経済指標フィルター。
 ### 💼 ポートフォリオ管理
 - **マルチシンボル取引**：異なる通貨ペアで複数のボットを実行
 - **通貨エクスポージャー制御**：単一通貨への過剰エクスポージャーを防止
@@ -181,17 +173,50 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
 
 2. **`.algo`パッケージのビルド/コンパイル**:
    ```bash
+   # 1. TMS+ORB Botのビルド (AiAgentBot)
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
    cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
    cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
-   ```
 
+   # 2. Asian Range Judas Sweep Botのビルド (AsianRangeJudasSweepBot)
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AsianRangeJudasSweepBot
+   cp cBot/AsianRangeJudasSweepBot.cs /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
+   cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
+   ```
 3. **各通貨ペア・インデックスのDockerコンテナ起動**:
 
-   * **XAUUSD (M15 - ニューヨークセッション)**:
+   * **XAUUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-xauusd-judas" \
+       --label="cbot-xauusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true
+     ```
+
+   * **XAUUSD TMS+ORB (M15 - ニューヨークセッション)**:
      ```bash
      docker run -d \
        --name cbot-xauusd \
@@ -210,8 +235,6 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --BotId="xauusd_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
        --SessionName="newyork" \
        --OrbStartHour=13 \
        --SessionEndHour=21 \
@@ -893,6 +916,23 @@ ORBは**正確なエントリータイミング**を提供します：
 - **ANTI-CHASE ルール**：古いバイアス下で有効な押し目なく $\ge 4$ 本以上ブレイクアウトが進んでいる場合、**高値・安値を追随して飛び乗ることを禁止** → `HOLD` で押し目・戻りを待つ。
 - **利確後ゲート (Post-TP Gate Anti-FOMO)**：TP到達または大きな勝ちトレード決済後、十分な構造的押し目・戻り（$\ge 0.5\times$ ATR）、OR接触、またはバイアス反転が発生するまで同一方向への再エントリーを厳格にブロック。
 - **利益確定 & ギブバックフロア**：短期的なノイズに対してポジションに呼吸スペースを提供。最高含み益が $\ge 0.8\times$ ATR に達した後、ピークから $\ge 40\%$ のギブバックが発生するかモメンタムが失速した場合、直ちに決済して利益を確保。
+
+### 🏹 アジアンレンジ・ジューダススイープ戦略 (ICT Smart Money Concepts)
+
+**Asian Range Judas Sweep AI Bot** は **XAUUSD (ゴールド M15)** において機関投資家レベルの流動性ハント反転モデルを実行します：
+
+1. **アジアセッション追跡 (`00:00 – 06:00 UTC`)**:
+   - 流動性境界を設定：`Asian High`（買い流動性 / BSL）および `Asian Low`（売り流動性 / SSL）。
+   - アジアレンジの適正幅を検証（`50`〜`350` pips）。
+2. **ゴールデン・キルゾーン**:
+   - **ロンドンオープン・キルゾーン**: `07:00 – 10:00 UTC`（流動性ハント発生の最大ウィンドウ）。
+   - **ニューヨーク重複キルゾーン**: `12:30 – 16:00 UTC`（米系大口資金参入）。
+3. **事前判定ゲート (Judas Swing 検知)**:
+   - **売りシグナルゲート (`JUDAS_SWEEP_SELL`)**: 価格が `Asian High + sweepBufferPips (15 pips)` を上ヒゲで突き抜けてブレイク買いを誘い、アジアレンジ *内部* に終値で戻る。
+   - **買いシグナルゲート (`JUDAS_SWEEP_BUY`)**: 価格が `Asian Low - sweepBufferPips (15 pips)` を下ヒゲで突き抜けてブレイク売りを誘い、アジアレンジ *内部* に終値で戻る。
+4. **AI Agent スナイパー意思決定**:
+   - オーダーブロック (OB)、フェアバリューギャップ (FVG)、マルチタイムフレーム構造（M15 + H1 + H4）、直近50本のOHLCVローソク足を総合分析。
+   - ストップロスをヒゲの極値外側に配置（最低保護床 `200 pips` / ゴールド $2.00 USD）、利確目標をアジアレンジの対向境界に設定。
 ### エントリールール
 
 ```
@@ -984,6 +1024,27 @@ ELSE:
 | Max Loss Streak | 3 | N回連続損失後にブロック |
 | Bias Flip Exit | true | バイアス変化時の自動クローズ |
 | Trend TP Disabled | true | トレンド相場で固定利確を自動解除 |
+
+### アジアンレンジ・ジューダススイープ パラメータ表
+
+| パラメータ | デフォルト | 説明 |
+|:---|:---:|:---|
+| `UseDirectAiApi` | `false` | `false` = ローカルサーバーHub (`http://127.0.0.1:8000`), `true` = クラウドAPI直結 |
+| `UseAiGateMode` | `true` | 2段階ゲート：Judas Sweep方向判定 → AI Agentエントリー確認 |
+| `AiConfidenceThreshold` | `70.0%` | BUY/SELL注文を実行するために必要な最低AI信頼度 |
+| `AiSlMinFloorPips` | `200.0` | 最低SL保護床（ゴールド $2.00）、ノイズによる狩りを防止 |
+| `asianStartHour` | `0` | アジアセッション開始時間（UTC） |
+| `asianEndHour` | `6` | アジアセッション終了時間（UTC） |
+| `minAsianRangePips` | `50.0` | 有効なセットアップとみなす最小アジアレンジ幅 |
+| `maxAsianRangePips` | `350.0` | 最大アジアレンジ幅（アジア時間ですでに大相場となった日をスキップ） |
+| `londonStartHour` | `7` | ロンドンキルゾーン開始時間（UTC） |
+| `londonEndHour` | `10` | ロンドンキルゾーン終了時間（UTC） |
+| `nyStartHour` | `12` | ニューヨークキルゾーン開始時間（UTC） |
+| `nyEndHour` | `16` | ニューヨークキルゾーン終了時間（UTC） |
+| `sweepBufferPips` | `15.0` | アジア高値・安値を突き抜ける最小ヒゲ幅（pips） |
+| `riskFactor` | `10.0` | 1トレードあたりの口座リスク配分割合 (%) |
+| `enableBreakEvenPrice` | `true` | 目標到達時にSLを自動で建値に移動 |
+| `breakEvenTrigger` | `250.0 pips` | 建値移動を発動する利益距離（ゴールド $2.50） |
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency

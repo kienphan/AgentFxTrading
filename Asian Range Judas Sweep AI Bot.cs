@@ -59,7 +59,7 @@ namespace cAlgo.Robots
         [Parameter("Enable Dashboard Telemetry", Group = "AI Agent Settings", DefaultValue = true)]
         public bool EnableDashboardTelemetry { get; set; }
 
-        [Parameter("Dashboard Server URL", Group = "AI Agent Settings", DefaultValue = "http://127.0.0.1:8181")]
+        [Parameter("Dashboard Server URL", Group = "AI Agent Settings", DefaultValue = "http://127.0.0.1:8000")]
         public string DashboardServerUrl { get; set; }
 
         [Parameter("Account Label (optional)", Group = "AI Agent Settings", DefaultValue = "")]
@@ -2489,7 +2489,7 @@ Reply strictly with JSON object.";
                 string localTargetUrl = ApiUrl;
                 if (string.IsNullOrWhiteSpace(localTargetUrl) || !localTargetUrl.EndsWith("/trade", StringComparison.OrdinalIgnoreCase))
                 {
-                    var baseUri = !string.IsNullOrWhiteSpace(DashboardServerUrl) ? DashboardServerUrl.TrimEnd('/') : "http://127.0.0.1:8181";
+                    var baseUri = !string.IsNullOrWhiteSpace(DashboardServerUrl) ? DashboardServerUrl.TrimEnd('/') : "http://127.0.0.1:8000";
                     localTargetUrl = $"{baseUri}/trade";
                 }
 
@@ -2641,9 +2641,7 @@ Reply strictly with JSON object.";
 
                 var baseUri = (AiMode == AiConnectionMode.Direct_OpenRouter_DashScope && !string.IsNullOrWhiteSpace(DashboardServerUrl))
                     ? DashboardServerUrl.TrimEnd('/')
-                    : (ApiUrl.Contains("/trade") ? ApiUrl.Replace("/trade", "") : "http://127.0.0.1:8181");
-                var tickUrl = $"{baseUri}/api/tick";
-
+                    : (ApiUrl.Contains("/trade") ? ApiUrl.Replace("/trade", "") : "http://127.0.0.1:8000");
                 var json = JsonSerializer.Serialize(telemetry);
 
                 // Run only the HTTP network request in the background task

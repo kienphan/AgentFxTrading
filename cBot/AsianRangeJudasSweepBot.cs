@@ -2486,9 +2486,10 @@ Reply strictly with JSON object.";
                 if (_httpClient == null) return;
                 string localTargetUrl = ApiUrl;
                 if (string.IsNullOrWhiteSpace(localTargetUrl) || !localTargetUrl.EndsWith("/trade", StringComparison.OrdinalIgnoreCase))
+                {
                     var baseUri = !string.IsNullOrWhiteSpace(DashboardServerUrl) ? DashboardServerUrl.TrimEnd('/') : "http://127.0.0.1:8000";
                     localTargetUrl = $"{baseUri}/trade";
-
+                }
                 Print($"[AI Agent] Sending market snapshot for {SymbolName} ({TimeFrame.Name}) [Req: {expectedRequestId.Substring(0, 8)}...] to {localTargetUrl}...");
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                 var response = await _httpClient.PostAsync(localTargetUrl, content);

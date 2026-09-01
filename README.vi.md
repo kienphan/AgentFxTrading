@@ -52,19 +52,11 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 
 ## 🚀 Tính Năng
 
-### 🤖 Ra Quyết Định Bằng AI
-- **Hỗ Trợ Đa LLM**: Qwen, OpenAI GPT-4, Claude, Gemini, DeepSeek
-- **Phân Tích Theo Ngữ Cảnh**: Phân tích 3 nến dữ liệu lịch sử
-- **Điểm Tin Cậy**: Chỉ giao dịch khi độ tin cậy > 70%
-- **Học Thích Ứng**: Prompt engineering để cải thiện liên tục
-
-### 📊 Phân Tích Kỹ Thuật Nâng Cao
-- **Chỉ Báo TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **Logic ORB**: Phát hiện Opening Range với bộ lọc breakout quyết định
-- **Theo Dõi Momentum**: TF Green State với phân tích độ dốc
-- **Nhận Diện Chế Độ Thị Trường (Market Regime)**: Kaufman Efficiency Ratio (`er_session`, `er_recent`) và bộ đếm bẫy phá vỡ giả (`or_flips`) để phân loại `trending`, `choppy`, `mixed`, `forming`
-- **Đa Khung Thời Gian**: Hoạt động trên M15, H1, H4
-
+### 🤖 Hệ Thống Kép Đa Chiến Thuật (Dual Strategy Engines)
+- **1. Động cơ TMS + ORB (`AiAgentBot`)**: Kết hợp Trend Momentum Signal (Heikin Ashi + TDI + Stochastic) với Opening Range Breakout và nhận diện Kaufman Efficiency Regimes linh hoạt.
+- **2. Động cơ Asian Range Judas Sweep (`AsianRangeJudasSweepBot`)**: Bắt sóng đảo chiều săn quét thanh khoản ICT Smart Money Concepts tại đỉnh/đáy phiên Á (00:00–06:00 UTC) trong các khung giờ vàng London (07:00–10:00 UTC) và New York (12:30–16:00 UTC) với xác nhận Order Block / FVG.
+- **Hỗ Trợ Đa LLM**: Qwen, OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini 2.0 Flash, DeepSeek V3/R1.
+- **Phân Tích Đa Khung Thời Gian**: Đồng bộ xu hướng M15 + H1 + H4, cấu trúc swing high/low và bộ lọc tin tức thời gian thực.
 ### 💼 Quản Lý Danh Mục
 - **Giao Dịch Đa Symbol**: Chạy nhiều bot trên các cặp tiền khác nhau
 - **Kiểm Soát Phơi Nhiễm Tiền Tệ**: Ngăn chặn phơi nhiễm quá mức vào một tiền tệ
@@ -180,18 +172,50 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
    ```
 
 2. **Build/Biên dịch gói `.algo`**:
+2. **Biên Dịch Các Gói `.algo`**:
    ```bash
+   # 1. Biên dịch TMS+ORB Bot (AiAgentBot)
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
    cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
    cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
+
+   # 2. Biên dịch Asian Range Judas Sweep Bot (AsianRangeJudasSweepBot)
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AsianRangeJudasSweepBot
+   cp cBot/AsianRangeJudasSweepBot.cs /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
+   cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
    ```
+   * **XAUUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-xauusd-judas" \
+       --label="cbot-xauusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true
+     ```
 
-3. **Chạy Docker Containers cho từng cặp tiền / chỉ số**:
-
-   * **XAUUSD (M15 - Phiên New York)**:
+   * **XAUUSD TMS+ORB (M15 - Phiên New York)**:
      ```bash
      docker run -d \
        --name cbot-xauusd \
@@ -210,8 +234,6 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --BotId="xauusd_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
        --SessionName="newyork" \
        --OrbStartHour=13 \
        --SessionEndHour=21 \
@@ -893,6 +915,23 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
 - **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi/bounce hợp lệ, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback có xác nhận.
 - **Cửa chặn Post-TP Gate (Anti-FOMO)**: Sau khi một lệnh vừa chạm TP hoặc chốt lời lớn, hệ thống khóa chặt hướng giao dịch đó và chỉ mở lại khi có nhịp Pullback thực sự ($\ge 0.5\times$ ATR), giá chạm lại OR hoặc đảo chiều xu hướng.
 - **Khóa Lợi Nhuận & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn. Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế bảo vệ kích hoạt khi lệnh đạt lãi $\ge 0.8\times$ ATR: nếu giá quay đầu làm mất $\ge 40\%$ số lãi cao nhất (MFE) hoặc xung lực đảo chiều, bot đóng lệnh ngay lập tức để bảo vệ lợi nhuận.
+
+### 🏹 Chiến Thuật Asian Range Judas Sweep (ICT Smart Money Concepts)
+
+**Asian Range Judas Sweep AI Bot** áp dụng mô hình săn quét thanh khoản tạo lập trên **XAUUSD (Vàng M15)**:
+
+1. **Theo Dõi Phiên Á (`00:00 – 06:00 UTC`)**:
+   - Xác lập biên thanh khoản: `Asian High` (Buy-Side Liquidity / BSL) và `Asian Low` (Sell-Side Liquidity / SSL).
+   - Kiểm tra độ rộng biên độ phiên Á hợp lệ (`50` đến `350` pips).
+2. **Khung Giờ Vàng (Golden Killzones)**:
+   - **London Open Killzone**: `07:00 – 10:00 UTC` (Cửa sổ săn quét thanh khoản mạnh nhất).
+   - **New York Overlap Killzone**: `12:30 – 16:00 UTC` (Thời điểm dòng tiền Mỹ tham gia).
+3. **Cổng Lọc Trước (Pre-Filter Judas Sweep Gate)**:
+   - **Kích Hoạt BÁN (`JUDAS_SWEEP_SELL`)**: Nến tạo râu quét vượt `Asian High + sweepBufferPips (15 pips)` để bẫy buyer, sau đó rút râu đóng nến quay trở lại *bên trong* phiên Á.
+   - **Kích Hoạt MUA (`JUDAS_SWEEP_BUY`)**: Nến tạo râu quét sâu dưới `Asian Low - sweepBufferPips (15 pips)` để bẫy seller, sau đó rút râu đóng nến quay trở lại *bên trong* phiên Á.
+4. **AI Agent Ra Quyết Định Sniper**:
+   - Phân tích Order Block (OB), Fair Value Gap (FVG), cấu trúc đa khung (M15 + H1 + H4) và chuỗi 50 nến OHLCV gần nhất.
+   - Đặt Stop Loss an toàn sau râu quét (sàn tối thiểu `200 pips` / $2.00 USD cho Vàng) và Take Profit tại biên đối diện của phiên Á.
 ### Quy Tắc Vào Lệnh
 
 ```
@@ -984,6 +1023,27 @@ ELSE:
 | Max Loss Streak | 3 | Chặn sau N lần thua liên tiếp |
 | Bias Flip Exit | true | Tự động đóng khi bias thay đổi |
 | Trend TP Disabled | true | Tự động hủy TP cố định khi trending |
+
+### Bảng Tham Số Asian Range Judas Sweep
+
+| Tham Số | Mặc Định | Mô Tả & Khuyến Nghị Tối Ưu |
+|:---|:---:|:---|
+| `UseDirectAiApi` | `false` | `false` = Local Server Hub (`http://127.0.0.1:8000`), `true` = Direct Cloud API |
+| `UseAiGateMode` | `true` | Cổng lọc 2 tầng: Judas Sweep định hướng → AI Agent xác nhận điểm vào |
+| `AiConfidenceThreshold` | `70.0%` | Ngưỡng tin cậy AI tối thiểu để thực hiện lệnh BUY/SELL |
+| `AiSlMinFloorPips` | `200.0` | Sàn bảo vệ SL tối thiểu ($2.00 trên Vàng) chống quét râu/spread |
+| `asianStartHour` | `0` | Giờ bắt đầu phiên Á (UTC Hour) |
+| `asianEndHour` | `6` | Giờ kết thúc phiên Á (UTC Hour) |
+| `minAsianRangePips` | `50.0` | Biên độ phiên Á tối thiểu để coi là setup hợp lệ |
+| `maxAsianRangePips` | `350.0` | Biên độ phiên Á tối đa (tránh các ngày phiên Á đã chạy sóng quá dài) |
+| `londonStartHour` | `7` | Giờ bắt đầu London Killzone (UTC) |
+| `londonEndHour` | `10` | Giờ kết thúc London Killzone (UTC) |
+| `nyStartHour` | `12` | Giờ bắt đầu New York Overlap Killzone (UTC) |
+| `nyEndHour` | `16` | Giờ kết thúc New York Overlap Killzone (UTC) |
+| `sweepBufferPips` | `15.0` | Biên độ quét râu tối thiểu vượt đỉnh/đáy Á (pips) |
+| `riskFactor` | `10.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh |
+| `enableBreakEvenPrice` | `true` | Tự động dời SL về hòa vốn khi đạt mục tiêu |
+| `breakEvenTrigger` | `250.0 pips` | Điểm kích hoạt hòa vốn ($2.50 trên Vàng) |
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency

@@ -52,19 +52,11 @@ AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过
 
 ## 🚀 功能特性
 
-### 🤖 AI驱动的决策
-- **多LLM支持**：Qwen、OpenAI GPT-4、Claude、Gemini、DeepSeek
-- **上下文感知分析**：分析3根K线的历史数据
-- **置信度评分**：仅在置信度>70%时交易
-- **自适应学习**：提示工程持续改进
-
-### 📊 高级技术分析
-- **TMS指标**：Heiken Ashi、TDI（RSI + Signal）、Stochastic
-- **ORB逻辑**：开盘区间检测与决定性突破过滤
-- **动量追踪**：TF Green状态与斜率分析
-- **市场状态识别 (Market Regime)**：Kaufman效率比率 (`er_session`, `er_recent`) 与假突破计数器 (`or_flips`)，分类 `trending`, `choppy`, `mixed`, `forming`
-- **多时间框架**：适用于M15、H1、H4时间框架
-
+### 🤖 双AI策略引擎架构
+- **1. TMS + ORB 趋势突破引擎 (`AiAgentBot`)**: 结合趋势动量信号（Heikin Ashi + TDI + Stochastic）与开盘区间突破，支持动态Kaufman效率市场状态识别。
+- **2. 亚洲时段流动性猎杀引擎 (`AsianRangeJudasSweepBot`)**: 基于ICT聪敏钱概念（SMC），在伦敦（07:00–10:00 UTC）及纽约重叠时段（12:30–16:00 UTC）猎杀亚洲时段高低点流动性，结合订单块 (Order Block) / 价值缺口 (FVG) 进行狙击反转。
+- **多LLM大模型支持**：Qwen、OpenAI GPT-4o、Claude 3.5 Sonnet、Gemini 2.0 Flash、DeepSeek V3/R1。
+- **多时间框架深度分析**：M15 + H1 + H4 多级别趋势对齐、摆动高低点结构与实时新闻过滤器。
 ### 💼 投资组合管理
 - **多品种交易**：在不同交易对上运行多个机器人
 - **货币敞口控制**：防止对单一货币过度敞口
@@ -172,17 +164,50 @@ python app/server.py
 
 2. **构建/编译 `.algo` 算法包**:
    ```bash
+   # 1. 编译 TMS+ORB 机器人 (AiAgentBot)
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
    cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
    cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
-   ```
 
+   # 2. 编译 Asian Range Judas Sweep 机器人 (AsianRangeJudasSweepBot)
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AsianRangeJudasSweepBot
+   cp cBot/AsianRangeJudasSweepBot.cs /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
+   cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
+   ```
 3. **运行多品种 Docker 容器**:
 
-   * **XAUUSD (M15 - 纽约时段)**:
+   * **XAUUSD 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-xauusd-judas" \
+       --label="cbot-xauusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true
+     ```
+
+   * **XAUUSD TMS+ORB (M15 - 纽约时段)**:
      ```bash
      docker run -d \
        --name cbot-xauusd \
@@ -201,8 +226,6 @@ python app/server.py
        --BotId="xauusd_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
        --SessionName="newyork" \
        --OrbStartHour=13 \
        --SessionEndHour=21 \
@@ -884,6 +907,23 @@ ORB提供**精确的入场时机**：
 - **ANTI-CHASE 防追高规则**：当价格已在旧偏向中突破 $\ge 4$ 根K线且未出现有效回调/反弹时，**严禁在极值位追单** → 保持 `HOLD` 等待结构化回调。
 - **止盈后门控 (Post-TP Gate Anti-FOMO)**：在订单止盈或大幅获利平仓后，严禁立即同向再入场，必须等待实质性回调（$\ge 0.5\times$ ATR）、触碰OR边界或偏向反转后方可解锁。
 - **利润锁定与回撤底线 (Profit Lock-In & Giveback Floor)**：为持仓在短期正常波动中提供呼吸空间。当浮盈达到 $\ge 0.8\times$ ATR 后，若回撤达最高浮盈的 $\ge 40\%$ 或动量减速，立即平仓锁定利润。
+
+### 🏹 亚洲时段流动性猎杀策略 (ICT Asian Range Judas Sweep)
+
+**Asian Range Judas Sweep AI Bot** 在 **XAUUSD (黄金 M15)** 上实现了机构级流动性猎杀反转模型：
+
+1. **亚洲时段区间追踪 (`00:00 – 06:00 UTC`)**:
+   - 确立关键流动性边界：`Asian High`（买方流动性 / BSL）与 `Asian Low`（卖方流动性 / SSL）。
+   - 校验亚盘波动范围处于合理区间（`50` 至 `350` pips）。
+2. **黄金猎杀时段 (Golden Killzones)**:
+   - **伦敦开盘猎杀时段 (London Open Killzone)**: `07:00 – 10:00 UTC`（流动性扫荡高发期）。
+   - **纽约重叠猎杀时段 (New York Overlap Killzone)**: `12:30 – 16:00 UTC`（美盘机构资金入场）。
+3. **前置门控 (Judas Swing 扫荡检测)**:
+   - **做空信号门控 (`JUDAS_SWEEP_SELL`)**: 价格向上刺穿 `Asian High + sweepBufferPips (15 pips)` 诱多，随后收盘回落至亚盘区间 *内部*。
+   - **做多信号门控 (`JUDAS_SWEEP_BUY`)**: 价格向下刺穿 `Asian Low - sweepBufferPips (15 pips)` 诱空，随后收盘回升至亚盘区间 *内部*。
+4. **AI Agent 狙击决策**:
+   - 深度分析订单块 (OB)、价值缺口 (FVG)、多级别结构（M15 + H1 + H4）与近50根OHLCV K线。
+   - 止损置于扫荡引线极值外侧（最低保底地板 `200 pips` / 黄金 $2.00 USD），止盈目标设于亚盘对侧边界。
 ### 入场规则
 
 ```
@@ -975,6 +1015,27 @@ ELSE:
 | Max Loss Streak | 3 | N次连亏后阻止 |
 | Bias Flip Exit | true | 偏向变化时自动平仓 |
 | Trend TP Disabled | true | 强趋势行情下自动取消固定TP |
+
+### 亚洲时段流动性猎杀参数表
+
+| 参数 | 默认值 | 描述与优化建议 |
+|:---|:---:|:---|
+| `UseDirectAiApi` | `false` | `false` = 本地服务器Hub (`http://127.0.0.1:8000`), `true` = 直连云端API |
+| `UseAiGateMode` | `true` | 二级门控：Judas Sweep定向门控 → AI Agent精细入场确认 |
+| `AiConfidenceThreshold` | `70.0%` | 执行 BUY/SELL 需满足的最低 AI 置信度评分 |
+| `AiSlMinFloorPips` | `200.0` | 最低止损地板（黄金 $2.00），防止被突发点差/引线扫损 |
+| `asianStartHour` | `0` | 亚盘开始时间（UTC Hour） |
+| `asianEndHour` | `6` | 亚盘结束时间（UTC Hour） |
+| `minAsianRangePips` | `50.0` | 有效亚盘形态所需的最小波动幅度 |
+| `maxAsianRangePips` | `350.0` | 亚盘最大波动限制（过滤已提前大幅单边的交易日） |
+| `londonStartHour` | `7` | 伦敦猎杀时段开始时间（UTC） |
+| `londonEndHour` | `10` | 伦敦猎杀时段结束时间（UTC） |
+| `nyStartHour` | `12` | 纽约猎杀时段开始时间（UTC） |
+| `nyEndHour` | `16` | 纽约猎杀时段结束时间（UTC） |
+| `sweepBufferPips` | `15.0` | 刺穿亚盘高低点的最小引线幅度（pips） |
+| `riskFactor` | `10.0` | 每笔交易风险资金分配系数 (%) |
+| `enableBreakEvenPrice` | `true` | 盈利达到目标后自动将止损移至保本 |
+| `breakEvenTrigger` | `250.0 pips` | 触发保本的盈利距离（黄金 $2.50） |
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency

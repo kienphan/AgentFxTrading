@@ -52,19 +52,11 @@ AgentFxTrading - это **автоматизированная система т
 
 ## 🚀 Возможности
 
-### 🤖 Принятие Решений с Помощью ИИ
-- **Мульти-LLM Поддержка**: Qwen, OpenAI GPT-4, Claude, Gemini, DeepSeek
-- **Контекстный Анализ**: Анализирует 3 бара исторических данных
-- **Оценка Уверенности**: Торговля только при уверенности > 70%
-- **Адаптивное Обучение**: Инженерия промптов для непрерывного улучшения
-
-### 📊 Продвинутый Технический Анализ
-- **Индикаторы TMS**: Heiken Ashi, TDI (RSI + Signal), Stochastic
-- **Логика ORB**: Обнаружение Opening Range с фильтром решающего прорыва
-- **Отслеживание Импульса**: TF Green State с анализом наклона
-- **Определение Режима Рынка (Market Regime)**: Коэффициент эффективности Кауфмана (`er_session`, `er_recent`) и счетчик ложных пробоев (`or_flips`) для классификации `trending`, `choppy`, `mixed`, `forming`
-- **Мультитаймфрейм**: Работает на таймфреймах M15, H1, H4
-
+### 🤖 Двойная Архитектура ИИ-Стратегий
+- **1. Движок TMS + ORB (`AiAgentBot`)**: Сигналы трендового импульса (Heikin Ashi + TDI + Stochastic) в сочетании с пробоем Opening Range и динамическим определением режимов эффективности Кауфмана.
+- **2. Движок Asian Range Judas Sweep (`AsianRangeJudasSweepBot`)**: Концепция Smart Money (SMC) для отлова манипулятивных ложных пробоев (Judas Swing) ликвидности азиатской сессии (00:00–06:00 UTC) в киллзонах Лондона (07:00–10:00 UTC) и Нью-Йорка (12:30–16:00 UTC) с подтверждением Order Block / FVG.
+- **Мульти-LLM Поддержка**: Qwen, OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini 2.0 Flash, DeepSeek V3/R1.
+- **Мультитаймфрейм Анализ**: Синхронизация тренда M15 + H1 + H4, структура свингов (BSL/SSL) и фильтр новостей в реальном времени.
 ### 💼 Управление Портфелем
 - **Мультивалютная Торговля**: Запуск нескольких ботов на разных парах
 - **Контроль Валютного Экспозиции**: Предотвращение чрезмерной экспозиции к одной валюте
@@ -179,19 +171,52 @@ python app/server.py
    chmod 600 /root/ctrader_data/ctid_pwd
    ```
 
-2. **Сборка/Компиляция пакета `.algo`**:
+2. **Сборка/Компиляция пакетов `.algo`**:
    ```bash
+   # 1. Сборка TMS+ORB бота (AiAgentBot)
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest create cbot AiAgentBot
    cp cBot/AiAgentBot.cs /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.cs
    docker run --rm -v $(pwd):/workspace -v /root:/root \
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AiAgentBot/AiAgentBot/AiAgentBot.csproj
    cp /root/cAlgo/Sources/Robots/AiAgentBot.algo cBot/AiAgentBot.algo
-   ```
 
+   # 2. Сборка Asian Range Judas Sweep бота (AsianRangeJudasSweepBot)
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest create cbot AsianRangeJudasSweepBot
+   cp cBot/AsianRangeJudasSweepBot.cs /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.cs
+   docker run --rm -v $(pwd):/workspace -v /root:/root \
+     ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
+   cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
+   ```
 3. **Запуск Docker-контейнеров для каждой пары/индекса**:
 
-   * **XAUUSD (M15 - Нью-Йоркская сессия)**:
+   * **XAUUSD Охота за Ликвидностью Азии (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-xauusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=XAUUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-xauusd-judas" \
+       --label="cbot-xauusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true
+     ```
+
+   * **XAUUSD TMS+ORB (M15 - Нью-Йоркская сессия)**:
      ```bash
      docker run -d \
        --name cbot-xauusd \
@@ -210,8 +235,6 @@ python app/server.py
        --BotId="xauusd_m15" \
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
        --SessionName="newyork" \
        --OrbStartHour=13 \
        --SessionEndHour=21 \
@@ -893,6 +916,23 @@ ORB обеспечивает **точное время входа**:
 - **Правило ANTI-CHASE**: Если цена пробила диапазон $\ge 4$ свечей назад по старому сигналу без валидного отката/отскока, **ЗАПРЕЩЕНО догонять рынок на экстремумах** → Удержание `HOLD` и ожидание структурированного отката.
 - **Шлюз Post-TP Gate (Anti-FOMO)**: После срабатывания TP или фиксации крупной прибыли повторный вход в том же направлении блокируется до полноценного отката ($\ge 0.5\times$ ATR), касания OR или смены тренда.
 - **Фиксация Прибыли и Giveback Floor**: Предоставляет позиции запас хода при нормальных колебаниях. При достижении прибыли $\ge 0.8\times$ ATR откат на $\ge 40\%$ от пика MFE или затухание импульса приводит к немедленному закрытию сделки для защиты прибыли.
+
+### 🏹 Стратегия Asian Range Judas Sweep (ICT Smart Money Concepts)
+
+**Asian Range Judas Sweep AI Bot** реализует институциональную модель снятия ликвидности на **XAUUSD (Золото M15)**:
+
+1. **Отслеживание Азиатской Сессии (`00:00 – 06:00 UTC`)**:
+   - Формирует ключевые границы ликвидности: `Asian High` (Buy-Side Liquidity / BSL) и `Asian Low` (Sell-Side Liquidity / SSL).
+   - Проверяет допустимый диапазон волатильности Азии (`50`–`350` пипсов).
+2. **Золотые Киллзоны (Golden Killzones)**:
+   - **Лондонская Киллзона**: `07:00 – 10:00 UTC` (Пиковое окно сбора ликвидности).
+   - **Нью-Йоркская Киллзона**: `12:30 – 16:00 UTC` (Вход американских институциональных объемов).
+3. **Предварительный Шлюз (Детектор Judas Swing)**:
+   - **Шлюз на Продажу (`JUDAS_SWEEP_SELL`)**: Тень свечи пробивает `Asian High + sweepBufferPips (15 пипсов)` для заманивания покупателей, а тело закрывается обратно *внутри* диапазона Азии.
+   - **Шлюз на Покупку (`JUDAS_SWEEP_BUY`)**: Тень свечи пробивает `Asian Low - sweepBufferPips (15 пипсов)` для заманивания продавцов, а тело закрывается обратно *внутри* диапазона Азии.
+4. **Снайперское Решение ИИ-Агента**:
+   - Анализирует Order Block (OB), Fair Value Gap (FVG), мультитаймфрейм структуру (M15 + H1 + H4) и последние 50 OHLCV свечей.
+   - Устанавливает Stop Loss за шпильку пробоя (минимальный защитный пол `200 пипсов` / $2.00 USD по Золоту), а Take Profit — на противоположную границу Азии.
 ### Правила Входа
 
 ```
@@ -984,6 +1024,27 @@ ELSE:
 | Max Loss Streak | 3 | Блокировка после N убытков подряд |
 | Bias Flip Exit | true | Автозакрытие при изменении bias |
 | Trend TP Disabled | true | Отключение фиксированного TP в тренде |
+
+### Таблица Параметров Asian Range Judas Sweep
+
+| Параметр | По Умолчанию | Описание |
+|:---|:---:|:---|
+| `UseDirectAiApi` | `false` | `false` = Локальный Сервер Hub (`http://127.0.0.1:8000`), `true` = Прямое Cloud API |
+| `UseAiGateMode` | `true` | Двухуровневый шлюз: Judas Sweep направление → ИИ-Агент подтверждение входа |
+| `AiConfidenceThreshold` | `70.0%` | Минимальный порог уверенности ИИ для исполнения сделки BUY/SELL |
+| `AiSlMinFloorPips` | `200.0` | Минимальный защитный пол SL ($2.00 по Золоту) от рыночного шума |
+| `asianStartHour` | `0` | Час начала Азиатской сессии (UTC) |
+| `asianEndHour` | `6` | Час окончания Азиатской сессии (UTC) |
+| `minAsianRangePips` | `50.0` | Минимальная ширина Азиатского диапазона |
+| `maxAsianRangePips` | `350.0` | Максимальная ширина диапазона Азии (пропуск аномальных дней) |
+| `londonStartHour` | `7` | Час начала Лондонской киллзоны (UTC) |
+| `londonEndHour` | `10` | Час окончания Лондонской киллзоны (UTC) |
+| `nyStartHour` | `12` | Час начала Нью-Йоркской киллзоны (UTC) |
+| `nyEndHour` | `16` | Час окончания Нью-Йоркской киллзоны (UTC) |
+| `sweepBufferPips` | `15.0` | Минимальный выход тени за пределы максимума/минимума Азии (пипсы) |
+| `riskFactor` | `10.0` | Коэффициент распределения риска депозита на сделку (%) |
+| `enableBreakEvenPrice` | `true` | Автоперевод SL в безубыток при достижении цели |
+| `breakEvenTrigger` | `250.0 пипсов` | Дистанция прибыли для перевода в безубыток ($2.50 по Золоту) |
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency
