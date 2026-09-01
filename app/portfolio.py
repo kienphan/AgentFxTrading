@@ -199,7 +199,7 @@ class PortfolioManager:
             # 4. Daily loss limit
             today = date.today().isoformat()
             cursor = conn.execute(
-                "SELECT SUM(total_pnl) FROM daily_stats WHERE date = ? AND account_id = ?",
+                "SELECT SUM(pnl) FROM positions WHERE status = 'closed' AND DATE(COALESCE(exit_time, entry_time)) = ? AND account_id = ?",
                 (today, account_id)
             )
             row = cursor.fetchone()
@@ -207,7 +207,6 @@ class PortfolioManager:
                 daily_pnl = row[0]
                 if daily_pnl <= self.config.MAX_DAILY_LOSS:
                     return False, f"Daily loss limit reached ({daily_pnl:.2f})"
-            
             # 5. Margin usage estimate (simplified)
             cursor = conn.execute("""
                 SELECT SUM(volume) FROM positions WHERE status = 'open' AND account_id = ?
@@ -262,9 +261,13 @@ class PortfolioManager:
                 for row in cursor.fetchall()
             ]
             
-            # Daily stats
+            # Daily stats directly from positions
             today = date.today().isoformat()
-            query = "SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?"
+            query = """
+                SELECT COALESCE(SUM(pnl), 0), COUNT(*) 
+                FROM positions 
+                WHERE status = 'closed' AND DATE(COALESCE(exit_time, entry_time)) = ?
+            """
             params = [today]
             if account_id and account_id != "all":
                 query += " AND account_id = ?"
@@ -274,9 +277,9 @@ class PortfolioManager:
             row = cursor.fetchone()
             daily_stats = {
                 "date": today,
-                "total_pnl": row[0] if row and row[0] is not None else 0,
+                "total_pnl": round(row[0], 2) if row and row[0] is not None else 0,
                 "trades_count": row[1] if row and row[1] is not None else 0,
-                "loss_streak": row[2] if row and row[2] is not None else 0
+                "loss_streak": 0
             }
             
             # Currency exposure

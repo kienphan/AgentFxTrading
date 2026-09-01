@@ -45,17 +45,23 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         cursor = conn.execute(f"SELECT COUNT(*) FROM positions WHERE status = 'open'{account_filter}", tuple(params))
         open_positions = cursor.fetchone()[0]
         
-        # Today's stats
+        # Today's stats directly from positions
         today = date.today().isoformat()
         cursor = conn.execute(
-            f"SELECT SUM(total_pnl), SUM(trades_count), MAX(loss_streak) FROM daily_stats WHERE date = ?{account_filter}",
+            f"""
+            SELECT 
+                COALESCE(SUM(pnl), 0),
+                COUNT(*),
+                COALESCE(SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END), 0)
+            FROM positions 
+            WHERE status = 'closed' AND DATE(COALESCE(exit_time, entry_time)) = ?{account_filter}
+            """,
             (today, *params)
         )
         row = cursor.fetchone()
         daily_pnl = row[0] if row and row[0] is not None else 0
         trades_today = row[1] if row and row[1] is not None else 0
-        loss_streak = row[2] if row and row[2] is not None else 0
-        
+        loss_streak = 0
         # Total P&L (all time)
         cursor = conn.execute(
             f"SELECT SUM(pnl) FROM positions WHERE status = 'closed'{account_filter}", tuple(params)
@@ -208,21 +214,25 @@ def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
 
 
 def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]:
-    """Get daily P&L for the last N days."""
+    """Get daily P&L for the last N days directly from positions table (single source of truth)."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     history = []
     try:
         query = """
-            SELECT date, SUM(total_pnl) as pnl, SUM(trades_count) as trades
-            FROM daily_stats
+            SELECT 
+                DATE(COALESCE(exit_time, entry_time)) as date,
+                SUM(pnl) as pnl,
+                COUNT(*) as trades
+            FROM positions
+            WHERE status = 'closed'
         """
         params = []
         if account_id and account_id != "all":
-            query += " WHERE account_id = ?"
+            query += " AND account_id = ?"
             params.append(account_id)
             
-        query += " GROUP BY date ORDER BY date DESC LIMIT ?"
+        query += " GROUP BY DATE(COALESCE(exit_time, entry_time)) ORDER BY date DESC LIMIT ?"
         params.append(days)
         
         cursor = conn.execute(query, tuple(params))
