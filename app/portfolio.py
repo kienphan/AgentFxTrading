@@ -68,53 +68,42 @@ class PortfolioManager:
             )
         """)
         
-        # Daily stats table migration
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_stats_v2 (
-                account_id TEXT NOT NULL,
-                bot_id TEXT NOT NULL DEFAULT 'unknown',
-                date TEXT NOT NULL,
-                total_pnl REAL DEFAULT 0,
-                trades_count INTEGER DEFAULT 0,
-                loss_streak INTEGER DEFAULT 0,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (account_id, bot_id, date)
-            )
-        """)
-        
-        # Copy legacy rows if daily_stats exists
+        # Dynamic daily_stats VIEW migration (Single Source of Truth from positions)
         try:
-            conn.execute("""
-                INSERT OR IGNORE INTO daily_stats_v2 (account_id, date, total_pnl, trades_count, loss_streak, updated_at) 
-                SELECT 'default', date, total_pnl, trades_count, loss_streak, updated_at FROM daily_stats
-            """)
-            conn.execute("DROP TABLE daily_stats")
-            conn.execute("ALTER TABLE daily_stats_v2 RENAME TO daily_stats")
-        except sqlite3.OperationalError:
-            # table might not exist, or already renamed
+            cursor = conn.execute("SELECT type FROM sqlite_master WHERE name = 'daily_stats'")
+            row = cursor.fetchone()
+            if row and row[0] == 'table':
+                conn.execute("DROP TABLE daily_stats")
+        except Exception:
+            pass
+        try:
+            conn.execute("DROP TABLE IF EXISTS daily_stats_v2")
+        except Exception:
             pass
 
-        # Create normal daily_stats table if it doesn't exist (if not handled by rename)
+        # Create automatic dynamic view for daily_stats
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_stats (
-                account_id TEXT NOT NULL,
-                bot_id TEXT NOT NULL DEFAULT 'unknown',
-                date TEXT NOT NULL,
-                total_pnl REAL DEFAULT 0,
-                trades_count INTEGER DEFAULT 0,
-                loss_streak INTEGER DEFAULT 0,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (account_id, bot_id, date)
-            )
+            CREATE VIEW IF NOT EXISTS daily_stats AS
+            SELECT 
+                account_id,
+                bot_id,
+                DATE(COALESCE(exit_time, entry_time)) as date,
+                ROUND(SUM(pnl), 2) as total_pnl,
+                COUNT(*) as trades_count,
+                0 as loss_streak,
+                MAX(COALESCE(exit_time, entry_time)) as updated_at
+            FROM positions
+            WHERE status = 'closed'
+            GROUP BY account_id, bot_id, DATE(COALESCE(exit_time, entry_time))
         """)
-
         # Create indexes for performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_bot_id ON positions(bot_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_status ON positions(account_id, status)")
-
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_exit_time ON positions(exit_time)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_entry_time ON positions(entry_time)")
         # Cbot Configs table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cbot_configs (
@@ -155,30 +144,15 @@ class PortfolioManager:
         finally:
             conn.close()
     def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float, account_id: str) -> bool:
-        """Mark position as closed and update daily stats."""
+        """Mark position as closed (single source of truth)."""
         conn = self._get_conn()
         try:
-            # Update position
+            # Update position (daily_stats view automatically updates)
             conn.execute("""
                 UPDATE positions 
                 SET status = 'closed', exit_price = ?, pnl = ?, exit_time = datetime('now')
                 WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
             """, (exit_price, pnl, bot_id, symbol, account_id))
-            
-            # Update daily stats
-            today = date.today().isoformat()
-            conn.execute("""
-                INSERT INTO daily_stats (account_id, bot_id, date, total_pnl, trades_count, loss_streak)
-                VALUES (?, ?, ?, ?, 1, CASE WHEN ? < 0 THEN 1 ELSE 0 END)
-                ON CONFLICT(account_id, bot_id, date) DO UPDATE SET
-                    total_pnl = total_pnl + ?,
-                    trades_count = trades_count + 1,
-                    loss_streak = CASE 
-                        WHEN ? < 0 THEN loss_streak + 1
-                        ELSE 0
-                    END,
-                    updated_at = datetime('now')
-            """, (account_id, bot_id, today, pnl, pnl, pnl, pnl))
             
             conn.commit()
             logger.info(f"Position closed: {symbol} by {bot_id}, PnL: {pnl} for account {account_id}")
