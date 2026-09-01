@@ -77,16 +77,16 @@ namespace cAlgo.Robots
         [Parameter("Checkmark Threshold", Group = "Exit", DefaultValue = 0.0, MinValue = 0)]
         public double CheckMarkThreshold { get; set; }
 
-        [Parameter("Breakeven Trigger (x ATR)", Group = "Exit", DefaultValue = 1.2, MinValue = 0, Step = 0.1)]
+        [Parameter("Breakeven Trigger (x ATR)", Group = "Exit", DefaultValue = 0.8, MinValue = 0, Step = 0.1)]
         public double BreakevenTriggerAtr { get; set; }
 
         [Parameter("Breakeven Offset (x ATR)", Group = "Exit", DefaultValue = 0.1, MinValue = 0, Step = 0.05)]
         public double BreakevenOffsetAtr { get; set; }
 
-        [Parameter("Trail Trigger (x ATR)", Group = "Exit", DefaultValue = 2.0, MinValue = 0, Step = 0.1)]
+        [Parameter("Trail Trigger (x ATR)", Group = "Exit", DefaultValue = 1.2, MinValue = 0, Step = 0.1)]
         public double TrailTriggerAtr { get; set; }
 
-        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 1.0, MinValue = 0, Step = 0.1)]
+        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 0.7, MinValue = 0, Step = 0.1)]
         public double TrailDistanceAtr { get; set; }
         // ---- ORB ----
         [Parameter("ORB Start Hour (Winter UTC)", Group = "ORB", DefaultValue = 13)]
@@ -148,8 +148,20 @@ namespace cAlgo.Robots
         [Parameter("Max TP Multiplier (x ATR)", Group = "Guardrails", DefaultValue = 6.0, MinValue = 0.5, Step = 0.5)]
         public double MaxTpAtr { get; set; }
 
-        [Parameter("Max Giveback (x ATR, 0=off)", Group = "Guardrails", DefaultValue = 1.0, MinValue = 0, Step = 0.1)]
+        [Parameter("Max Giveback (x ATR, 0=off)", Group = "Guardrails", DefaultValue = 0.6, MinValue = 0, Step = 0.1)]
         public double MaxGivebackAtr { get; set; }
+
+        [Parameter("Max Giveback % of MFE (0-1, 0=off)", Group = "Guardrails", DefaultValue = 0.40, MinValue = 0, MaxValue = 1.0, Step = 0.05)]
+        public double MaxGivebackMfeRatio { get; set; }
+
+        [Parameter("Max Breakout Dist (x ATR, 0=off)", Group = "Guardrails", DefaultValue = 2.5, MinValue = 0, Step = 0.1)]
+        public double MaxBreakoutDistanceAtr { get; set; }
+
+        [Parameter("Max Dollar Risk Per Trade ($)", Group = "Guardrails", DefaultValue = 12.0, MinValue = 1.0, Step = 1.0)]
+        public double MaxDollarRiskPerTrade { get; set; }
+
+        [Parameter("Max SL Pips (0=auto)", Group = "Guardrails", DefaultValue = 0, MinValue = 0, Step = 10)]
+        public double MaxAbsoluteSlPips { get; set; }
 
         [Parameter("Max Loss Streak", Group = "Guardrails", DefaultValue = 3, MinValue = 0)]
         public int MaxLossStreak { get; set; }
@@ -271,6 +283,7 @@ namespace cAlgo.Robots
             public string tms_timeframe { get; set; }
             public double ask { get; set; }
             public double bid { get; set; }
+            public double atr_pips { get; set; }
             public List<BarData> bars { get; set; }
             public TmsSignals tms { get; set; }        // Macro TMS Bias (H1/H4)
             public TmsSignals chart_tms { get; set; }  // Chart Execution TMS (M15/M5)
@@ -442,6 +455,9 @@ namespace cAlgo.Robots
             macroTms.post_tp_gate_active = _postTpGateActive;
             macroTms.post_tp_gate_side = _postTpGateSide;
 
+            double currentAtrVal = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 ? _atr.Result.LastValue : 10 * Symbol.PipSize;
+            double atrInPipsVal = currentAtrVal / Symbol.PipSize;
+
             var snapshot = new MarketSnapshot
             {
                 bot_id = BotId,
@@ -450,7 +466,7 @@ namespace cAlgo.Robots
                 tms_timeframe = TmsTimeFrame.Name,
                 ask = Symbol.Ask,
                 bid = Symbol.Bid,
-                loss_streak = _lossStreak,
+                atr_pips = Math.Round(atrInPipsVal, 1),
                 day_pnl = Math.Round(_dayPnl, 2),
                 trades_today = _tradesToday,
                 account_number = Account.Number.ToString(),
@@ -1229,13 +1245,11 @@ namespace cAlgo.Robots
 
         private void CheckMaxGiveback()
         {
-            if (MaxGivebackAtr <= 0) return;
-
             double currentAtr = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 
                 ? _atr.Result.LastValue 
                 : 10 * Symbol.PipSize;
             double atrInPips = currentAtr / Symbol.PipSize;
-            double maxGivebackPips = MaxGivebackAtr * atrInPips;
+            double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
             double beTriggerPips = BreakevenTriggerAtr * atrInPips;
 
             foreach (var pos in GetBotPositions())
@@ -1243,17 +1257,26 @@ namespace cAlgo.Robots
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
                 double mfe = _positionMfe[pos.Id];
                 
-                // Giveback protection only activates AFTER the trade has reached meaningful profit
-                double activationThreshold = beTriggerPips > 0 ? beTriggerPips : maxGivebackPips;
+                // Giveback protection only activates AFTER the trade has reached meaningful profit (>= 0.8 ATR)
+                double activationThreshold = beTriggerPips > 0 ? beTriggerPips : 0.8 * atrInPips;
                 if (mfe < activationThreshold) continue;
 
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
 
-                if (giveback >= maxGivebackPips)
+                // 1. Percentage-based MFE Giveback Guard (e.g. max 40% giveback)
+                if (MaxGivebackMfeRatio > 0 && giveback >= (mfe * MaxGivebackMfeRatio))
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[Giveback] Pos#{pos.Id} closed: gave back {giveback:F1}pips (Max={maxGivebackPips:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
+                    if (ShowLogs) Print($"[Giveback %] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {MaxGivebackMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
+                    continue;
+                }
+
+                // 2. ATR-based Giveback Guard
+                if (MaxGivebackAtr > 0 && giveback >= maxGivebackPips)
+                {
+                    pos.Close();
+                    if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={maxGivebackPips:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
                 }
             }
         }
@@ -1459,21 +1482,33 @@ namespace cAlgo.Robots
                 }
             }
 
-            // 5. TDI Bounce Release
+            // 5. TDI Bounce Release (ONLY with minimal pullback)
             if (!released)
             {
-                if (_postTpGateSide == "BUY" && (chartTms.tdi_bounce_bull || macroTms.tdi_bounce_bull))
+                double currentAtr = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 
+                    ? _atr.Result.LastValue 
+                    : 10 * Symbol.PipSize;
+                double atrInPips = currentAtr / Symbol.PipSize;
+                double minPullbackPips = 0.3 * atrInPips;
+                
+                double pullbackDistance = 0;
+                if (_postTpGateSide == "BUY") pullbackDistance = (_postTpExtremePrice - Symbol.Bid) / Symbol.PipSize;
+                if (_postTpGateSide == "SELL") pullbackDistance = (Symbol.Ask - _postTpExtremePrice) / Symbol.PipSize;
+
+                if (pullbackDistance >= minPullbackPips)
                 {
-                    released = true;
-                    reason = "tdi_bounce";
-                }
-                else if (_postTpGateSide == "SELL" && (chartTms.tdi_bounce_bear || macroTms.tdi_bounce_bear))
-                {
-                    released = true;
-                    reason = "tdi_bounce";
+                    if (_postTpGateSide == "BUY" && (chartTms.tdi_bounce_bull || macroTms.tdi_bounce_bull))
+                    {
+                        released = true;
+                        reason = "tdi_bounce_with_pullback";
+                    }
+                    else if (_postTpGateSide == "SELL" && (chartTms.tdi_bounce_bear || macroTms.tdi_bounce_bear))
+                    {
+                        released = true;
+                        reason = "tdi_bounce_with_pullback";
+                    }
                 }
             }
-
             if (released)
             {
                 _postTpGateActive = false;
@@ -1661,6 +1696,13 @@ namespace cAlgo.Robots
                 : (decision.sl_pips > 0 ? decision.sl_pips * Symbol.PipSize / 1.5 : 10 * Symbol.PipSize);
             double atrInPips = atrValue / Symbol.PipSize;
 
+            // Anti-Overextension Guardrail
+            if (MaxBreakoutDistanceAtr > 0 && _orb != null && _orb.breakout_distance_pips > MaxBreakoutDistanceAtr * atrInPips)
+            {
+                if (ShowLogs) Print($"[Guardrail] Blocked: Breakout overextended ({_orb.breakout_distance_pips:F1}p > {MaxBreakoutDistanceAtr * atrInPips:F1}p threshold)");
+                return;
+            }
+
             double slPips = decision.sl_pips;
             double tpPips = decision.tp_pips;
 
@@ -1678,9 +1720,7 @@ namespace cAlgo.Robots
 
             slPips = Math.Max(minSlPips, Math.Min(maxSlPips, slPips));
 
-            // Hybrid Structural OR Stop Loss:
-            // For BUY: Invalidation is at OR Low - Buffer. Distance = (Ask - OR_Low) / PipSize + Buffer
-            // For SELL: Invalidation is at OR High + Buffer. Distance = (OR_High - Bid) / PipSize + Buffer
+            // Hybrid Structural OR Stop Loss with STRICT CLAMPING
             if (UseOrBoundarySl)
             {
                 double bufferPips = OrbBufferPips;
@@ -1689,7 +1729,7 @@ namespace cAlgo.Robots
                     double orSlPips = ((currentPrice - _orLow) / Symbol.PipSize) + bufferPips;
                     if (orSlPips > 0)
                     {
-                        slPips = Math.Max(slPips, orSlPips);
+                        slPips = Math.Max(slPips, Math.Min(maxSlPips, orSlPips));
                     }
                 }
                 else if (decision.action == "SELL" && _orHigh > double.MinValue)
@@ -1697,8 +1737,28 @@ namespace cAlgo.Robots
                     double orSlPips = ((_orHigh - currentPrice) / Symbol.PipSize) + bufferPips;
                     if (orSlPips > 0)
                     {
-                        slPips = Math.Max(slPips, orSlPips);
+                        slPips = Math.Max(slPips, Math.Min(maxSlPips, orSlPips));
                     }
+                }
+            }
+
+            // Ensure slPips never exceeds maxSlPips
+            slPips = Math.Min(slPips, maxSlPips);
+
+            // Absolute SL Cap if configured
+            if (MaxAbsoluteSlPips > 0)
+            {
+                slPips = Math.Min(slPips, MaxAbsoluteSlPips);
+            }
+
+            // Hard Dollar Risk Cap for minimum volume constraints (e.g. 0.01 lot XAUUSD / Crypto / Indices)
+            if (MaxDollarRiskPerTrade > 0)
+            {
+                double maxAllowedSlForMinVol = MaxDollarRiskPerTrade / (Symbol.VolumeInUnitsMin * Symbol.PipValue);
+                if (slPips > maxAllowedSlForMinVol)
+                {
+                    if (ShowLogs) Print($"[Guardrail] SL clamped from {slPips:F1}p to {maxAllowedSlForMinVol:F1}p to respect MaxDollarRisk ${MaxDollarRiskPerTrade:F2}");
+                    slPips = maxAllowedSlForMinVol;
                 }
             }
 

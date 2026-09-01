@@ -71,15 +71,15 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Phát Hiện Tương Quan**: Chặn các vị thế có tương quan cao
 - **Giới Hạn Lỗ Hàng Ngày**: Tự động dừng giao dịch sau khi lỗ tối đa
 
-### 🛡️ Quản Lý Rủi Ro
-- **Bộ Nhớ Vị Thế**: Theo dõi MFE (Maximum Favorable Excursion)
-- **Breakeven Tự Động**: Di chuyển SL về entry sau ngưỡng lợi nhuận
-- **Trailing Stop**: Điều chỉnh SL động trong các giao dịch có lãi
-- **Bảo Vệ Giveback Tối Đa**: Đóng vị thế nếu giveback vượt ngưỡng
+- **Bộ Nhớ Vị Thế**: Theo dõi MFE (Maximum Favorable Excursion) từng tick
+- **Breakeven Tự Động**: Tự động dời SL về hòa vốn (+0.1x ATR offset) khi lợi nhuận đạt $\ge 0.8\times$ ATR
+- **Trailing Stop**: Điều chỉnh SL động bám sát đường giá bắt đầu từ $1.2\times$ ATR (trail $0.7\times$ ATR)
+- **Khóa Lợi Nhuận & Bảo Vệ Giveback**: Đóng vị thế chốt lời ngay nếu mất $\ge 40\%$ số lãi cao nhất (MFE) hoặc $\ge 0.6\times$ ATR
+- **Bộ Lọc Chống Quá Mức (Anti-Overextension Guard)**: Chặn hoàn toàn các lệnh phá vỡ đã chạy quá $2.5\times$ ATR từ vùng OR
+- **Giới Hạn Trần Rủi Ro (Max Dollar Risk Cap)**: Khống chế mức lỗ tối đa ($12.00) trên mỗi lệnh đối với các tài sản có khối lượng tối thiểu lớn
 - **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
-- **Cycle Gating (Cost Gate)**: Tự động bỏ qua gọi LLM khi ngoài phiên, giá trong OR hoặc đang chuỗi thua — tiết kiệm 80-90% chi phí API
+- **Cycle Gating (Cost Gate)**: Tự động bỏ qua gọi LLM khi ngoài phiên, giá trong OR, quá xa vùng cản hoặc đang chuỗi thua — tiết kiệm 80-90% chi phí API
 - **Trend TP Disabled**: Tự động hủy TP cố định khi thị trường có xu hướng mạnh (`trending`) để gồng lời tối đa bằng Trailing SL & Giveback Floor
-- **Daily Rotating Logs**: Ghi toàn bộ nhật ký suy luận của Agent, quyết định Cycle Gate và Snapshot vào file `logs/agent_YYYY-MM-DD.log` (lưu 14 ngày)
 
 ### ⏰ Quản Lý Phiên
 - **Phiên Giao Dịch**: Thời gian phiên có thể cấu hình (London, NY, Tokyo)
@@ -886,11 +886,13 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
   - **`forming`**: Giai đoạn mở phiên tích lũy ($< 6$ nến).
 
 ### Mô Hình Vào Lệnh & Kỷ Luật Định Lượng
-- **Model 1: Phá vỡ xung lực trực tiếp (Direct Breakout)**: Giá đóng cửa dứt khoát ra ngoài Opening Range trong cửa sổ vào lệnh ($\le 5$ nến).
-- **Model 2: Hồi quy + TDI Bounce (Pullback Continuation)**: Khi breakout đã cũ ($> 5$ nến), chỉ cho phép vào lệnh nếu có tín hiệu **TDI Bounce** chuẩn xác (`tdi_bounce_bull` / `tdi_bounce_bear`) VÀ giá được xác nhận cấu trúc nằm sát/đúng chiều EMA5 (`price_above_ema` cho BUY / `price_below_ema` cho SELL), ngăn chặn việc vào lệnh tại các vùng giá kiệt sức ở đáy/đỉnh.
+- **Model 1: Phá vỡ xung lực trực tiếp (Direct Breakout)**: Giá đóng cửa dứt khoát ra ngoài Opening Range trong cửa sổ vào lệnh ($\le 5$ nến) và khoảng cách chưa bị quá mua/quá bán ($\le 2.5\times$ ATR).
+- **Model 2: Hồi quy + TDI Bounce (Pullback Continuation)**: Khi breakout đã cũ ($5 < \text{nến} \le 10$), chỉ cho phép vào lệnh nếu có tín hiệu **TDI Bounce** chuẩn xác (`tdi_bounce_bull` / `tdi_bounce_bear`), giá nằm đúng chiều và gần EMA5 (`price_above_ema` cho BUY / `price_below_ema` cho SELL), và khoảng cách chưa quá mức. Ngăn chặn triệt để việc vào lệnh tại các vùng giá kiệt sức ở đáy/đỉnh.
+- **Quy tắc ANTI-OVEREXTENSION**: TUYỆT ĐỐI KHÔNG mua/bán khi giá đã bứt phá quá xa ($> 2.5\times$ ATR, hoặc $> 1500$ pips với Vàng / $\$15.00$, $> 30,000$ pips với BTC, $> 1500$ pips với Chỉ số, $> 50$ pips với Forex) so với biên OR. Chặn hoàn toàn việc đu đỉnh/bán đáy.
 - **Ngoại lệ BIAS-FRESH**: Khi giao cắt TDI vừa mới xảy ra ($\le 1$ nến trước), xung lực bứt phá sớm được xem là **bắt đầu một con sóng mới** chứ không phải nến quá mua/quá bán → Ưu tiên vào lệnh ngay.
 - **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi/bounce hợp lệ, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback có xác nhận.
-- **Position Breathing Room & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn (đặc biệt với Crypto và Chỉ số). Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế Giveback Floor chỉ kích hoạt với các lệnh thắng lớn ($\ge 1.5\times$ ATR hoặc đã chạm BE trigger) để chốt lời khi giveback vượt ngưỡng kèm đảo chiều xác nhận.
+- **Cửa chặn Post-TP Gate (Anti-FOMO)**: Sau khi một lệnh vừa chạm TP hoặc chốt lời lớn, hệ thống khóa chặt hướng giao dịch đó và chỉ mở lại khi có nhịp Pullback thực sự ($\ge 0.5\times$ ATR), giá chạm lại OR hoặc đảo chiều xu hướng.
+- **Khóa Lợi Nhuận & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn. Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế bảo vệ kích hoạt khi lệnh đạt lãi $\ge 0.8\times$ ATR: nếu giá quay đầu làm mất $\ge 40\%$ số lãi cao nhất (MFE) hoặc xung lực đảo chiều, bot đóng lệnh ngay lập tức để bảo vệ lợi nhuận.
 ### Quy Tắc Vào Lệnh
 
 ```
@@ -911,10 +913,9 @@ ELSE:
 | Đảo chiều TDI xác nhận (TDI cắt ngược đường Đỏ / Quá mua-quá bán đảo chiều mất EMA) | CLOSE_ALL |
 | Bias đảo ngược | Tự động đóng |
 | Phiên kết thúc (EOD) | Tự động đóng toàn bộ lệnh (EOD Force-Flatten safety net) |
-| Lợi nhuận ≥ 1.2x ATR | Di chuyển SL về breakeven (+0.1x ATR offset) |
-| Lợi nhuận ≥ 2.0x ATR | Trail SL 1.0x ATR |
-| Giveback ≥ 1.0x ATR (sau khi đã đạt ngưỡng BE) | Tự động đóng (Max giveback protection) |
-
+| Lợi nhuận $\ge 0.8\times$ ATR | Di chuyển SL về breakeven (+0.1x ATR offset) |
+| Lợi nhuận $\ge 1.2\times$ ATR | Trail SL $0.7\times$ ATR |
+| Giveback $\ge 40\%$ đỉnh lãi MFE hoặc $\ge 0.6\times$ ATR | Tự động đóng (Khóa lợi nhuận & bảo vệ Giveback) |
 ---
 
 ## ⚙️ Cấu Hình
@@ -946,12 +947,10 @@ ELSE:
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
 | Flat Threshold | 0.01 | Độ phẳng TDI |
-| Checkmark Threshold | 0.0 | Ngưỡng hook/checkmark |
-| Breakeven Trigger | 1.2x ATR | Lợi nhuận (hệ số ATR) để dời SL về hòa vốn |
+| Breakeven Trigger | 0.8x ATR | Lợi nhuận (hệ số ATR) để dời SL về hòa vốn |
 | Breakeven Offset | 0.1x ATR | Khoảng offset bảo toàn lợi nhuận khi về BE |
-| Trail Trigger | 2.0x ATR | Lợi nhuận (hệ số ATR) để kích hoạt Trailing Stop |
-| Trail Distance | 1.0x ATR | Khoảng cách SL bám theo giá (hệ số ATR) |
-
+| Trail Trigger | 1.2x ATR | Lợi nhuận (hệ số ATR) để kích hoạt Trailing Stop |
+| Trail Distance | 0.7x ATR | Khoảng cách SL bám theo giá (hệ số ATR) |
 #### Phiên
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
@@ -974,15 +973,17 @@ ELSE:
 #### Guardrails
 | Tham Số | Mặc Định | Mô Tả |
 |---------|----------|-------|
-| Min SL | 20.0 pips | Stop loss tối thiểu |
-| Max SL | 80.0 pips | Stop loss tối đa |
-| Min TP | 30.0 pips | Take profit tối thiểu |
-| Max TP | 250.0 pips | Take profit tối đa |
-| Max Giveback | 30.0 pips | Ngưỡng giveback để đóng lệnh |
-| Max Loss Streak | 3 | Chặn sau N lần thua |
+| Min SL | 0.8x ATR | Hệ số Stop loss tối thiểu |
+| Max SL | 3.0x ATR | Hệ số Stop loss tối đa |
+| Min TP | 1.0x ATR | Hệ số Take profit tối thiểu |
+| Max TP | 6.0x ATR | Hệ số Take profit tối đa |
+| Max Giveback (ATR) | 0.6x ATR | Ngưỡng giveback theo ATR để đóng lệnh |
+| Max Giveback (% MFE) | 0.40 (40%) | Tỷ lệ giveback tối đa cho phép từ đỉnh lãi MFE |
+| Max Breakout Dist | 2.5x ATR | Khoảng cách bứt phá tối đa cho phép vào lệnh |
+| Max Dollar Risk | $12.00 | Giới hạn trần mức lỗ tối đa bằng tiền mỗi lệnh |
+| Max Loss Streak | 3 | Chặn sau N lần thua liên tiếp |
 | Bias Flip Exit | true | Tự động đóng khi bias thay đổi |
 | Trend TP Disabled | true | Tự động hủy TP cố định khi trending |
-
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency

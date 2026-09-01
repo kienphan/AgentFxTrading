@@ -185,6 +185,7 @@ class MarketSnapshot(BaseModel):
     tms_timeframe: Optional[str] = "Hour"
     ask: float
     bid: float
+    atr_pips: Optional[float] = None
     bars: List[BarData]
     tms: TmsSignals
     chart_tms: Optional[TmsSignals] = None
@@ -285,36 +286,32 @@ You analyze market structure and propose trade actions. The deterministic execut
 - A breakout that has re-entered the range is reported as NO breakout (direction = none) — never trade a failed breakout.
 
 ### 3. ENTRY MODELS (DIRECT BREAKOUT vs RETEST + TDI BOUNCE)
-- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`).
+- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`) and distance is NOT overextended (`breakout_distance <= 2.5x ATR`).
 - **Model 2: Breakout Retest + TDI Bounce (High R:R Continuation)**:
   - Price broke out of OR, pulled back toward OR boundary / EMA5 without breaking opposite structure.
   - **TDI Bounce Trigger**: `tdi_bounce_bull = true` (Bullish continuation) or `tdi_bounce_bear = true` (Bearish continuation).
-  - **Strict Price Action Verification**: A TDI Bounce is ONLY valid when price is properly positioned relative to the 5 EMA (`price_above_ema = true` for BUY, `price_below_ema = true` for SELL). NEVER enter a bounce trade when price is overextended far from EMA5 or floating at extreme exhaustion levels without pullback confirmation.
-  - When a valid, verified TDI Bounce occurs in alignment with Macro Bias, this confirms trend continuation after pullback -> Favors BUY / SELL even if `bars_since_breakout > 5`.
+  - **Strict Price Action Verification**: A TDI Bounce is ONLY valid when price is properly positioned relative to the 5 EMA (`price_above_ema = true` for BUY, `price_below_ema = true` for SELL), `bars_since_breakout <= 10`, and distance is NOT overextended. NEVER enter a bounce trade when price is overextended far from EMA5 or floating at extreme exhaustion levels.
 ### 4. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
 - **er_session / er_recent**: Kaufman Efficiency Ratio (|net move| / total path, 1.0 = pure directional trend, ~0 = pure oscillation).
 - **or_flips**: Number of times price broke outside OR and closed back inside (flips >= 5 indicates chop trap day).
 {regime_guideline}
 
 ### 5. Quantitative Edge-Case Rules (Battle-Tested Discipline)
+- **ANTI-OVEREXTENSION RULE**: NEVER buy or sell when price is already overextended (> 2.5x ATR, or > 1500 pips on Gold / $15.00, > 30,000 pips on BTC, > 1500 pips on Indices, > 50 pips on Forex) from the OR boundary. Chasing extreme exhaustion moves is strictly prohibited -> Declare HOLD.
 - **BIAS-FRESH Exception**: When a TMS cross JUST occurred (bars_since_cross <= 1), treat early breakout momentum as the START of a new trend leg rather than an extended move. Entering in the fresh bias direction is strongly favored.
-- **TDI BOUNCE EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce** is confirmed (`tdi_bounce_bull` or `tdi_bounce_bear`), the pullback has occurred and resolved in favor of the trend -> Enter on the bounce.
+- **TDI BOUNCE EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce** is confirmed (`tdi_bounce_bull` or `tdi_bounce_bear`) AND `bars_since_breakout <= 10` AND price is near EMA5, the pullback has occurred and resolved in favor of the trend -> Enter on the bounce.
 - **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback/bounce, DO NOT chase at extremes. Declare HOLD.
+- **POST-TP GATE (Anti-FOMO)**: Once a trade hits Take Profit or closes after a major win, the deterministic engine ARMS a blocker (`post_tp_gate_active = true`) preventing immediate re-entry in the same direction (`post_tp_gate_side`). It unlocks automatically only when a real Pullback (>= 0.5x ATR), OR Touch, or Bias Flip occurs. Never re-enter immediately at the peak of a move without a structural pullback.
 - **POSITION BREATHING ROOM & PATIENCE**:
   - Trading requires room for normal market fluctuations. Never prematurely cut an open position on minor pullbacks or single-candle noise if price is still structurally valid and aligned with the macro trend. Stop Loss and Trailing Stop are dynamically managed by the engine via ATR.
-- **POSITION MEMORY & GIVEBACK FLOOR**:
+- **POSITION MEMORY & GIVEBACK FLOOR (PROFIT LOCK-IN)**:
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
-  - **Golden Rule**: Giveback protection ONLY applies to LARGE winning trades that reached significant profit (e.g. >= 1.5x ATR or BE trigger reached) and are now giving back >= 60-70% of peak gains accompanied by confirmed trend reversal. Do NOT panic-close trades that have only moved slightly or are oscillating near entry.
-- **ASSET SCALE AWARENESS (CRYPTO / INDICES / METALS / FOREX)**:
-  - Pip definitions vary widely across asset classes:
-    * Forex (EURUSD, GBPUSD, etc.): 1 pip = 0.0001 (50 pips = 0.5% move).
-    * Crypto (BTCUSD, ETHUSD): 1 pip = $0.01 (500 pips on ETH = $5.00 = ~0.2% move; 1000 pips on BTC = $10.00 = ~0.01% move).
-    * Indices (US30, DE40, USTEC): 1 pip = 0.1 to 1.0 index point.
-    * Metals (XAUUSD): 1 pip = $0.01 ($1.00 gold move = 100 pips).
-  - On Crypto and Indices, several hundred pips is minimal noise (a small fraction of 1 ATR). Evaluate the actual chart trend structure rather than panicking over raw pip counts.
-- **POST-TP GATE (Anti-FOMO)**: Once a trade hits Take Profit, the deterministic engine ARMS a blocker (`post_tp_gate_active = true`) preventing immediate re-entry in the same direction (`post_tp_gate_side`). It unlocks automatically only when a Pullback, OR Touch, TDI Bounce, or Bias Flip occurs.
-  - **Golden Rule**: If `post_tp_gate_active` is true and you want to enter in the `post_tp_gate_side` direction, you MUST declare HOLD and wait for the pullback/bounce to unlock the gate.
+  - **Golden Rule**: Giveback protection activates on any trade that reached significant profit (MFE >= 0.8x ATR). If price gives back >= 40% of peak MFE and momentum stalls/reverses (TDI cross / HA color flip), declare CLOSE_ALL immediately to lock in profit. NEVER let a winning trade turn into a loss or give back > 40% of peak MFE.
+- **ASSET SCALE & RISK DISCIPLINE (CRYPTO / INDICES / METALS / FOREX)**:
+  - Stop Loss is hard-capped by ATR guardrails and max dollar risk ($10–$15 max per trade on a $700 account).
+  - On Gold (XAUUSD), 1 pip = $0.01. Do NOT trade with massive SLs > 1200 pips ($12).
+  - On Crypto and Indices, several hundred pips is minimal noise (a small fraction of 1 ATR). Evaluate the actual chart trend structure.
 ### 6. Risk & Sizing (handled by the engine — context only)
 - SL/TP distances are computed by the cBot ATR engine (ATR on the chart timeframe); you do NOT provide them.
 - Position volume is computed by the engine from risk-per-trade % and ATR-based SL. `volume_lots` you return is a *relative* suggestion only and may be overridden.
@@ -333,7 +330,7 @@ You analyze market structure and propose trade actions. The deterministic execut
 ### Exit Criteria:
 1. session.phase = "ending" -> CLOSE_ALL (EOD safety).
 2. Confirmed Reversal Signal: exit_long = true (for BUY) or exit_short = true (for SELL) indicating a true TDI cross / momentum reversal -> CLOSE_ALL.
-3. Significant Giveback on Big Winner: Trade achieved major profit (MFE >= 1.5 ATR / BE triggered) and gives back >= 60% of peak with clear reversal -> CLOSE_ALL.
+3. Significant Giveback on Winning Trade: Trade achieved profit (MFE >= 0.8x ATR) and gives back >= 40% of peak with momentum stall or reversal -> CLOSE_ALL (Lock-in profit).
 4. Otherwise (trade in normal consolidation or healthy pullback within trend) -> HOLD (let ATR SL/TP and Trailing Stop manage the trade).
 
 ## Output Format (JSON only)
@@ -385,9 +382,26 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 tp_pips=0.0,
                 reason=f"Cycle gate: TMS exit signal triggered ({snapshot.tms.exit_reason})"
             )
+        # Check Profit Lock-in Giveback Guard (MFE >= 0.8 ATR and Giveback >= 40%)
+        atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else 30.0
+        pos = snapshot.position
+        if pos.mfe_pips >= 0.8 * atr_ref and pos.giveback_pips >= pos.mfe_pips * 0.40:
+            chart_tms = snapshot.chart_tms or snapshot.tms
+            momentum_stall = False
+            if pos_side == "BUY" and (chart_tms.ha_turned_red or chart_tms.exit_long or chart_tms.green_tf_slope < 0):
+                momentum_stall = True
+            elif pos_side == "SELL" and (chart_tms.ha_turned_green or chart_tms.exit_short or chart_tms.green_tf_slope > 0):
+                momentum_stall = True
+            if momentum_stall:
+                return AgentDecision(
+                    action="CLOSE_ALL",
+                    volume_lots=0.0,
+                    sl_pips=0.0,
+                    tp_pips=0.0,
+                    reason=f"Cycle gate: Profit lock-in triggered (MFE={pos.mfe_pips:.1f}p, gave back {pos.giveback_pips:.1f}p >= 40% with momentum stall)"
+                )
         # Position is open and needs active LLM monitoring (momentum slope, MFE giveback, etc.)
         return None
-
     # 2. When we DO NOT have an open position (Flat):
     # Only candidate setups with aligned TMS + ORB should reach LLM.
 
@@ -482,6 +496,27 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
         if bounce_signal and chart_tms.price_below_ema:
             has_bounce = True
 
+    # Gate 2.4.1: Anti-Overextension / Max Breakout Distance Filter
+    atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else None
+    sym_upper = snapshot.symbol.upper()
+    if "XAU" in sym_upper or "GOLD" in sym_upper:
+        max_breakout_dist = min(atr_ref * 2.5, 1500.0) if atr_ref else 1500.0
+    elif any(cr in sym_upper for cr in ["BTC", "CRYPTO"]):
+        max_breakout_dist = min(atr_ref * 2.5, 30000.0) if atr_ref else 30000.0
+    elif any(idx in sym_upper for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"]):
+        max_breakout_dist = min(atr_ref * 2.5, 1500.0) if atr_ref else 1500.0
+    else:
+        max_breakout_dist = min(atr_ref * 2.5, 60.0) if atr_ref else 60.0
+
+    if orb.breakout_distance_pips > max_breakout_dist:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Breakout overextended ({orb.breakout_distance_pips:.1f}p > max {max_breakout_dist:.1f}p threshold). Avoid chasing at extremes."
+        )
+
     if not orb.is_decisive and not has_bounce:
         return AgentDecision(
             action="HOLD",
@@ -491,15 +526,24 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason=f"Cycle gate: Breakout not decisive ({orb.breakout_distance_pips:.1f}p < threshold)"
         )
 
-    if not orb.in_entry_window and not has_bounce:
-        return AgentDecision(
-            action="HOLD",
-            volume_lots=0.01,
-            sl_pips=0.0,
-            tp_pips=0.0,
-            reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no qualified Bounce"
-        )
-
+    # Model 2 Bounce is strictly capped at bars_since_breakout <= 10
+    if not orb.in_entry_window:
+        if orb.bars_since_breakout > 10:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Breakout is stale (bars_since_breakout={orb.bars_since_breakout} > 10). Re-entry prohibited."
+            )
+        if not has_bounce:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=f"Cycle gate: Outside entry window (bars_since_breakout={orb.bars_since_breakout}) with no qualified Bounce"
+            )
     # Gate 2.5: Directional Alignment Gate (TMS vs ORB)
     orb_dir = orb.breakout_direction.lower()
     if bias == "BULLISH" and orb_dir != "up":

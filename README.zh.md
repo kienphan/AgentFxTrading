@@ -71,15 +71,15 @@ AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过
 - **相关性检测**：阻止高度相关的头寸
 - **每日亏损限制**：达到最大亏损后自动停止交易
 
-### 🛡️ 风险管理
-- **头寸记忆**：追踪MFE（最大有利偏移）
-- **自动保本**：利润达到阈值后将SL移至入场价
-- **追踪止损**：在盈利交易中动态调整SL
-- **最大回撤保护**：如果回撤超过阈值则关闭头寸
+- **头寸记忆**：逐Tick追踪MFE（最大有利偏移）
+- **自动保本**：利润达到 $\ge 0.8\times$ ATR 后自动将SL移至入场价（+0.1x ATR锁利）
+- **追踪止损**：利润达到 $1.2\times$ ATR 时动态启动追踪止损（回撤距离 $0.7\times$ ATR）
+- **利润锁定与回撤保护**：当利润回撤达到最高浮盈 (MFE) 的 $\ge 40\%$ 或 $\ge 0.6\times$ ATR 时强制平仓锁利
+- **防超幅突破过滤 (Anti-Overextension Guard)**：严禁追入突破距离超过开盘区间 $2.5\times$ ATR 的极端耗竭走势
+- **单笔亏损硬顶 (Max Dollar Risk Cap)**：针对最小手数波动过大的品种强制限制单笔最大金额亏损 ($12.00)
 - **连亏保护**：连续3次亏损后阻止入场
-- **周期门控 (Cost Gate)**：在时段外、开盘区间内或连亏时自动跳过LLM调用——节省80-90%的API费用
+- **周期门控 (Cost Gate)**：在时段外、开盘区间内、超幅耗竭或连亏时自动跳过LLM调用——节省80-90%的API费用
 - **趋势取消固定止盈 (Trend TP Disabled)**：在强趋势 (`trending`) 状态下自动移除固定TP，配合追踪止损与回撤底线充分捕获单边行情
-- **每日轮转日志**：将所有Agent推理、周期门控操作及市场快照持久化至 `logs/agent_YYYY-MM-DD.log`（保留14天）
 
 ### ⏰ 交易时段管理
 - **交易时段**：可配置的时段时间（伦敦、纽约、东京）
@@ -877,11 +877,13 @@ ORB提供**精确的入场时机**：
   - **`forming`**：开盘初期区间形成阶段 ($< 6$ 根K线)。
 
 ### 入场模型与量化纪律 (Entry Models)
-- **Model 1: 直接动量突破 (Direct Momentum Breakout)**: 价格在入场窗口期内（$\le 5$ 根K线）以强劲动量决定性突破开盘区间边界。
-- **Model 2: 突破回踩 + TDI反弹 (Pullback Continuation)**: 当突破时间已久（$> 5$ 根K线），仅在出现经过验证的 **TDI Bounce**（`tdi_bounce_bull` / `tdi_bounce_bear`）且价格在结构上贴近5 EMA（多头为 `price_above_ema` / 空头为 `price_below_ema`）时才允许入场，杜绝在极值衰竭点追单。
+- **Model 1: 直接动量突破 (Direct Momentum Breakout)**: 价格在入场窗口期内（$\le 5$ 根K线）以强劲动量决定性突破开盘区间边界，且突破距离未超幅（$\le 2.5\times$ ATR）。
+- **Model 2: 突破回踩 + TDI反弹 (Pullback Continuation)**: 当突破时间较久（$5 < \text{K线} \le 10$），仅在出现经过验证的 **TDI Bounce**（`tdi_bounce_bull` / `tdi_bounce_bear`）且价格在结构上贴近5 EMA、且未超幅时才允许入场，杜绝在极值衰竭点追单。
+- **防超幅规则 (ANTI-OVEREXTENSION)**：当价格已突破过远（$> 2.5\times$ ATR，或黄金 $> 1500$ pips / $\$15.00$、BTC $> 30,000$ pips、股指 $> 1500$ pips、外汇 $> 50$ pips）时，**严禁追单** → 强制 `HOLD`。
 - **BIAS-FRESH 新偏向例外**：当TDI交叉刚刚发生（$\le 1$ 根K线前），早期的突破冲力被视为**新趋势浪的起点**而非追高 → 优先顺势入场。
 - **ANTI-CHASE 防追高规则**：当价格已在旧偏向中突破 $\ge 4$ 根K线且未出现有效回调/反弹时，**严禁在极值位追单** → 保持 `HOLD` 等待结构化回调。
-- **持仓呼吸空间与回撤底线 (Position Breathing Room & Giveback Floor)**：为持仓在短期正常波动（特别是加密货币与股指的噪点）中提供足够呼吸空间。逐Tick追踪最高浮盈 ($MFE$)，仅在大盈利头寸（$\ge 1.5\times$ ATR 或触及保本后）且出现明确反转信号时才触发回撤平仓保护。
+- **止盈后门控 (Post-TP Gate Anti-FOMO)**：在订单止盈或大幅获利平仓后，严禁立即同向再入场，必须等待实质性回调（$\ge 0.5\times$ ATR）、触碰OR边界或偏向反转后方可解锁。
+- **利润锁定与回撤底线 (Profit Lock-In & Giveback Floor)**：为持仓在短期正常波动中提供呼吸空间。当浮盈达到 $\ge 0.8\times$ ATR 后，若回撤达最高浮盈的 $\ge 40\%$ 或动量减速，立即平仓锁定利润。
 ### 入场规则
 
 ```
@@ -902,10 +904,9 @@ ELSE:
 | 确认TDI反转（反向穿越Red线 / 超买超卖反转跌破EMA） | CLOSE_ALL |
 | 偏向反转 | 自动平仓 |
 | 时段结束（EOD） | 自动全平（EOD Force-Flatten安全网） |
-| 利润≥1.2x ATR | 移动SL至保本（+0.1x ATR锁利） |
-| 利润≥2.0x ATR | 追踪SL 1.0x ATR |
-| 回撤≥1.0x ATR（触及BE后） | 自动平仓（最大回撤保护） |
-
+| 利润 $\ge 0.8\times$ ATR | 移动SL至保本（+0.1x ATR锁利） |
+| 利润 $\ge 1.2\times$ ATR | 追踪SL $0.7\times$ ATR |
+| 利润回撤 $\ge 40\%$ MFE 或 $\ge 0.6\times$ ATR | 自动平仓（利润锁定保护） |
 ---
 
 ## ⚙️ 配置
@@ -937,11 +938,10 @@ ELSE:
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
 | Flat Threshold | 0.01 | TDI平坦度 |
-| Breakeven Trigger | 30.0 pips | 移动SL的利润 |
-| Breakeven Offset | 2.0 pips | 保本锁利距离 |
-| Trail Trigger | 50.0 pips | 开始追踪的利润 |
-| Trail Distance | 25.0 pips | SL与价格的距离 |
-
+| Breakeven Trigger | 0.8x ATR | 移动SL至保本的利润 |
+| Breakeven Offset | 0.1x ATR | 保本锁利距离 |
+| Trail Trigger | 1.2x ATR | 开始追踪的利润 |
+| Trail Distance | 0.7x ATR | SL与价格的距离 |
 #### 时段
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
@@ -964,15 +964,17 @@ ELSE:
 #### 防护栏
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
-| Min SL | 20.0 pips | 最小止损 |
-| Max SL | 80.0 pips | 最大止损 |
-| Min TP | 30.0 pips | 最小止盈 |
-| Max TP | 250.0 pips | 最大止盈 |
-| Max Giveback | 30.0 pips | 利润回撤强制平仓阈值 |
-| Max Loss Streak | 3 | N次亏损后阻止 |
+| Min SL | 0.8x ATR | 最小止损倍数 |
+| Max SL | 3.0x ATR | 最大止损倍数 |
+| Min TP | 1.0x ATR | 最小止盈倍数 |
+| Max TP | 6.0x ATR | 最大止盈倍数 |
+| Max Giveback (ATR) | 0.6x ATR | 基于 ATR 的利润回撤平仓阈值 |
+| Max Giveback (% MFE) | 0.40 (40%) | 允许从最高浮盈回撤的最大比例 |
+| Max Breakout Dist | 2.5x ATR | 允许入场的最大突破距离 |
+| Max Dollar Risk | $12.00 | 每笔交易最大亏损金额硬顶 |
+| Max Loss Streak | 3 | N次连亏后阻止 |
 | Bias Flip Exit | true | 偏向变化时自动平仓 |
 | Trend TP Disabled | true | 强趋势行情下自动取消固定TP |
-
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency

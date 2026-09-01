@@ -71,12 +71,14 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Daily Loss Limits**: Automatic trading halt after max loss
 
 ### 🛡️ Risk Management
-- **Position Memory**: Tracks MFE (Maximum Favorable Excursion)
-- **Auto Breakeven**: Moves SL to entry after profit threshold
-- **Trailing Stop**: Dynamic SL adjustment during profitable trades
-- **Max Giveback Protection**: Closes position if giveback exceeds threshold
+- **Position Memory**: Tracks MFE (Maximum Favorable Excursion) on every tick
+- **Auto Breakeven**: Moves SL to entry (+0.1x ATR offset) when profit reaches $\ge 0.8\times$ ATR
+- **Trailing Stop**: Dynamic SL adjustment starting at $1.2\times$ ATR (trailing by $0.7\times$ ATR)
+- **Profit Lock-in & Giveback Protection**: Closes position if profit gives back $\ge 40\%$ of peak MFE or $\ge 0.6\times$ ATR
+- **Anti-Overextension Guard**: Blocks chasing breakouts extended beyond $2.5\times$ ATR from the OR boundary
+- **Max Dollar Risk Cap**: Hard cap preventing single-trade losses from exceeding risk limits on minimum volume assets
 - **Loss Streak Protection**: Blocks entries after 3 consecutive losses
-- **Cycle Gating (Cost Gate)**: Deterministically bypasses LLM calls when outside session, inside OR, or during loss streak — saving 80-90% API tokens
+- **Cycle Gating (Cost Gate)**: Deterministically bypasses LLM calls when outside session, inside OR, overextended, or during loss streak — saving 80-90% API tokens
 - **Trend TP Disabled**: Automatically disables fixed TP during trending regimes to ride the full move with Trailing SL & Giveback Floor
 - **Daily Rotating Logs**: Persists all agent reasoning, cycle gate actions, and market snapshots to `logs/agent_YYYY-MM-DD.log` (14-day retention)
 
@@ -915,11 +917,13 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
   - **`forming`**: Early session range formation ($< 6$ bars).
 
 ### Entry Models & Quantitative Discipline
-- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond Opening Range boundary with strong momentum within entry window ($\le 5$ bars).
-- **Model 2: Breakout Retest + TDI Bounce (Pullback Continuation)**: When a breakout is aged ($> 5$ bars), entry is only permitted if a verified **TDI Bounce** occurs (`tdi_bounce_bull` / `tdi_bounce_bear`) and price is structurally confirmed near EMA5 (`price_above_ema` for BUY / `price_below_ema` for SELL), preventing entries at overextended exhaustion points.
+- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond Opening Range boundary with strong momentum within entry window ($\le 5$ bars) and distance is not overextended ($\le 2.5\times$ ATR).
+- **Model 2: Breakout Retest + TDI Bounce (Pullback Continuation)**: When a breakout is aged ($5 < \text{bars} \le 10$), entry is only permitted if a verified **TDI Bounce** occurs (`tdi_bounce_bull` / `tdi_bounce_bear`), price is structurally confirmed near EMA5 (`price_above_ema` for BUY / `price_below_ema` for SELL), and distance is not overextended. Prevents entries at exhaustion points.
+- **Anti-Overextension Rule**: NEVER buy or sell when price is already overextended ($> 2.5\times$ ATR, or $> 1500$ pips on Gold / $\$15.00$, $> 30,000$ pips on BTC, $> 1500$ pips on Indices, $> 50$ pips on Forex) from the OR boundary. Chasing extreme exhaustion moves is strictly prohibited.
 - **BIAS-FRESH Exception**: When a TDI cross just occurred ($\le 1$ bar ago), early momentum is treated as the **start of a fresh trend leg**, not an extended move → Favors entering immediately.
 - **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a valid pullback/bounce, **DO NOT chase** at extremes → Holds and waits for a structured retest.
-- **Position Breathing Room & Giveback Floor**: Provides breathing room for normal intraday fluctuations (especially on Crypto and Indices). Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on large winning trades ($\ge 1.5\times$ ATR or BE trigger reached) to lock in gains if giveback exceeds threshold with confirmed reversal.
+- **Post-TP Gate (Anti-FOMO)**: Once a trade hits TP or closes after a major win, re-entry in the same direction is strictly blocked until a genuine structural pullback ($\ge 0.5\times$ ATR), OR touch, or bias flip occurs.
+- **Profit Lock-In & Giveback Floor**: Provides breathing room for normal intraday fluctuations. Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on winning trades ($MFE \ge 0.8\times$ ATR) to lock in gains if giveback reaches $\ge 40\%$ of peak MFE or momentum stalls/reverses.
 ### Entry Rules
 
 ```
@@ -940,10 +944,9 @@ ELSE:
 | Confirmed TDI Reversal (Cross opposite Red / Severe OB-OS reversal losing EMA) | CLOSE_ALL |
 | Bias reverses | Auto close |
 | Session ends (EOD) | Auto close (EOD Force-Flatten safety net) |
-| Profit ≥ 1.2x ATR | Move SL to breakeven (+0.1x ATR offset) |
-| Profit ≥ 2.0x ATR | Trail SL by 1.0x ATR |
-| Giveback ≥ 1.0x ATR (after reaching BE trigger) | Auto close (Max giveback protection) |
-
+| Profit $\ge 0.8\times$ ATR | Move SL to breakeven (+0.1x ATR offset) |
+| Profit $\ge 1.2\times$ ATR | Trail SL by 0.7x ATR |
+| Giveback $\ge 40\%$ of peak MFE or $\ge 0.6\times$ ATR | Auto close (Profit lock-in protection) |
 ---
 
 ## ⚙️ Configuration
@@ -975,11 +978,10 @@ ELSE:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Flat Threshold | 0.01 | TDI flatness |
-| Breakeven Trigger | 30.0 pips | Profit to move SL |
-| Breakeven Offset | 2.0 pips | Profit locked at breakeven |
-| Trail Trigger | 50.0 pips | Profit to start trailing |
-| Trail Distance | 25.0 pips | SL distance from price |
-
+| Breakeven Trigger | 0.8x ATR | Profit to move SL to breakeven |
+| Breakeven Offset | 0.1x ATR | Profit locked at breakeven |
+| Trail Trigger | 1.2x ATR | Profit to start trailing |
+| Trail Distance | 0.7x ATR | SL distance from price |
 #### Session
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -1002,12 +1004,15 @@ ELSE:
 #### Guardrails
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Min SL | 20.0 pips | Minimum stop loss |
-| Max SL | 80.0 pips | Maximum stop loss |
-| Min TP | 30.0 pips | Minimum take profit |
-| Max TP | 250.0 pips | Maximum take profit |
-| Max Giveback | 30.0 pips | Giveback threshold to force close |
-| Max Loss Streak | 3 | Block after N losses |
+| Min SL | 0.8x ATR | Minimum stop loss multiplier |
+| Max SL | 3.0x ATR | Maximum stop loss multiplier |
+| Min TP | 1.0x ATR | Minimum take profit multiplier |
+| Max TP | 6.0x ATR | Maximum take profit multiplier |
+| Max Giveback (ATR) | 0.6x ATR | Giveback threshold (in ATR) to force close |
+| Max Giveback (% MFE) | 0.40 (40%) | Maximum allowed profit giveback from peak MFE |
+| Max Breakout Dist | 2.5x ATR | Maximum distance beyond OR to permit entry |
+| Max Dollar Risk | $12.00 | Hard cap on dollar risk per trade |
+| Max Loss Streak | 3 | Block after N consecutive losses |
 | Bias Flip Exit | true | Auto close on bias change |
 | Trend TP Disabled | true | Disable fixed TP in trending regime |
 

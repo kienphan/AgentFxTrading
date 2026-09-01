@@ -71,15 +71,15 @@ AgentFxTrading é um **sistema de negociação forex automatizado** que combina 
 - **Detecção de Correlação**: Bloqueia posições altamente correlacionadas
 - **Limites de Perda Diária**: Parada automática de negociação após perda máxima
 
-### 🛡️ Gestão de Risco
-- **Memória de Posição**: Rastreia MFE (Maximum Favorable Excursion)
-- **Breakeven Automático**: Move SL para entrada após limite de lucro
-- **Trailing Stop**: Ajuste dinâmico de SL durante negociações lucrativas
-- **Proteção de Giveback Máximo**: Fecha posição se giveback exceder limite
+- **Memória de Posição**: Rastreia MFE (Maximum Favorable Excursion) a cada tick
+- **Breakeven Automático**: Move SL para o zero (+0.1x ATR offset) quando o lucro atinge $\ge 0.8\times$ ATR
+- **Trailing Stop**: Ajuste dinâmico de SL iniciando em $1.2\times$ ATR (distância de trailing $0.7\times$ ATR)
+- **Trava de Lucro e Proteção de Giveback**: Fecha posição se o giveback atingir $\ge 40\%$ do pico de lucro (MFE) ou $\ge 0.6\times$ ATR
+- **Filtro Anti-Sobre-extensão (Anti-Overextension Guard)**: Bloqueia rompimentos esticados além de $2.5\times$ ATR da borda do Opening Range
+- **Teto de Risco em Dólares (Max Dollar Risk Cap)**: Limite rígido de perda máxima ($12.00) por operação em ativos com volume mínimo
 - **Proteção de Sequência de Perdas**: Bloqueia entradas após 3 perdas consecutivas
-- **Cycle Gating (Cost Gate)**: Ignora automaticamente chamadas LLM fora da sessão, dentro do OR ou em sequência de perdas — economizando 80-90% de custos de API
-- **Trend TP Disabled**: Desativa automaticamente o TP fixo em regimes de forte tendência (`trending`) para maximizar ganhos com Trailing SL & Giveback Floor
-- **Logs com Rotação Diária**: Persiste todo o raciocínio do Agent, ações de cycle gate e snapshots em `logs/agent_YYYY-MM-DD.log` (retenção de 14 dias)
+- **Cycle Gating (Cost Gate)**: Ignora chamadas LLM fora da sessão, dentro do OR, sobre-estendido ou em sequência de perdas — economizando 80-90% de custos de API
+- **Trend TP Disabled**: Desativa o TP fixo em forte tendência (`trending`) para maximizar ganhos com Trailing SL & Giveback Floor
 
 ### ⏰ Gestão de Sessão
 - **Sessões de Negociação**: Tempos de sessão configuráveis (Londres, NY, Tóquio)
@@ -886,11 +886,13 @@ O sistema calcula métricas de eficiência em tempo real para adaptar o comporta
   - **`forming`**: Fase inicial de formação do range ($< 6$ candles).
 
 ### Modelos de Entrada e Disciplina Quantitativa
-- **Modelo 1: Rompimento Direto por Momentum (Direct Breakout)**: Preço fecha decisivamente além do Opening Range dentro da janela de entrada ($\le 5$ candles).
-- **Modelo 2: Reteste de Rompimento + TDI Bounce (Pullback Continuation)**: Quando o rompimento é antigo ($> 5$ candles), a entrada só é permitida se ocorrer um **TDI Bounce** verificado (`tdi_bounce_bull` / `tdi_bounce_bear`) E o preço estiver estruturalmente alinhado próximo à EMA5 (`price_above_ema` para BUY / `price_below_ema` para SELL), evitando entradas em pontos de exaustão extrema.
+- **Modelo 1: Rompimento Direto por Momentum (Direct Breakout)**: Preço fecha decisivamente além do Opening Range dentro da janela de entrada ($\le 5$ candles) sem estar sobre-estendido ($\le 2.5\times$ ATR).
+- **Modelo 2: Reteste de Rompimento + TDI Bounce (Pullback Continuation)**: Quando o rompimento tem idade intermediária ($5 < \text{candles} \le 10$), a entrada só é permitida se ocorrer um **TDI Bounce** verificado (`tdi_bounce_bull` / `tdi_bounce_bear`), alinhado à EMA5 e sem sobre-extensão extrema.
+- **Regra ANTI-OVEREXTENSION**: NUNCA compre ou venda quando o preço já estiver excessivamente esticado ($> 2.5\times$ ATR, ou $> 1500$ pips no Ouro / $\$15.00$, $> 30,000$ pips no BTC, $> 1500$ pips em Índices, $> 50$ pips no Forex) da borda do OR.
 - **Exceção BIAS-FRESH**: Quando um cruzamento TDI acabou de ocorrer ($\le 1$ candle atrás), o impulso inicial de rompimento é tratado como o **início de uma nova onda de tendência**, e não como esticado → Favorece a entrada imediata.
 - **Regra ANTI-CHASE**: Quando o preço já rompeu há $\ge 4$ candles sob um viés antigo sem pullback/bounce válido, **NÃO persiga nos extremos** → Mantenha `HOLD` e aguarde uma retração estruturada.
-- **Espaço para Respiração da Posição e Giveback Floor**: Oferece tolerância a oscilações normais de curto prazo (especialmente em Cripto e Índices). Rastreia o lucro máximo flutuante ($MFE$) a cada tick, ativando proteção de giveback apenas em posições com lucros expressivos ($\ge 1.5\times$ ATR ou após atingir o gatilho de BE) para garantir os ganhos caso haja reversão confirmada.
+- **Portão Pós-TP (Post-TP Gate Anti-FOMO)**: Após atingir o TP ou fechar um grande lucro, a reentrada na mesma direção é bloqueada até ocorrer um pullback genuíno ($\ge 0.5\times$ ATR), toque no OR ou reversão de viés.
+- **Trava de Lucro e Giveback Floor**: Dá espaço para a posição respirar. Ao atingir lucro $\ge 0.8\times$ ATR, um giveback de $\ge 40\%$ do MFE máximo ou perda de momentum aciona o fechamento imediato para garantir os ganhos.
 ### Regras de Entrada
 
 ```
@@ -911,10 +913,9 @@ ELSE:
 | Reversão TDI Confirmada (Cruzamento oposto à linha Vermelha / Reversão de Sobrecompra-Sobrevenda perdendo EMA) | CLOSE_ALL |
 | Viés reverte | Fechamento automático |
 | Sessão termina (EOD) | Fechamento automático total (Rede de segurança EOD Force-Flatten) |
-| Lucro ≥ 1.2x ATR | Mover SL para breakeven (+0.1x ATR offset) |
-| Lucro ≥ 2.0x ATR | Trail SL 1.0x ATR |
-| Giveback ≥ 1.0x ATR (após atingir BE) | Fechamento automático (Proteção máxima de giveback) |
-
+| Lucro $\ge 0.8\times$ ATR | Mover SL para breakeven (+0.1x ATR offset) |
+| Lucro $\ge 1.2\times$ ATR | Trail SL $0.7\times$ ATR |
+| Giveback $\ge 40\%$ do MFE de pico ou $\ge 0.6\times$ ATR | Fechamento automático (Trava de lucro e proteção de giveback) |
 ---
 
 ## ⚙️ Configuração
@@ -946,11 +947,10 @@ ELSE:
 | Parâmetro | Padrão | Descrição |
 |-----------|--------|-----------|
 | Flat Threshold | 0.01 | Nível de achatamento do TDI |
-| Breakeven Trigger | 1.2x ATR | Lucro em ATR para mover SL para o zero |
+| Breakeven Trigger | 0.8x ATR | Lucro em ATR para mover SL para o zero |
 | Breakeven Offset | 0.1x ATR | Lucro protegido no breakeven (ATR) |
-| Trail Trigger | 2.0x ATR | Lucro em ATR para ativar Trailing Stop |
-| Trail Distance | 1.0x ATR | Distância de trailing atrás do preço (ATR) |
-
+| Trail Trigger | 1.2x ATR | Lucro em ATR para ativar Trailing Stop |
+| Trail Distance | 0.7x ATR | Distância de trailing atrás do preço (ATR) |
 #### Sessão
 | Parâmetro | Padrão | Descrição |
 |-----------|--------|-----------|
@@ -973,15 +973,17 @@ ELSE:
 #### Guardrails
 | Parâmetro | Padrão | Descrição |
 |-----------|--------|-----------|
-| Min SL | 20.0 pips | Stop loss mínimo |
-| Max SL | 80.0 pips | Stop loss máximo |
-| Min TP | 30.0 pips | Take profit mínimo |
-| Max TP | 250.0 pips | Take profit máximo |
-| Max Giveback | 30.0 pips | Limite de giveback para fechar posição |
-| Max Loss Streak | 3 | Bloquear após N perdas |
+| Min SL | 0.8x ATR | Multiplicador de Stop Loss mínimo |
+| Max SL | 3.0x ATR | Multiplicador de Stop Loss máximo |
+| Min TP | 1.0x ATR | Multiplicador de Take Profit mínimo |
+| Max TP | 6.0x ATR | Multiplicador de Take Profit máximo |
+| Max Giveback (ATR) | 0.6x ATR | Limite de giveback em ATR para forçar fechamento |
+| Max Giveback (% MFE) | 0.40 (40%) | Porcentagem máxima permitida de giveback do pico MFE |
+| Max Breakout Dist | 2.5x ATR | Distância máxima de rompimento para permitir entrada |
+| Max Dollar Risk | $12.00 | Limite máximo rígido de risco em dólares por trade |
+| Max Loss Streak | 3 | Bloquear após N perdas consecutivas |
 | Bias Flip Exit | true | Fechamento automático na mudança de viés |
 | Trend TP Disabled | true | Desativa TP fixo em regime de tendência |
-
 ### 📊 Recommended Presets by Symbol
 
 #### Cryptocurrency
