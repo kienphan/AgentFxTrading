@@ -66,7 +66,7 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Bộ Nhớ Vị Thế**: Theo dõi MFE (Maximum Favorable Excursion) từng tick
 - **Breakeven Tự Động**: Tự động dời SL về hòa vốn (+0.1x ATR offset) khi lợi nhuận đạt $\ge 0.8\times$ ATR
 - **Trailing Stop**: Điều chỉnh SL động bám sát đường giá bắt đầu từ $1.2\times$ ATR (trail $0.7\times$ ATR)
-- **Khóa Lợi Nhuận & Bảo Vệ Giveback**: Đóng vị thế chốt lời ngay nếu mất $\ge 40\%$ số lãi cao nhất (MFE) hoặc $\ge 0.6\times$ ATR
+- **Khóa Lợi Nhuận & Bảo Vệ Giveback**: Đóng vị thế chốt lời ngay nếu mất $\ge 40\%$ số lãi cao nhất (Forex/Vàng) hoặc $\ge 55\%$ với kích hoạt $\ge 1.5\times$ ATR (Chỉ số: US30, USTEC, DE40), tránh bị cắt non khi chỉ số co giật 50–300 giá
 - **Bộ Lọc Chống Quá Mức (Anti-Overextension Guard)**: Chặn hoàn toàn các lệnh phá vỡ đã chạy quá $2.5\times$ ATR từ vùng OR
 - **Giới Hạn Trần Rủi Ro (Max Dollar Risk Cap)**: Khống chế mức lỗ tối đa ($12.00) trên mỗi lệnh đối với các tài sản có khối lượng tối thiểu lớn
 - **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
@@ -1046,7 +1046,7 @@ Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian 
 - **Ngoại lệ BIAS-FRESH**: Khi giao cắt TDI vừa mới xảy ra ($\le 1$ nến trước), xung lực bứt phá sớm được xem là **bắt đầu một con sóng mới** chứ không phải nến quá mua/quá bán → Ưu tiên vào lệnh ngay.
 - **Quy tắc ANTI-CHASE**: Khi giá đã breakout $\ge 4$ nến dưới một xu hướng đã cũ mà chưa có nhịp hồi/bounce hợp lệ, **TUYỆT ĐỐI KHÔNG đu đỉnh/đáy** → Giữ lệnh `HOLD` chờ nhịp pullback có xác nhận.
 - **Cửa chặn Post-TP Gate (Anti-FOMO)**: Sau khi một lệnh vừa chạm TP hoặc chốt lời lớn, hệ thống khóa chặt hướng giao dịch đó và chỉ mở lại khi có nhịp Pullback thực sự ($\ge 0.5\times$ ATR), giá chạm lại OR hoặc đảo chiều xu hướng.
-- **Khóa Lợi Nhuận & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn. Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế bảo vệ kích hoạt khi lệnh đạt lãi $\ge 0.8\times$ ATR: nếu giá quay đầu làm mất $\ge 40\%$ số lãi cao nhất (MFE) hoặc xung lực đảo chiều, bot đóng lệnh ngay lập tức để bảo vệ lợi nhuận.
+- **Khóa Lợi Nhuận & Giveback Floor**: Cho phép lệnh có không gian thở trước biến động ngắn hạn. Theo dõi đỉnh lãi cao nhất ($MFE$) từng tick. Cơ chế bảo vệ kích hoạt khi lệnh đạt lãi $\ge 0.8\times$ ATR (Forex/Vàng) hoặc $\ge 1.5\times$ ATR / tối thiểu 100 giá (Chỉ số): nếu giá quay đầu làm mất $\ge 40\%$ (Forex/Vàng) hoặc $\ge 55\%$ (Chỉ số) số lãi cao nhất (MFE) kèm xung lực chững lại, bot đóng lệnh ngay lập tức để bảo vệ lợi nhuận.
 
 ### 🏹 Chiến Thuật Asian Range Judas Sweep (ICT Smart Money Concepts)
 
@@ -1086,7 +1086,7 @@ ELSE:
 | Phiên kết thúc (EOD) | Tự động đóng toàn bộ lệnh (EOD Force-Flatten safety net) |
 | Lợi nhuận $\ge 0.8\times$ ATR | Di chuyển SL về breakeven (+0.1x ATR offset) |
 | Lợi nhuận $\ge 1.2\times$ ATR | Trail SL $0.7\times$ ATR |
-| Giveback $\ge 40\%$ đỉnh lãi MFE hoặc $\ge 0.6\times$ ATR | Tự động đóng (Khóa lợi nhuận & bảo vệ Giveback) |
+| Giveback $\ge 40\%$ (Forex) / $\ge 55\%$ (Chỉ số) đỉnh lãi MFE hoặc $\ge 0.6\times$ ATR | Tự động đóng (Khóa lợi nhuận & bảo vệ Giveback) |
 ---
 
 ## ⚙️ Cấu Hình

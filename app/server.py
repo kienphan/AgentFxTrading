@@ -417,7 +417,7 @@ You analyze market structure and propose trade actions. The deterministic execut
 - **POSITION MEMORY & GIVEBACK FLOOR (PROFIT LOCK-IN)**:
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
-  - **Golden Rule**: Giveback protection activates on any trade that reached significant profit (MFE >= 0.8x ATR). If price gives back >= 40% of peak MFE and momentum stalls/reverses (TDI cross / HA color flip), declare CLOSE_ALL immediately to lock in profit. NEVER let a winning trade turn into a loss or give back > 40% of peak MFE.
+  - **Golden Rule**: Giveback protection activates on winning trades. For Forex/Metals, activation starts when MFE >= 0.8x ATR, triggering CLOSE_ALL if giveback >= 40% of peak MFE with momentum stall/reversal. For Indices (US30, USTEC, DE40, etc.), activation requires MFE >= 1.5x ATR (min 1000 pips / 100 points for US30) and giveback >= 55% of peak MFE with momentum stall/reversal, allowing natural intraday index swings (50–300 points). NEVER let a winning trade turn into a full loss.
 - **ASSET SCALE & RISK DISCIPLINE (CRYPTO / INDICES / METALS / FOREX)**:
   - Stop Loss is hard-capped by ATR guardrails and max dollar risk ($10–$15 max per trade on a $700 account).
   - On Gold (XAUUSD), 1 pip = $0.01. Do NOT trade with massive SLs > 1200 pips ($12).
@@ -573,10 +573,29 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 tp_pips=0.0,
                 reason=f"Cycle gate: TMS exit signal triggered ({snapshot.tms.exit_reason})"
             )
-        # Check Profit Lock-in Giveback Guard (MFE >= 0.8 ATR and Giveback >= 40%)
-        atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else 30.0
+        # Check Profit Lock-in Giveback Guard
+        # Differentiate Asset Class:
+        # - Indices (US30, USTEC, DE40, NAS100, GER40, DJ30):
+        #   Activation MFE >= 1.5x ATR (min 1000.0 pips / 100 points for US30, 300.0 pips for others)
+        #   Giveback ratio threshold = 0.55 (55%)
+        # - Forex / Metals:
+        #   Activation MFE >= 0.8x ATR
+        #   Giveback ratio threshold = 0.40 (40%)
+        sym_upper = snapshot.symbol.upper()
+        is_index = any(idx in sym_upper for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"])
+
+        if is_index:
+            default_atr = 1000.0 if "US30" in sym_upper else 300.0
+            atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else default_atr
+            activation_mfe = max(1.5 * atr_ref, 1000.0 if "US30" in sym_upper else 300.0)
+            giveback_ratio_threshold = 0.55
+        else:
+            atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else 30.0
+            activation_mfe = 0.8 * atr_ref
+            giveback_ratio_threshold = 0.40
+
         pos = snapshot.position
-        if pos.mfe_pips >= 0.8 * atr_ref and pos.giveback_pips >= pos.mfe_pips * 0.40:
+        if pos.mfe_pips >= activation_mfe and pos.giveback_pips >= pos.mfe_pips * giveback_ratio_threshold:
             chart_tms = snapshot.chart_tms or snapshot.tms
             momentum_stall = False
             if pos_side == "BUY" and (chart_tms.ha_turned_red or chart_tms.exit_long or chart_tms.green_tf_slope < 0):
@@ -589,7 +608,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                     volume_lots=0.0,
                     sl_pips=0.0,
                     tp_pips=0.0,
-                    reason=f"Cycle gate: Profit lock-in triggered (MFE={pos.mfe_pips:.1f}p, gave back {pos.giveback_pips:.1f}p >= 40% with momentum stall)"
+                    reason=f"Cycle gate: Profit lock-in triggered (MFE={pos.mfe_pips:.1f}p >= {activation_mfe:.1f}p, gave back {pos.giveback_pips:.1f}p >= {giveback_ratio_threshold*100:.0f}% with momentum stall)"
                 )
         # Position is open and needs active LLM monitoring (momentum slope, MFE giveback, etc.)
         return None

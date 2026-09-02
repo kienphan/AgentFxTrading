@@ -1252,31 +1252,43 @@ namespace cAlgo.Robots
             double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
             double beTriggerPips = BreakevenTriggerAtr * atrInPips;
 
+            string symUp = SymbolName.ToUpperInvariant();
+            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30");
+
             foreach (var pos in GetBotPositions())
             {
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
                 double mfe = _positionMfe[pos.Id];
                 
-                // Giveback protection only activates AFTER the trade has reached meaningful profit (>= 0.8 ATR)
-                double activationThreshold = beTriggerPips > 0 ? beTriggerPips : 0.8 * atrInPips;
+                // Giveback protection only activates AFTER the trade has reached meaningful profit:
+                // For Indices: >= 1.5 ATR (min 1000 pips / 100 points for US30), for Forex/Metals: >= 0.8 ATR
+                double defaultActivationAtr = isIndex ? 1.5 : 0.8;
+                double activationThreshold = beTriggerPips > 0 ? beTriggerPips : defaultActivationAtr * atrInPips;
+                if (isIndex)
+                {
+                    double minIndexPips = symUp.Contains("US30") ? 1000.0 : 300.0;
+                    activationThreshold = Math.Max(1.5 * atrInPips, minIndexPips);
+                }
                 if (mfe < activationThreshold) continue;
 
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
 
-                // 1. Percentage-based MFE Giveback Guard (e.g. max 40% giveback)
-                if (MaxGivebackMfeRatio > 0 && giveback >= (mfe * MaxGivebackMfeRatio))
+                // 1. Percentage-based MFE Giveback Guard (For Indices: max 55% giveback; Forex/Metals: max 40%)
+                double effectiveMfeRatio = isIndex ? Math.Max(MaxGivebackMfeRatio, 0.55) : MaxGivebackMfeRatio;
+                if (effectiveMfeRatio > 0 && giveback >= (mfe * effectiveMfeRatio))
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[Giveback %] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {MaxGivebackMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
+                    if (ShowLogs) Print($"[Giveback %] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {effectiveMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
                     continue;
                 }
 
                 // 2. ATR-based Giveback Guard
-                if (MaxGivebackAtr > 0 && giveback >= maxGivebackPips)
+                double effectiveGivebackAtr = isIndex ? Math.Max(MaxGivebackAtr, 1.5) * atrInPips : maxGivebackPips;
+                if (MaxGivebackAtr > 0 && giveback >= effectiveGivebackAtr)
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={maxGivebackPips:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
+                    if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={effectiveGivebackAtr:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
                 }
             }
         }
@@ -1697,9 +1709,10 @@ namespace cAlgo.Robots
             double atrInPips = atrValue / Symbol.PipSize;
 
             // Anti-Overextension Guardrail
-            if (MaxBreakoutDistanceAtr > 0 && _orb != null && _orb.breakout_distance_pips > MaxBreakoutDistanceAtr * atrInPips)
+            var orb = GetOrbData(Bars.Count - 1);
+            if (MaxBreakoutDistanceAtr > 0 && orb != null && orb.breakout_distance_pips > MaxBreakoutDistanceAtr * atrInPips)
             {
-                if (ShowLogs) Print($"[Guardrail] Blocked: Breakout overextended ({_orb.breakout_distance_pips:F1}p > {MaxBreakoutDistanceAtr * atrInPips:F1}p threshold)");
+                if (ShowLogs) Print($"[Guardrail] Blocked: Breakout overextended ({orb.breakout_distance_pips:F1}p > {MaxBreakoutDistanceAtr * atrInPips:F1}p threshold)");
                 return;
             }
 

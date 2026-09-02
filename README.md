@@ -66,7 +66,7 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Position Memory**: Tracks MFE (Maximum Favorable Excursion) on every tick
 - **Auto Breakeven**: Moves SL to entry (+0.1x ATR offset) when profit reaches $\ge 0.8\times$ ATR
 - **Trailing Stop**: Dynamic SL adjustment starting at $1.2\times$ ATR (trailing by $0.7\times$ ATR)
-- **Profit Lock-in & Giveback Protection**: Closes position if profit gives back $\ge 40\%$ of peak MFE or $\ge 0.6\times$ ATR
+- **Profit Lock-in & Giveback Protection**: Closes position if profit gives back $\ge 40\%$ of peak MFE (Forex/Metals) or $\ge 55\%$ of peak MFE with $\ge 1.5\times$ ATR activation (Indices: US30, USTEC, DE40), preventing premature exit on 50–300 pt index swings
 - **Anti-Overextension Guard**: Blocks chasing breakouts extended beyond $2.5\times$ ATR from the OR boundary
 - **Max Dollar Risk Cap**: Hard cap preventing single-trade losses from exceeding risk limits on minimum volume assets
 - **Loss Streak Protection**: Blocks entries after 3 consecutive losses
@@ -1074,7 +1074,7 @@ The system computes real-time efficiency metrics to adapt its trading and exit b
 - **BIAS-FRESH Exception**: When a TDI cross just occurred ($\le 1$ bar ago), early momentum is treated as the **start of a fresh trend leg**, not an extended move → Favors entering immediately.
 - **Anti-Chase Rule**: When price broke out $\ge 4$ bars ago under an old bias without a valid pullback/bounce, **DO NOT chase** at extremes → Holds and waits for a structured retest.
 - **Post-TP Gate (Anti-FOMO)**: Once a trade hits TP or closes after a major win, re-entry in the same direction is strictly blocked until a genuine structural pullback ($\ge 0.5\times$ ATR), OR touch, or bias flip occurs.
-- **Profit Lock-In & Giveback Floor**: Provides breathing room for normal intraday fluctuations. Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on winning trades ($MFE \ge 0.8\times$ ATR) to lock in gains if giveback reaches $\ge 40\%$ of peak MFE or momentum stalls/reverses.
+- **Profit Lock-In & Giveback Floor**: Provides breathing room for normal intraday fluctuations. Tracks Peak Profit ($MFE$) on every tick. Giveback protection activates on winning trades ($MFE \ge 0.8\times$ ATR for Forex/Metals; $MFE \ge 1.5\times$ ATR / min 100 points for Indices) to lock in gains if giveback reaches $\ge 40\%$ (Forex/Metals) or $\ge 55\%$ (Indices) of peak MFE with momentum stall/reversal.
 
 ### 🏹 Asian Range Judas Sweep Strategy (ICT Smart Money Concepts)
 
@@ -1114,7 +1114,7 @@ ELSE:
 | Session ends (EOD) | Auto close (EOD Force-Flatten safety net) |
 | Profit $\ge 0.8\times$ ATR | Move SL to breakeven (+0.1x ATR offset) |
 | Profit $\ge 1.2\times$ ATR | Trail SL by 0.7x ATR |
-| Giveback $\ge 40\%$ of peak MFE or $\ge 0.6\times$ ATR | Auto close (Profit lock-in protection) |
+| Giveback $\ge 40\%$ (Forex) / $\ge 55\%$ (Indices) of peak MFE or $\ge 0.6\times$ ATR | Auto close (Profit lock-in protection) |
 ---
 
 ## ⚙️ Configuration
