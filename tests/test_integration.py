@@ -251,6 +251,86 @@ def test_cycle_gate_giveback_index_vs_forex():
     assert decision_eur.action == "CLOSE_ALL"
     assert "Profit lock-in triggered" in decision_eur.reason
 
+def test_eth_crypto_classification():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData
+    snap_eth = MarketSnapshot(
+        symbol="ETHUSD",
+        timeframe="Minute15",
+        ask=2400.5,
+        bid=2400.0,
+        atr_pips=1500.0,
+        tms=TmsSignals(bias="BULLISH"),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=1200.0,  # $12 breakout on ETH is 1200 pips
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=1
+        )
+    )
+    decision = evaluate_cycle_gate(snap_eth)
+    # With ETH in crypto, 1200 pips is well within max 15000.0p limit (unlike Forex 60p limit)
+    # It should not be blocked by overextension
+    if decision is not None:
+        assert "Breakout overextended" not in decision.reason
+
+def test_format_price_and_prompt_precision():
+    from app.server import format_price, build_judas_sweep_user_prompt, MarketSnapshot, BarData, StrategyData
+    assert format_price(1.35034, "GBPUSD") == "1.35034"
+    assert format_price(1.15786, "EURUSD") == "1.15786"
+    assert format_price(215.340, "GBPJPY") == "215.340"
+    assert format_price(184.978, "EURJPY") == "184.978"
+    assert format_price(4321.72, "XAUUSD") == "4321.72"
+    assert format_price(29078.30, "USTEC") == "29078.30"
+
+    snap = MarketSnapshot(
+        symbol="GBPUSD",
+        timeframe="Minute15",
+        ask=1.35036,
+        bid=1.35034,
+        bars=[BarData(open=1.35034, high=1.35080, low=1.35010, close=1.35070, volume=100.0)],
+        strategy=StrategyData(atr=0.0015, asian_high=1.35167, asian_low=1.35006, asian_range_pips=16.0)
+    )
+    prompt = build_judas_sweep_user_prompt(snap)
+    # Bar should contain 5 decimals, not truncated 1.35
+    assert "O=1.35034" in prompt
+    # ATR should be converted to pips (15.0 pips) rather than 0 pips
+    assert "ATR (14 Volatility): 15.0 pips" in prompt
+
+def test_cbot_event_telemetry():
+    payload = {
+        "bot_id": "eurjpy_m15",
+        "account_number": "10101649",
+        "event_type": "GUARDRAIL_BLOCKED",
+        "message": "[BreakoutOverextended] 64.4p > 60.0p threshold"
+    }
+    res = client.post("/api/cbot_event", json=payload)
+    assert res.status_code == 200
+    assert res.json()["status"] == "ok"
+
+def test_judas_gate_forex_asian_range_19p():
+    from app.server import evaluate_judas_sweep_gate, MarketSnapshot, StrategyData
+    snap_eur = MarketSnapshot(
+        symbol="EURUSD",
+        timeframe="Minute15",
+        ask=1.15927,
+        bid=1.15928,
+        strategy=StrategyData(
+            asian_high=1.15932,
+            asian_low=1.15737,
+            asian_range_pips=19.0,  # 19 pips on EURUSD should be accepted now (valid: 12-100p)
+            killzone_session="New York Overlap Killzone",
+            bias_direction="SELL",
+            traditional_signal="JUDAS_SWEEP_SELL",
+            signal_window_bars=1
+        )
+    )
+    decision = evaluate_judas_sweep_gate(snap_eur)
+    # Should NOT be gated as abnormal Asian Range
+    if decision is not None:
+        assert "Asian Range width abnormal" not in decision.reason
+
 def cleanup_test_data():
     import sqlite3
     try:
@@ -277,6 +357,14 @@ if __name__ == "__main__":
         print("✓ test_judas_sweep_llm_active_entry PASSED")
         test_cycle_gate_giveback_index_vs_forex()
         print("✓ test_cycle_gate_giveback_index_vs_forex PASSED")
+        test_eth_crypto_classification()
+        print("✓ test_eth_crypto_classification PASSED")
+        test_format_price_and_prompt_precision()
+        print("✓ test_format_price_and_prompt_precision PASSED")
+        test_cbot_event_telemetry()
+        print("✓ test_cbot_event_telemetry PASSED")
+        test_judas_gate_forex_asian_range_19p()
+        print("✓ test_judas_gate_forex_asian_range_19p PASSED")
         print("\n>>> ALL TESTS PASSED SUCCESSFULLY! <<<")
     finally:
         cleanup_test_data()

@@ -333,6 +333,18 @@ def is_judas_sweep_bot(snapshot: MarketSnapshot) -> bool:
         return True
     bot_name = (snapshot.bot_id or "").lower()
     return "judas" in bot_name or "asian" in bot_name or "sweep" in bot_name
+def format_price(price: Optional[float], symbol: str) -> str:
+    """Format price dynamically according to symbol asset class and decimal convention."""
+    if price is None:
+        return "0.0"
+    sym = (symbol or "").upper()
+    if "JPY" in sym:
+        return f"{price:.3f}"
+    elif any(k in sym for k in ["XAU", "GOLD", "US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40", "BTC", "ETH", "SOL", "XRP"]):
+        return f"{price:.2f}"
+    else:
+        return f"{price:.5f}"
+
 def build_system_prompt(snapshot: MarketSnapshot) -> str:
     """
     Dynamic System Prompt Factory (inspired by dnse-kash architecture).
@@ -527,19 +539,33 @@ def evaluate_judas_sweep_gate(snapshot: MarketSnapshot) -> Optional[AgentDecisio
             )
 
         # Gate 4: Invalid Asian Range width (too narrow < 20 pips or too wide > 600 pips on Gold)
-        if strat.asian_range_pips > 0 and (strat.asian_range_pips < 20.0 or strat.asian_range_pips > 600.0):
-            return AgentDecision(
-                action="HOLD",
-                volume_lots=0.01,
-                sl_pips=0.0,
-                tp_pips=0.0,
-                confidence=85.0,
-                reason=f"Judas Sweep Gate: Asian Range width abnormal ({strat.asian_range_pips:.0f} pips not in 20-600p valid range)",
-                request_id=snapshot.request_id,
-                bot_id=snapshot.bot_id,
-                symbol=snapshot.symbol,
-                timeframe=snapshot.timeframe
-            )
+        # Gate 4: Invalid Asian Range width (symbol-specific bounds)
+        if strat.asian_range_pips > 0:
+            sym_up = (snapshot.symbol or "").upper()
+            if "XAU" in sym_up or "GOLD" in sym_up:
+                min_asian_pips, max_asian_pips = 100.0, 10000.0  # $10.00 to $100.00 (or $1.00-$100.00 depending on broker digits)
+            elif any(jpy in sym_up for jpy in ["JPY"]):
+                min_asian_pips, max_asian_pips = 15.0, 200.0
+            elif any(cr in sym_up for cr in ["BTC", "ETH", "CRYPTO"]):
+                min_asian_pips, max_asian_pips = 500.0, 30000.0
+            elif any(idx in sym_up for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"]):
+                min_asian_pips, max_asian_pips = 50.0, 2000.0
+            else:
+                min_asian_pips, max_asian_pips = 12.0, 100.0  # Allow tight 12-20p Asian sessions for EURUSD/GBPUSD
+            
+            if strat.asian_range_pips < min_asian_pips or strat.asian_range_pips > max_asian_pips:
+                return AgentDecision(
+                    action="HOLD",
+                    volume_lots=0.01,
+                    sl_pips=0.0,
+                    tp_pips=0.0,
+                    confidence=85.0,
+                    reason=f"Judas Sweep Gate: Asian Range width abnormal ({strat.asian_range_pips:.0f} pips not in {min_asian_pips:.0f}-{max_asian_pips:.0f}p valid range)",
+                    request_id=snapshot.request_id,
+                    bot_id=snapshot.bot_id,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe
+                )
 
     return None
 
@@ -684,7 +710,9 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     if "XAU" in sym_upper or "GOLD" in sym_upper:
         max_breakout_dist = min(atr_ref * 2.5, 1500.0) if atr_ref else 1500.0
     elif any(cr in sym_upper for cr in ["BTC", "CRYPTO"]):
-        max_breakout_dist = min(atr_ref * 2.5, 30000.0) if atr_ref else 30000.0
+        max_breakout_dist = min(atr_ref * 2.5, 60000.0) if atr_ref else 60000.0
+    elif any(cr in sym_upper for cr in ["ETH", "SOL", "XRP"]):
+        max_breakout_dist = min(atr_ref * 2.5, 15000.0) if atr_ref else 15000.0
     elif any(idx in sym_upper for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"]):
         max_breakout_dist = min(atr_ref * 2.5, 1500.0) if atr_ref else 1500.0
     else:
@@ -771,10 +799,24 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
         spread_pips = round(abs(snapshot.ask - snapshot.bid), 1)
     elif any(cr in sym_up for cr in ["BTC", "ETH"]):
         spread_pips = round(abs(snapshot.ask - snapshot.bid), 1)
+    elif "JPY" in sym_up:
+        spread_pips = round(abs(snapshot.ask - snapshot.bid) / 0.01, 1)
     else:
         spread_pips = round(abs(snapshot.ask - snapshot.bid) / 0.0001, 1)
 
-    atr_pips = strat.atr if strat.atr > 0 else (snapshot.atr_pips or 0.0)
+    if strat.atr > 0:
+        if "JPY" in sym_up:
+            atr_pips = strat.atr / 0.01 if strat.atr < 5.0 else strat.atr
+        elif "XAU" in sym_up or "GOLD" in sym_up:
+            atr_pips = strat.atr / 0.01 if strat.atr < 100.0 else strat.atr
+        elif any(idx in sym_up for idx in ["US30", "USTEC", "DE40", "NAS100"]):
+            atr_pips = strat.atr
+        elif any(cr in sym_up for cr in ["BTC", "ETH", "SOL", "XRP"]):
+            atr_pips = strat.atr / 0.01 if "ETH" in sym_up and strat.atr < 100.0 else strat.atr
+        else:
+            atr_pips = strat.atr / 0.0001 if strat.atr < 1.0 else strat.atr
+    else:
+        atr_pips = snapshot.atr_pips or 0.0
     open_pos_count = len(snapshot.active_positions) if snapshot.active_positions else (1 if snapshot.position else 0)
     has_open_pos = open_pos_count > 0 or snapshot.position is not None
 
@@ -790,7 +832,7 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
             l_val = b.low if b.low is not None else 0.0
             c_val = b.close if b.close is not None else 0.0
             v_val = b.volume if b.volume is not None else 0.0
-            bar_lines.append(f"Bar[{bar_idx}]: O={o_val:.2f}, H={h_val:.2f}, L={l_val:.2f}, C={c_val:.2f}, V={v_val:.0f}")
+            bar_lines.append(f"Bar[{bar_idx}]: O={format_price(o_val, snapshot.symbol)}, H={format_price(h_val, snapshot.symbol)}, L={format_price(l_val, snapshot.symbol)}, C={format_price(c_val, snapshot.symbol)}, V={v_val:.0f}")
     bars_formatted = "\n".join(bar_lines) if bar_lines else "No OHLCV bars available."
 
     # 2. Format recent trade history
@@ -801,7 +843,7 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
         loss_count = sum(1 for h in snapshot.recent_history if h.pnl < 0)
         summary_header = f"[Session Performance: 24h PnL = {'+' if total_pnl >= 0 else ''}${total_pnl:.2f} | Wins: {win_count}, Losses: {loss_count}]"
         hist_lines = [
-            f"  - {h.trade_type} {h.volume:.2f} lots @ {h.entry_price:.2f} -> Exit {h.exit_price:.2f} | PnL: {'+' if h.pnl >= 0 else ''}${h.pnl:.2f} | Closed: {h.exit_time}"
+            f"  - {h.trade_type} {h.volume:.2f} lots @ {format_price(h.entry_price, snapshot.symbol)} -> Exit {format_price(h.exit_price, snapshot.symbol)} | PnL: {'+' if h.pnl >= 0 else ''}${h.pnl:.2f} | Closed: {h.exit_time}"
             for h in snapshot.recent_history
         ]
         history_formatted = summary_header + "\n" + "\n".join(hist_lines)
@@ -817,9 +859,8 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
             if tf_ctx:
                 sw_str = ""
                 if tf_ctx.swing_structure:
-                    sw = tf_ctx.swing_structure
-                    sw_str = f" | Swings: High={sw.last_swing_high} ({sw.swing_high_type}), Low={sw.last_swing_low} ({sw.swing_low_type}), PrevH={sw.prev_swing_high}, PrevL={sw.prev_swing_low} [Struct: {sw.market_structure}]"
-                lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={tf_ctx.fast_tema:.2f} | SlowMA={tf_ctx.slow_tema:.2f} | RSI={tf_ctx.rsi:.1f}{sw_str}")
+                    sw_str = f" | Swings: High={format_price(sw.last_swing_high, snapshot.symbol)} ({sw.swing_high_type}), Low={format_price(sw.last_swing_low, snapshot.symbol)} ({sw.swing_low_type}), PrevH={format_price(sw.prev_swing_high, snapshot.symbol)}, PrevL={format_price(sw.prev_swing_low, snapshot.symbol)} [Struct: {sw.market_structure}]"
+                lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{sw_str}")
         if lines:
             mtf_summary = "\n".join(lines)
 
@@ -831,11 +872,11 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
 
 === 1. MARKET SNAPSHOT ===
 - Symbol: {snapshot.symbol} | Timeframe: {snapshot.timeframe}
-- Current Market Prices: Ask={snapshot.ask:.2f}, Bid={snapshot.bid:.2f} | Spread: {spread_pips:.1f} pips
+- Current Market Prices: Ask={format_price(snapshot.ask, snapshot.symbol)}, Bid={format_price(snapshot.bid, snapshot.symbol)} | Spread: {spread_pips:.1f} pips
 - Account: Balance=${snapshot.account_balance:.2f} | Equity=${snapshot.account_equity:.2f}
 
 === 2. ASIAN RANGE & JUDAS SWEEP GATE CONTEXT ===
-- Asian Session Range (00:00 - 06:00 UTC): High={strat.asian_high:.2f} | Low={strat.asian_low:.2f} | Range={strat.asian_range_pips:.0f} pips
+- Asian Session Range (00:00 - 06:00 UTC): High={format_price(strat.asian_high, snapshot.symbol)} | Low={format_price(strat.asian_low, snapshot.symbol)} | Range={strat.asian_range_pips:.0f} pips
 - Active Killzone Window: {strat.killzone_session}
 - Gate Signal Trigger: {strat.traditional_signal} (Bias: {strat.bias_direction})
 - Bars Since Sweep: {strat.signal_window_bars} bar(s)
@@ -850,10 +891,10 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
 {mtf_summary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
-- Fast EMA: {strat.tema1:.2f} | Slow EMA: {strat.tema2:.2f}
-- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.0f} pips
-- Major Swing High (BSL / Resistance): {strat.recent_high:.2f}
-- Major Swing Low (SSL / Support): {strat.recent_low:.2f}
+- Fast EMA: {format_price(strat.tema1, snapshot.symbol)} | Slow EMA: {format_price(strat.tema2, snapshot.symbol)}
+- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.1f} pips
+- Major Swing High (BSL / Resistance): {format_price(strat.recent_high, snapshot.symbol)}
+- Major Swing Low (SSL / Support): {format_price(strat.recent_low, snapshot.symbol)}
 
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
 {bars_formatted}
@@ -876,10 +917,11 @@ Reply strictly with JSON object."""
         pos_lines = []
         if snapshot.position:
             pos = snapshot.position
-            pos_lines.append(f"- Primary Position: {pos.resolved_side} {pos.volume or 0.01:.2f} lots @ Entry={pos.entry_price:.2f} | CurrentPrice={pos.current_price or snapshot.bid:.2f} | PnL=${pos.resolved_pnl:.2f} | SL={pos.sl or pos.sl_price} | TP={pos.tp or pos.tp_price} | Duration={pos.duration_minutes:.1f} mins")
+            cur_p = pos.current_price or snapshot.bid
+            pos_lines.append(f"- Primary Position: {pos.resolved_side} {pos.volume or 0.01:.2f} lots @ Entry={format_price(pos.entry_price, snapshot.symbol)} | CurrentPrice={format_price(cur_p, snapshot.symbol)} | PnL=${pos.resolved_pnl:.2f} | SL={format_price(pos.sl or pos.sl_price, snapshot.symbol)} | TP={format_price(pos.tp or pos.tp_price, snapshot.symbol)} | Duration={pos.duration_minutes:.1f} mins")
         if snapshot.active_positions:
             for p in snapshot.active_positions:
-                pos_lines.append(f"- Position ID {p.id}: {p.trade_type} {p.volume:.2f} lots @ Entry={p.entry_price:.2f} | SL={p.sl:.2f} | TP={p.tp:.2f} | Opened={p.entry_time}")
+                pos_lines.append(f"- Position ID {p.id}: {p.trade_type} {p.volume:.2f} lots @ Entry={format_price(p.entry_price, snapshot.symbol)} | SL={format_price(p.sl, snapshot.symbol)} | TP={format_price(p.tp, snapshot.symbol)} | Opened={p.entry_time}")
         running_pos_str = "\n".join(pos_lines) if pos_lines else "No position details."
 
         return f"""You are a World-Class Institutional Forex Specialist & Quantitative Risk Manager using SMART MONEY CONCEPTS (SMC) & Price Action.
@@ -889,7 +931,7 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
 
 === 1. ACTIVE ORDER BOOK SNAPSHOT ===
 - Symbol: {snapshot.symbol} | Timeframe: {snapshot.timeframe}
-- Current Market Prices: Ask={snapshot.ask:.2f}, Bid={snapshot.bid:.2f} | Spread: {spread_pips:.1f} pips
+- Current Market Prices: Ask={format_price(snapshot.ask, snapshot.symbol)}, Bid={format_price(snapshot.bid, snapshot.symbol)} | Spread: {spread_pips:.1f} pips
 - Account: Balance=${snapshot.account_balance:.2f} | Equity=${snapshot.account_equity:.2f}
 - Running Positions:
 {running_pos_str}
@@ -906,10 +948,10 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
 {mtf_summary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
-- Fast EMA: {strat.tema1:.2f} | Slow EMA: {strat.tema2:.2f}
-- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.0f} pips
-- Major Swing High (Resistance): {strat.recent_high:.2f}
-- Major Swing Low (Support): {strat.recent_low:.2f}
+- Fast EMA: {format_price(strat.tema1, snapshot.symbol)} | Slow EMA: {format_price(strat.tema2, snapshot.symbol)}
+- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.1f} pips
+- Major Swing High (Resistance): {format_price(strat.recent_high, snapshot.symbol)}
+- Major Swing Low (Support): {format_price(strat.recent_low, snapshot.symbol)}
 
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
 {bars_formatted}
@@ -1112,6 +1154,22 @@ async def handle_telemetry_tick(request: dict):
     except Exception as e:
         logger.error(f"Telemetry tick error: {e}")
         return {"status": "error", "message": str(e)}
+@app.post("/api/cbot_event")
+async def handle_cbot_event(request: dict):
+    """
+    Direct event telemetry endpoint from cBots (guardrail blocks, custom warnings, execution failures).
+    """
+    try:
+        bot_id = sanitize_bot_id(request.get("bot_id", "default"))
+        event_type = request.get("event_type", "GUARDRAIL")
+        message = request.get("message", "")
+        account_number = str(request.get("account_number", "0"))
+        logger.info(f"[CBOT EVENT] {account_number}/{bot_id} | Type: {event_type} | Message: {message}")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error handling cbot event: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/portfolio/report")
 async def report_position(request: dict):

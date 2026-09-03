@@ -1529,6 +1529,26 @@ namespace cAlgo.Robots
             }
         }
 
+        private async Task ReportGuardrailBlockedAsync(string guardrailName, string details)
+        {
+            try
+            {
+                if (_httpClient == null || string.IsNullOrWhiteSpace(ApiUrl)) return;
+                var payload = new
+                {
+                    bot_id = BotId,
+                    account_number = Account.Number.ToString(),
+                    event_type = "GUARDRAIL_BLOCKED",
+                    message = $"[{guardrailName}] {details}"
+                };
+                var json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                string eventUrl = ApiUrl.Replace("/trade", "/api/cbot_event");
+                await _httpClient.PostAsync(eventUrl, content);
+            }
+            catch { }
+        }
+
         private async Task ReportPositionOpen(Position position, double slPips, double tpPips)
         {
             try
@@ -1652,6 +1672,7 @@ namespace cAlgo.Robots
                 (decision.action == "BUY" || decision.action == "SELL"))
             {
                 if (ShowLogs) Print($"[Guardrail] Blocked: loss streak={_lossStreak}");
+                _ = ReportGuardrailBlockedAsync("LossStreak", $"loss streak={_lossStreak}");
                 return;
             }
 
@@ -1661,6 +1682,7 @@ namespace cAlgo.Robots
                 (decision.action == "BUY" || decision.action == "SELL"))
             {
                 if (ShowLogs) Print($"[Guardrail] Blocked entry: session={session.phase} (minutes_to_end={session.minutes_to_end})");
+                _ = ReportGuardrailBlockedAsync("SessionPhase", $"session={session.phase} (minutes_to_end={session.minutes_to_end})");
                 return;
             }
 
@@ -1693,6 +1715,7 @@ namespace cAlgo.Robots
                 if (decision.action == _postTpGateSide)
                 {
                     if (ShowLogs) Print($"[Guardrail] Blocked: Post-TP Gate is ACTIVE blocking {_postTpGateSide}. Waiting for Pullback / Bounce.");
+                    _ = ReportGuardrailBlockedAsync("PostTpGate", $"Post-TP Gate is ACTIVE blocking {_postTpGateSide}");
                     return;
                 }
             }
@@ -1713,6 +1736,7 @@ namespace cAlgo.Robots
             if (MaxBreakoutDistanceAtr > 0 && orb != null && orb.breakout_distance_pips > MaxBreakoutDistanceAtr * atrInPips)
             {
                 if (ShowLogs) Print($"[Guardrail] Blocked: Breakout overextended ({orb.breakout_distance_pips:F1}p > {MaxBreakoutDistanceAtr * atrInPips:F1}p threshold)");
+                _ = ReportGuardrailBlockedAsync("BreakoutOverextended", $"{orb.breakout_distance_pips:F1}p > {MaxBreakoutDistanceAtr * atrInPips:F1}p threshold");
                 return;
             }
 
@@ -1796,11 +1820,13 @@ namespace cAlgo.Robots
                 if (tradeType == TradeType.Buy && _breakoutDir == "down")
                 {
                     if (ShowLogs) Print("[Guardrail] Blocked: BUY against ORB down breakout");
+                    _ = ReportGuardrailBlockedAsync("OpposingOrbBreakout", "BUY against ORB down breakout");
                     return;
                 }
                 if (tradeType == TradeType.Sell && _breakoutDir == "up")
                 {
                     if (ShowLogs) Print("[Guardrail] Blocked: SELL against ORB up breakout");
+                    _ = ReportGuardrailBlockedAsync("OpposingOrbBreakout", "SELL against ORB up breakout");
                     return;
                 }
             }

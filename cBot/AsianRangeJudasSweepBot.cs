@@ -458,10 +458,15 @@ namespace cAlgo.Robots
             else if (_lastCrossBarIndex >= 0)
             {
                 _barsSinceCross = Bars.Count - 1 - _lastCrossBarIndex;
+                if (_barsSinceCross > 3)
+                {
+                    _allowedAiDirection = "NONE";
+                    _traditionalSignal  = "NONE";
+                }
             }
             else
             {
-                _allowedAiDirection = "MANAGE_ONLY";
+                _allowedAiDirection = "NONE";
                 _traditionalSignal  = "NONE";
             }
             // ───────────────────────────────────────────────────────────────────
@@ -502,9 +507,9 @@ namespace cAlgo.Robots
             if (_httpClient != null)
             {
                 bool hasOpenPos   = Positions.FindAll(label, SymbolName).Length > 0;
-                // Gate Mode: call AI only when cross is fresh (â‰¤3 bars) OR managing open positions
-                bool gateOpen     = UseAiGateMode && _barsSinceCross <= 3 && _allowedAiDirection != "NONE";
-                bool shouldCallAi = !UseAiGateMode || gateOpen || hasOpenPos;
+                // Gate Mode: call AI only when sweep signal is fresh (<=3 bars) AND direction is BUY or SELL, OR when managing open positions
+                bool gateOpen     = UseAiGateMode && _barsSinceCross <= 3 && (_allowedAiDirection == "BUY" || _allowedAiDirection == "SELL");
+                bool shouldCallAi = !UseAiGateMode || gateOpen || (UseAiGateMode && hasOpenPos);
 
                 if (shouldCallAi)
                 {
@@ -2221,7 +2226,7 @@ Reply strictly with JSON object.";
                     tema2 = slowEma != null && slowEma.Result.Count > 0 ? slowEma.Result.LastValue : 0,
                     rsi = rsi != null && rsi.Result.Count > 0 ? rsi.Result.LastValue : 0,
                     adx = 0,
-                    atr = atr != null && atr.Result.Count > 0 ? atr.Result.LastValue : 0,
+                    atr = (atr != null && atr.Result.Count > 0 && Symbol.PipSize > 0) ? Math.Round(atr.Result.LastValue / Symbol.PipSize, 1) : 0,
                     recent_high = recentHigh,
                     recent_low = recentLow,
                     asian_high = _asianHigh,
