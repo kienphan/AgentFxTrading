@@ -38,9 +38,12 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         params = []
         account_filter = ""
         if account_id and account_id != "all":
-            account_filter = " AND account_id = ?"
-            params.append(account_id)
-
+            if account_id in ("demo", "live"):
+                account_filter = " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ?)"
+                params.append(account_id)
+            else:
+                account_filter = " AND account_id = ?"
+                params.append(account_id)
         # Open positions count
         cursor = conn.execute(f"SELECT COUNT(*) FROM positions WHERE status = 'open'{account_filter}", tuple(params))
         open_positions = cursor.fetchone()[0]
@@ -84,7 +87,13 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         # Fetch account balance/equity
         account_balance = None
         account_equity = None
-        if account_id and account_id != "all":
+        if account_id in ("demo", "live"):
+            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE account_type = ? AND last_balance > 0", (account_id,))
+            sum_row = cursor.fetchone()
+            if sum_row and sum_row[0] is not None:
+                account_balance = sum_row[0]
+                account_equity = sum_row[1]
+        elif account_id and account_id != "all":
             cursor = conn.execute("SELECT last_balance, last_equity FROM accounts WHERE account_id = ?", (account_id,))
             acc_row = cursor.fetchone()
             if acc_row:
@@ -126,7 +135,10 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
             WHERE p.status = 'open'
         """
         params = []
-        if account_id and account_id != "all":
+        if account_id in ("demo", "live"):
+            query += " AND a.account_type = ?"
+            params.append(account_id)
+        elif account_id and account_id != "all":
             query += " AND p.account_id = ?"
             params.append(account_id)
             
@@ -144,7 +156,9 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
         volume = float(pos.get("volume") or 0.01)
         bot_id = pos.get("bot_id")
 
-        bot_pos = getattr(pm, "_bot_positions_cache", {}).get(bot_id) if hasattr(pm, "_bot_positions_cache") else None
+        acc_id = pos.get("account_id")
+        cache = getattr(pm, "_bot_positions_cache", {}) if hasattr(pm, "_bot_positions_cache") else {}
+        bot_pos = cache.get(f"{acc_id}:{bot_id}") or cache.get(bot_id)
         price_info = pm.get_latest_price(symbol) if hasattr(pm, "get_latest_price") else None
         
         current_price = None
@@ -196,7 +210,10 @@ def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
             WHERE p.status = 'closed'
         """
         params = []
-        if account_id and account_id != "all":
+        if account_id in ("demo", "live"):
+            query += " AND a.account_type = ?"
+            params.append(account_id)
+        elif account_id and account_id != "all":
             query += " AND p.account_id = ?"
             params.append(account_id)
             
@@ -228,7 +245,10 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
             WHERE status = 'closed'
         """
         params = []
-        if account_id and account_id != "all":
+        if account_id in ("demo", "live"):
+            query += " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ?)"
+            params.append(account_id)
+        elif account_id and account_id != "all":
             query += " AND account_id = ?"
             params.append(account_id)
             
@@ -248,21 +268,46 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
 
 @router.get("/", response_class=HTMLResponse)
 async def root_redirect(request: Request):
-    """Redirect root to dashboard."""
-    return RedirectResponse(url="/dashboard")
+    """Redirect root to /demo/dashboard."""
+    return RedirectResponse(url="/demo/dashboard")
 
+@router.get("/demo", response_class=HTMLResponse)
+async def demo_redirect(request: Request):
+    return RedirectResponse(url="/demo/dashboard")
+
+@router.get("/real", response_class=HTMLResponse)
+@router.get("/live", response_class=HTMLResponse)
+async def real_redirect(request: Request):
+    return RedirectResponse(url="/real/dashboard")
 
 @router.get("/dashboard", response_class=HTMLResponse)
+@router.get("/demo/dashboard", response_class=HTMLResponse)
+@router.get("/real/dashboard", response_class=HTMLResponse)
+@router.get("/live/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    """Render dashboard HTML page."""
-    
-    summary = get_portfolio_summary()
-    positions = get_active_positions()
-    history = get_trade_history(20)
-    pnl_history = get_daily_pnl_history(30)
+    """Render dashboard HTML page tailored to URL route."""
+    path = request.url.path
+    if path.startswith("/real") or path.startswith("/live"):
+        mode = "live"
+        filter_acc = "live"
+    elif path.startswith("/demo"):
+        mode = "demo"
+        filter_acc = "demo"
+    else:
+        mode = "all"
+        filter_acc = "all"
+        
+    summary = get_portfolio_summary(filter_acc)
+    positions = get_active_positions(filter_acc)
+    history = get_trade_history(20, filter_acc)
+    pnl_history = get_daily_pnl_history(30, filter_acc)
     
     registry = get_account_registry()
-    accounts = registry.list_accounts()
+    all_accounts = registry.list_accounts()
+    if mode in ("demo", "live"):
+        accounts = [acc for acc in all_accounts if acc.get("account_type") == mode]
+    else:
+        accounts = all_accounts
     
     return templates.TemplateResponse(
         request=request,
@@ -272,10 +317,11 @@ async def dashboard_page(request: Request):
             "positions": positions,
             "history": history,
             "pnl_history": pnl_history,
-            "accounts": accounts
+            "accounts": accounts,
+            "all_accounts": all_accounts,
+            "current_mode": mode
         }
     )
-
 
 @router.get("/api/dashboard/summary")
 async def api_dashboard_summary(account_id: str = "all"):
@@ -302,7 +348,12 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 
 
 @router.get("/api/dashboard/logs")
-async def api_dashboard_logs(lines: int = 100, date_str: Optional[str] = None):
+async def api_dashboard_logs(
+    lines: int = 150, 
+    date_str: Optional[str] = None,
+    account_id: Optional[str] = None,
+    mode: Optional[str] = None
+):
     logs_dir = PROJECT_ROOT / "logs"
     if not logs_dir.exists():
         return {"lines": [], "date": date_str or date.today().isoformat(), "available_dates": []}
@@ -321,19 +372,53 @@ async def api_dashboard_logs(lines: int = 100, date_str: Optional[str] = None):
     
     try:
         with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-            tail_lines = all_lines[-lines:] if lines > 0 else all_lines
+            all_lines = [line.rstrip("\r\n") for line in f]
+            
+        filter_mode = (mode or "").lower()
+        acc = (account_id or "").lower()
+        
+        target_mode = "all"
+        if filter_mode in ("live", "real") or acc in ("live", "real"):
+            target_mode = "live"
+        elif filter_mode == "demo" or acc == "demo":
+            target_mode = "demo"
+        elif acc and acc != "all":
+            target_mode = acc
+            
+        registry = get_account_registry()
+        accounts = registry.list_accounts()
+        
+        if target_mode == "live":
+            live_accounts = [a for a in accounts if a.get("account_type") == "live"]
+            live_keys = ["live-"] + [a["account_id"].lower() for a in live_accounts] + [a["account_number"] for a in live_accounts]
+            filtered = [
+                l for l in all_lines 
+                if any(k in l.lower() for k in live_keys) and "demo-" not in l.lower()
+            ]
+        elif target_mode == "demo":
+            demo_accounts = [a for a in accounts if a.get("account_type") == "demo"]
+            demo_keys = ["demo-"] + [a["account_id"].lower() for a in demo_accounts] + [a["account_number"] for a in demo_accounts]
+            filtered = [
+                l for l in all_lines 
+                if any(k in l.lower() for k in demo_keys) and "live-" not in l.lower()
+            ]
+        elif target_mode != "all":
+            filtered = [l for l in all_lines if target_mode in l.lower()]
+        else:
+            filtered = all_lines
+            
+        tail_lines = filtered[-lines:] if lines > 0 else filtered
             
         return {
-            "lines": [line.rstrip("\r\n") for line in tail_lines],
+            "lines": tail_lines,
             "date": today,
-            "total_lines": len(all_lines),
-            "available_dates": available_dates
+            "total_lines": len(filtered),
+            "available_dates": available_dates,
+            "mode": target_mode
         }
     except Exception as e:
         logger.error(f"Error reading log file {log_file}: {e}")
         return {"lines": [f"Error reading log: {e}"], "date": today, "available_dates": available_dates}
-
 
 # WebSocket for real-time updates
 class ConnectionManager:
@@ -436,6 +521,12 @@ async def api_get_bots():
         status_info = docker_manager.get_container_status(cfg["name"])
         cfg["status"] = status_info.get("status", "unknown")
         cfg["container_id"] = status_info.get("id", "")
+        cmd_lower = (cfg.get("run_command") or "").lower()
+        name_lower = (cfg.get("name") or "").lower()
+        if 'accountlabel="live"' in cmd_lower or "accountlabel='live'" in cmd_lower or "-live" in name_lower or "live-" in name_lower or "_live" in name_lower:
+            cfg["account_type"] = "live"
+        else:
+            cfg["account_type"] = "demo"
     return {"bots": configs, "docker_available": docker_manager.is_available}
 
 @router.post("/api/bots")

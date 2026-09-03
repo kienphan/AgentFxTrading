@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260903">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
@@ -24,12 +24,23 @@
             </div>
         </div>
         <div class="topbar-controls">
+            <div class="trade-mode-switch" role="group" aria-label="Trade Mode Switch">
+                <a href="/dashboard" class="trade-mode-btn {% if current_mode == 'all' %}active{% endif %}" data-mode="all" id="btn-mode-all">All</a>
+                <a href="/demo/dashboard" class="trade-mode-btn trade-mode-btn--demo {% if current_mode == 'demo' %}active{% endif %}" data-mode="demo" id="btn-mode-demo">Demo</a>
+                <a href="/real/dashboard" class="trade-mode-btn trade-mode-btn--live {% if current_mode == 'live' %}active{% endif %}" data-mode="live" id="btn-mode-live">Real / Live</a>
+            </div>
             <div class="account-select-wrap">
                 <label for="account-selector">Account</label>
                 <select id="account-selector" class="account-select">
-                    <option value="all">All Accounts</option>
+                    {% if current_mode == 'all' %}
+                    <option value="all" data-type="all">All Accounts (Total)</option>
+                    {% elif current_mode == 'live' %}
+                    <option value="live" data-type="live">All Real Accounts</option>
+                    {% else %}
+                    <option value="demo" data-type="demo">All Demo Accounts</option>
+                    {% endif %}
                     {% for account in accounts %}
-                    <option value="{{ account.account_id }}">
+                    <option value="{{ account.account_id }}" data-type="{{ account.account_type }}">
                         {{ account.label }} ({{ account.account_number }}) — {% if account.account_type == 'live' %}LIVE{% else %}DEMO{% endif %}
                     </option>
                     {% endfor %}
@@ -42,6 +53,18 @@
         </div>
     </header>
     
+    <div id="mode-context-bar" class="mode-context-bar mode-context-bar--{{ current_mode }}">
+        <span class="mode-context-dot"></span>
+        <span id="mode-context-text" class="mode-context-text">
+            {% if current_mode == 'live' %}
+            <strong>🔴 REAL / LIVE TRADING MODE</strong> · Real Money Environment — Đang kết nối tài khoản thật, hãy kiểm tra kỹ tham số rủi ro!
+            {% elif current_mode == 'demo' %}
+            <strong>🟡 DEMO MODE</strong> · Paper Trading Environment — Giám sát tài khoản ảo an toàn, không rủi ro
+            {% else %}
+            <strong>🌐 ALL ACCOUNTS</strong> · Tổng quan toàn bộ danh mục tài khoản (Demo &amp; Live)
+            {% endif %}
+        </span>
+    </div>
     <div class="app-body">
         <nav class="sidebar" id="app-sidebar">
             <a href="#" class="nav-item active" data-target="view-dashboard" title="Overview">
@@ -64,11 +87,11 @@
                 <div class="kpi-grid">
                     <div id="account-balance-card" class="kpi-card">
                         <div class="kpi-label">Balance</div>
-                        <div id="account-balance" class="kpi-value kpi-value--mono">${{ summary.account_balance or 0 }}</div>
+                        <div id="account-balance" class="kpi-value kpi-value--mono">${{ "%.2f"|format(summary.account_balance or 0) }}</div>
                     </div>
                     <div id="account-equity-card" class="kpi-card">
                         <div class="kpi-label">Equity</div>
-                        <div id="account-equity" class="kpi-value kpi-value--mono">${{ summary.account_equity or 0 }}</div>
+                        <div id="account-equity" class="kpi-value kpi-value--mono">${{ "%.2f"|format(summary.account_equity or 0) }}</div>
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-label">Open Pos</div>
@@ -286,6 +309,7 @@
                                 <thead>
                                     <tr>
                                         <th>Bot Name</th>
+                                        <th style="width:70px;">Mode</th>
                                         <th>Status</th>
                                         <th>Container ID</th>
                                         <th>Description</th>
@@ -294,7 +318,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="bots-tbody">
-                                    <tr><td colspan="6" class="td-dim">Loading bots...</td></tr>
+                                    <tr><td colspan="7" class="td-dim">Loading bots...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -384,22 +408,36 @@
         function renderBots(bots, dockerOk) {
             const tbody = document.getElementById("bots-tbody");
             if(!dockerOk) {
-                tbody.innerHTML = `<tr><td colspan="6" class="td-dim" style="color:var(--color-loss)">Docker is not available on the server. Please ensure Docker daemon is running.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="td-dim" style="color:var(--color-loss)">Docker is not available on the server. Please ensure Docker daemon is running.</td></tr>`;
                 return;
             }
             if(!bots || bots.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="td-dim">No bots configured.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="td-dim">No bots configured.</td></tr>`;
                 return;
             }
+            
+            const filteredBots = (currentMode === 'all') 
+                ? bots 
+                : bots.filter(b => (b.account_type || 'demo') === currentMode);
+                
+            if(!filteredBots.length) {
+                tbody.innerHTML = `<tr><td colspan="7" class="td-dim">No ${currentMode.toUpperCase()} bots configured. Use "+ Add Bot" to create one.</td></tr>`;
+                return;
+            }
+
             let html = "";
-            bots.forEach(b => {
+            filteredBots.forEach(b => {
                 const isRunning = b.status === "running";
                 const statusColor = isRunning ? "var(--color-profit)" : (b.status === "error" ? "var(--color-loss)" : "var(--color-dim)");
                 const escapedCmd = (b.run_command || '').replace(/"/g, '&quot;');
                 const escapedDesc = (b.description || '').replace(/"/g, '&quot;');
+                const modeBadge = (b.account_type === 'live')
+                    ? '<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>'
+                    : '<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>';
                 
                 html += `<tr>
                     <td><strong>${b.name}</strong></td>
+                    <td>${modeBadge}</td>
                     <td><span style="color:${statusColor}">${b.status}</span></td>
                     <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
                     <td class="td-dim">${b.description || "-"}</td>
@@ -508,6 +546,12 @@
             document.getElementById("save-bot-btn").addEventListener("click", () => submitBotForm(false));
             document.getElementById("save-restart-bot-btn").addEventListener("click", () => submitBotForm(true));
         });
+        function formatMoney(v) {
+            if (v === null || v === undefined) return "$0.00";
+            const n = Number(v) || 0;
+            const sign = n < 0 ? "-$" : "$";
+            return `${sign}${Math.abs(n).toFixed(2)}`;
+        }
         function pnlClass(v){return Number(v)>=0?'kpi-value--profit':'kpi-value--loss'}
         function accountBadge(t){return t==='live'?'<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>':'<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>'}
         function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${s}</span>`}
@@ -520,20 +564,43 @@
             </div>`;
         }
 
-        let selectedAccountId='all';
-        const accountSelector=document.getElementById('account-selector');
-        accountSelector.addEventListener('change',async(e)=>{
-            selectedAccountId=e.target.value;
-            try{const[sR,pR,hR,cR]=await Promise.all([
-                fetch(`/api/dashboard/summary?account_id=${selectedAccountId}`),
-                fetch(`/api/dashboard/positions?account_id=${selectedAccountId}`),
-                fetch(`/api/dashboard/history?account_id=${selectedAccountId}`),
-                fetch(`/api/dashboard/pnl-history?account_id=${selectedAccountId}`)
-            ]);
-            updateDashboard(await sR.json(),await pR.json());
-            updateTradeHistory(await hR.json());
-            updatePnlChart(await cR.json());
-            }catch(err){console.error('Fetch error:',err)}
+        let currentMode = '{{ current_mode }}' || 'all';
+        let selectedAccountId = currentMode === 'all' ? 'all' : currentMode;
+        const accountSelector = document.getElementById('account-selector');
+
+        async function refreshDashboardData() {
+            try {
+                const [sR, pR, hR, cR] = await Promise.all([
+                    fetch(`/api/dashboard/summary?account_id=${selectedAccountId}`),
+                    fetch(`/api/dashboard/positions?account_id=${selectedAccountId}`),
+                    fetch(`/api/dashboard/history?account_id=${selectedAccountId}`),
+                    fetch(`/api/dashboard/pnl-history?account_id=${selectedAccountId}`)
+                ]);
+                updateDashboard(await sR.json(), await pR.json());
+                updateTradeHistory(await hR.json());
+                updatePnlChart(await cR.json());
+            } catch(err) { console.error('Fetch error:', err); }
+        }
+
+        // Mode switcher buttons navigate cleanly to respective URL routes
+        document.querySelectorAll('.trade-mode-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetMode = btn.dataset.mode;
+                if (targetMode === 'live') {
+                    window.location.href = '/real/dashboard';
+                } else if (targetMode === 'demo') {
+                    window.location.href = '/demo/dashboard';
+                } else {
+                    window.location.href = '/dashboard';
+                }
+            });
+        });
+
+        // Attach account selector change listener
+        accountSelector.addEventListener('change', async (e) => {
+            selectedAccountId = e.target.value;
+            refreshDashboardData();
         });
 
         const ctx=document.getElementById('pnl-chart').getContext('2d');
@@ -544,8 +611,27 @@
 
         let ws=null,pingInterval=null;
         function setConn(on){const el=document.getElementById('connection-status');if(on){el.className='status-pill status-pill--online';el.innerHTML='<span class="status-dot"></span><span>Connected</span>'}else{el.className='status-pill status-pill--offline';el.innerHTML='<span class="status-dot"></span><span>Disconnected</span>'}}
-        function connectWebSocket(){const p=window.location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${window.location.host}/ws/dashboard`);ws.onopen=()=>{setConn(true);pingInterval=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'ping',account_id:selectedAccountId}))},5000)};ws.onmessage=(e)=>{const d=JSON.parse(e.data);if(d.type==='update')updateDashboard(d.summary,d.positions)};ws.onclose=()=>{setConn(false);clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};ws.onerror=(e)=>console.error('WS error:',e)}
-
+        function connectWebSocket(){
+            const p=window.location.protocol==='https:'?'wss:':'ws:';
+            ws=new WebSocket(`${p}//${window.location.host}/ws/dashboard`);
+            ws.onopen=()=>{
+                setConn(true);
+                pingInterval=setInterval(()=>{
+                    if(ws.readyState===WebSocket.OPEN)
+                        ws.send(JSON.stringify({type:'ping',account_id:selectedAccountId}))
+                },5000);
+            };
+            ws.onmessage=(e)=>{
+                const d=JSON.parse(e.data);
+                if(d.type==='update') {
+                    if (!d.account_id || d.account_id === selectedAccountId || d.account_id === currentMode) {
+                        updateDashboard(d.summary, d.positions);
+                    }
+                }
+            };
+            ws.onclose=()=>{setConn(false);clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};
+            ws.onerror=(e)=>console.error('WS error:',e);
+        }
         function updateDashboard(summary,positions){
             document.getElementById('open-positions').textContent=summary.open_positions;
             const dEl=document.getElementById('daily-pnl');dEl.textContent=formatMoney(summary.daily_pnl);dEl.className=`kpi-value ${pnlClass(summary.daily_pnl)}`;
@@ -554,7 +640,8 @@
             document.getElementById('trades-today').textContent=summary.trades_today;
             const lEl=document.getElementById('loss-streak');lEl.textContent=summary.loss_streak;lEl.className=`kpi-value ${summary.loss_streak>=3?'kpi-value--warn':''}`;
             document.getElementById('last-updated').textContent=new Date().toLocaleTimeString();
-            document.querySelectorAll('.col-account').forEach(el=>{selectedAccountId==='all'?el.classList.remove('hidden'):el.classList.add('hidden')});
+            const isMultiAcc = (selectedAccountId === 'all' || selectedAccountId === 'demo' || selectedAccountId === 'live');
+            document.querySelectorAll('.col-account').forEach(el => { isMultiAcc ? el.classList.remove('hidden') : el.classList.add('hidden') });
             const bC=document.getElementById('account-balance'),eC=document.getElementById('account-equity');
             if(bC)bC.textContent=formatMoney(summary.account_balance||0);
             if(eC)eC.textContent=formatMoney(summary.account_equity||0);
@@ -562,7 +649,7 @@
             const posCountEl = document.getElementById('active-pos-count');
             if (posCountEl) posCountEl.textContent = positions.length ? `${positions.length} Open` : '0 Open';
 
-            const tb=document.getElementById('positions-table'),ah=selectedAccountId==='all'?'':'hidden';
+            const tb=document.getElementById('positions-table'),ah=isMultiAcc?'':'hidden';
             if(!positions.length){
                 tb.innerHTML='<tr><td colspan="10" class="empty-state">No active positions</td></tr>';
             } else {
@@ -590,7 +677,8 @@
             }
         }
         function updateTradeHistory(history){
-            const tb=document.getElementById('history-table');if(!tb)return;const ah=selectedAccountId==='all'?'':'hidden';
+            const isMultiAcc = (selectedAccountId === 'all' || selectedAccountId === 'demo' || selectedAccountId === 'live');
+            const tb=document.getElementById('history-table');if(!tb)return;const ah=isMultiAcc?'':'hidden';
             if(!history.length){
                 tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>';
             } else {
@@ -652,7 +740,10 @@
                 : rawLogLines;
 
             if (!filtered.length) {
-                logBox.innerHTML = '<div class="log-line td-dim">No matching log entries found.</div>';
+                const msg = currentMode === 'live' 
+                    ? 'No LIVE log entries found. (Current running bots are on DEMO).'
+                    : 'No matching log entries found.';
+                logBox.innerHTML = `<div class="log-line td-dim">${msg}</div>`;
                 return;
             }
 
@@ -664,9 +755,9 @@
 
         async function fetchAgentLogs(dateParam = '') {
             try {
-                const url = dateParam ? `/api/dashboard/logs?date_str=${dateParam}&lines=150` : '/api/dashboard/logs?lines=150';
+                const base = `/api/dashboard/logs?lines=150&mode=${currentMode}&account_id=${selectedAccountId}`;
+                const url = dateParam ? `${base}&date_str=${dateParam}` : base;
                 const res = await fetch(url);
-                const data = await res.json();
                 
                 rawLogLines = data.lines || [];
                 currentLogDate = data.date || '';

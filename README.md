@@ -118,32 +118,39 @@ Monitor your trading system in real-time through the web dashboard.
 ### Access Dashboard
 
 After starting the server, open your browser:
-```
-http://127.0.0.1:8000/dashboard
-```
+
+| Mode | URL Route | Description |
+| :--- | :--- | :--- |
+| **Demo** | `http://127.0.0.1:8000/demo/dashboard` *(or `/demo`)* | Isolated Paper Trading dashboard & telemetry |
+| **Real / Live** | `http://127.0.0.1:8000/real/dashboard` *(or `/real`, `/live`)* | Isolated Real Money trading dashboard & execution telemetry |
+| **All** | `http://127.0.0.1:8000/dashboard` | Aggregated view of all accounts (Demo + Live) |
 
 ### Features
 
-- **Real-time Updates**: WebSocket connection for live position tracking
-- **Portfolio Overview**: Open positions, daily P&L, win rate, loss streak
-- **Active Positions Table**: Strategy badges (`Judas SMC` vs `TMS+ORB`), Bot ID, symbol, side, volume, entry price, SL/TP
-- **Trade History**: Recent closed trades with strategy classification & P&L
-- **P&L Chart**: Visual representation of daily performance
-- **Bot Guardrail Telemetry**: Live tracking of cBot guardrail events and execution blocks
+- **Multi-Account Scope Switcher**: One-click header toggle (`All | Demo | Real / Live`) with context alert banners (`🔴 LIVE TRADING MODE` vs `🟡 DEMO MODE`).
+- **Complete Data Isolation**: URL-based routing isolates KPI metrics, open positions, trade history, Docker bot configurations, and reasoning logs between Demo and Real accounts.
+- **Real-time Updates**: WebSocket connection for live position tracking and P&L sync.
+- **Active Positions Table**: Strategy badges (`Judas SMC` vs `TMS+ORB`), Bot ID, symbol, side, volume, entry price, live market price, SL/TP, and unrealized P&L.
+- **Trade History**: Recent closed trades with strategy classification, account badge (`DEMO` / `LIVE`), and P&L.
+- **P&L Chart**: Visual representation of daily performance.
+- **Bot Guardrail Telemetry**: Live tracking of cBot guardrail events, market regimes, and execution blocks.
 
 ### API Endpoints
 
 ```
-GET  /dashboard                # Web interface
-GET  /api/dashboard/summary    # Portfolio summary (JSON)
-GET  /api/dashboard/positions  # Active positions (JSON)
-GET  /api/dashboard/history    # Trade history (JSON)
-GET  /api/dashboard/pnl-history # Daily P&L history (JSON)
-GET  /api/dashboard/logs       # Server logs & execution traces (JSON)
+GET  /demo/dashboard           # Demo web dashboard (isolated)
+GET  /real/dashboard           # Real/Live web dashboard (isolated)
+GET  /dashboard                # Aggregated web dashboard (all accounts)
+GET  /api/dashboard/summary    # Portfolio KPI summary (supports ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/positions  # Active positions (supports ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/history    # Closed trade history (supports ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/pnl-history# Daily P&L history (supports ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/logs       # Server & agent reasoning logs (supports ?mode=demo|live|all)
+GET  /api/bots                 # Docker bot configurations & statuses (with account_type)
 POST /api/tick                 # Direct tick telemetry from cBots
 POST /api/cbot_event           # cBot guardrail blocks & event telemetry
 POST /portfolio/report         # Position open/close lifecycle reporting
-WS   /ws/dashboard             # WebSocket for real-time updates
+WS   /ws/dashboard             # WebSocket for real-time dashboard updates
 ```
 ---
 
@@ -230,7 +237,21 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
    cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
    ```
-3. **Run Multi-Instance Docker Containers**:
+3. **Multi-Account Deployment Guidelines (Running Demo &amp; Live Simultaneously)**:
+
+   When deploying Live account bots alongside Demo bots, customize the command flags to prevent collisions:
+   - **Container Name (`--name`)**: Must be unique on the host. Use `cbot-live-<symbol>` vs `cbot-demo-<symbol>`.
+   - **Account Number (`--account`)**: Set to your real cTrader live account number (e.g. `88888888`).
+   - **Account Label (`--AccountLabel`)**: Set to `"live"` (or `"live-main"`). cBot sends this to tag trades and route data to `/real/dashboard`.
+   - **Bot Identifier (`--BotId`)**: Use distinct IDs such as `live_xauusd_m15` vs `demo_xauusd_m15`.
+   - **Risk Management**: Configure stricter risk parameters for real capital (e.g. `--RiskPerTradePercent=0.1` or `0.2`).
+   - **Credentials (`--pwd-file`)**: If using a separate cTID, mount a dedicated password file (e.g. `/root/ctrader_data/ctid_live_pwd`).
+   - **Environment Configuration (`.env`)**:
+     ```bash
+     DASHBOARD_ACCOUNTS=demo-10101649|10101649|demo|Demo Account;live-88888888|88888888|live|Live Main
+     ```
+
+4. **Run Multi-Instance Docker Containers**:
 
    * **XAUUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
      ```bash

@@ -983,7 +983,7 @@ async def trade_decision(snapshot: MarketSnapshot):
             "sl_price": snapshot.position.sl or snapshot.position.sl_price,
             "tp_price": snapshot.position.tp or snapshot.position.tp_price,
         }
-    portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data)
+    portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data, account_id=account_id)
 
     if is_judas:
         strat = snapshot.strategy

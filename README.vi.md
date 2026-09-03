@@ -114,28 +114,35 @@ graph LR
 ## 📊 Giao Diện Dashboard
 
 Theo dõi và quản lý hệ thống giao dịch thời gian thực qua giao diện web dashboard hiện đại:
-```
-http://127.0.0.1:8000/dashboard
-```
+
+| Chế độ | Đường dẫn URL | Mô tả |
+| :--- | :--- | :--- |
+| **Demo** | `http://127.0.0.1:8000/demo/dashboard` *(hoặc `/demo`)* | Dashboard tài khoản Paper Trading (tách biệt độc lập) |
+| **Real / Live** | `http://127.0.0.1:8000/real/dashboard` *(hoặc `/real`, `/live`)* | Dashboard tài khoản tiền thật Real/Live (tách biệt độc lập) |
+| **Tất cả (All)** | `http://127.0.0.1:8000/dashboard` | Xem tổng quan toàn bộ danh mục tài khoản (Demo + Live) |
 
 ### Tính Năng Dashboard
 
-- **Cập Nhật Thời Gian Thực**: Kết nối WebSocket 2 chiều cập nhật tức thời trạng thái vị thế
-- **Tổng Quan Danh Mục**: Vị thế mở, P&L trong ngày, Win Rate, chuỗi thua, trạng thái tài khoản
-- **Bảng Vị Thế Mở (Active Positions)**: Phân loại trực quan chiến lược (`Judas SMC` badge tím vs `TMS+ORB` badge xanh), định danh cBot, symbol, khối lượng, giá vào, SL/TP và PnL thả nổi
-- **Lịch Sử Giao Dịch (Recent Trades)**: Chi tiết các lệnh đã đóng kèm nhãn bot và P&L
-- **Biểu Đồ P&L**: Trực quan hóa hiệu suất lợi nhuận hàng ngày
-- **Giám Sát Guardrail**: Theo dõi trực tiếp các sự kiện cBot và lý do chặn lệnh từ server
+- **Nút Switch Chế Độ Đa Tài Khoản**: Chuyển đổi nhanh 1-click (`All | Demo | Real / Live`) ngay trên Header với thanh trạng thái cảnh báo trực quan (`🔴 LIVE TRADING MODE` vs `🟡 DEMO MODE`).
+- **Phân Lập Dữ Liệu Tuyệt Đối**: Định tuyến URL tách biệt 100% số dư (Balance/Equity), vị thế mở, lịch sử giao dịch, cấu hình bot Docker và nhật ký reasoning giữa tài khoản Demo và Live.
+- **Cập Nhật Thời Gian Thực**: Kết nối WebSocket 2 chiều cập nhật tức thời trạng thái vị thế và P&L thả nổi.
+- **Bảng Vị Thế Mở (Active Positions)**: Phân loại trực quan chiến lược (`Judas SMC` badge tím vs `TMS+ORB` badge xanh), định danh cBot, symbol, khối lượng, giá vào, SL/TP và PnL thả nổi.
+- **Lịch Sử Giao Dịch (Recent Trades)**: Chi tiết các lệnh đã đóng kèm nhãn bot, badge tài khoản (`DEMO` / `LIVE`) và P&L.
+- **Biểu Đồ P&L**: Trực quan hóa hiệu suất lợi nhuận hàng ngày.
+- **Giám Sát Guardrail**: Theo dõi trực tiếp các sự kiện cBot và lý do chặn lệnh từ server.
 
 ### API Endpoints
 
 ```
-GET  /dashboard                # Giao diện web dashboard
-GET  /api/dashboard/summary    # Chỉ số KPI danh mục (JSON)
-GET  /api/dashboard/positions  # Danh sách vị thế đang mở (JSON)
-GET  /api/dashboard/history    # Lịch sử lệnh đã đóng (JSON)
-GET  /api/dashboard/pnl-history # Lịch sử P&L theo ngày (JSON)
-GET  /api/dashboard/logs       # Log hệ thống thời gian thực (JSON)
+GET  /demo/dashboard           # Giao diện web dashboard Demo (phân lập)
+GET  /real/dashboard           # Giao diện web dashboard Real/Live (phân lập)
+GET  /dashboard                # Giao diện web dashboard tổng hợp (All)
+GET  /api/dashboard/summary    # Chỉ số KPI danh mục (hỗ trợ ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/positions  # Danh sách vị thế đang mở (hỗ trợ ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/history    # Lịch sử lệnh đã đóng (hỗ trợ ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/pnl-history# Lịch sử P&L theo ngày (hỗ trợ ?account_id=demo|live|all|<id>)
+GET  /api/dashboard/logs       # Log hệ thống & reasoning (hỗ trợ ?mode=demo|live|all)
+GET  /api/bots                 # Cấu hình bot Docker & trạng thái (kèm account_type)
 POST /api/tick                 # Telemetry giá & số dư từ cBot
 POST /api/cbot_event           # Telemetry sự kiện & cảnh báo guardrail từ cBot
 POST /portfolio/report         # Báo cáo vòng đời mở/đóng lệnh từ cBot
@@ -227,6 +234,23 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
      ghcr.io/spotware/ctrader-console:latest build /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot/AsianRangeJudasSweepBot.csproj
    cp /root/cAlgo/Sources/Robots/AsianRangeJudasSweepBot.algo cBot/AsianRangeJudasSweepBot.algo
    ```
+
+3. **Hướng Dẫn Chạy Đa Tài Khoản (Song Song DEMO &amp; LIVE Không Xung Đột)**:
+
+   Khi triển khai bot cho tài khoản LIVE song song với bot DEMO, tùy chỉnh các cờ tham số để tránh xung đột hệ thống:
+   - **Tên Container (`--name`)**: Phải là duy nhất trên Docker host. Dùng `cbot-live-<symbol>` vs `cbot-demo-<symbol>`.
+   - **Số Tài Khoản (`--account`)**: Điền số tài khoản Live cTrader thực tế (VD: `88888888`).
+   - **Nhãn Tài Khoản (`--AccountLabel`)**: Điền `"live"` (hoặc `"live-main"`). cBot gửi nhãn này để gắn tag và định tuyến dữ liệu về `/real/dashboard`.
+   - **Định Danh Bot (`--BotId`)**: Dùng mã định danh phân biệt, ví dụ `live_xauusd_m15` vs `demo_xauusd_m15`.
+   - **Quản Lý Rủi Ro**: Thiết lập rủi ro chặt chẽ hơn cho vốn thật (VD: `--RiskPerTradePercent=0.1` hoặc `0.2`).
+   - **Thông Tin Đăng Nhập (`--pwd-file`)**: Nếu dùng cTID riêng cho tài khoản Live, tạo file mật khẩu riêng (VD: `/root/ctrader_data/ctid_live_pwd`).
+   - **Biến Môi Trường (`.env`)**:
+     ```bash
+     DASHBOARD_ACCOUNTS=demo-10101649|10101649|demo|Demo Account;live-88888888|88888888|live|Live Main
+     ```
+
+4. **Khởi Chạy Multi-Instance Docker Containers**:
+
    * **XAUUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
      ```bash
      docker run -d \

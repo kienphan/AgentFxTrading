@@ -17,7 +17,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 @media(min-width: 1200px){
   body.app-shell{height:100vh;overflow:hidden;display:flex;flex-direction:column}
 }
-.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;padding:12px 20px;background:var(--bg-surface);border-bottom:2px solid var(--accent);box-shadow:var(--shadow)}
+.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;padding:8px 18px;background:var(--bg-surface);border-bottom:2px solid var(--accent);box-shadow:var(--shadow)}
 .topbar-brand{display:flex;align-items:center;gap:12px}
 .sidebar-toggle-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);cursor:pointer;transition:all .15s}
 .sidebar-toggle-btn:hover{background:var(--bg-hover);border-color:var(--accent);color:var(--accent-bright)}
@@ -200,7 +200,9 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 @media(min-width: 1024px) {
     .app-body {
         flex-direction: row;
-        height: calc(100vh - 58px);
+        flex: 1;
+        height: auto;
+        min-height: 0;
     }
     
     .sidebar {
@@ -290,3 +292,91 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         overflow-y: auto;
     }
 }
+
+/* --- Trade Mode Switcher (ALL | DEMO | LIVE) --- */
+.trade-mode-switch {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    gap: 2px;
+}
+.trade-mode-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 5px 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+}
+.trade-mode-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+    text-decoration: none;
+}
+.trade-mode-btn.active[data-mode="all"] {
+    background: var(--bg-surface);
+    color: var(--accent-bright);
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.trade-mode-btn--demo.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    box-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+}
+.trade-mode-btn--live.active {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* --- Mode Context Bar --- */
+.mode-context-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    transition: all 0.2s ease;
+}
+.mode-context-bar--all {
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-muted);
+}
+.mode-context-bar--demo {
+    background: rgba(59, 130, 246, 0.08);
+    color: #93c5fd;
+    border-bottom-color: rgba(59, 130, 246, 0.25);
+}
+.mode-context-bar--live {
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    border-bottom-color: rgba(239, 68, 68, 0.35);
+}
+.mode-context-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.mode-context-bar--all .mode-context-dot { background: var(--text-muted); }
+.mode-context-bar--demo .mode-context-dot { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
+.mode-context-bar--live .mode-context-dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: pulse-dot 2s ease-in-out infinite; }
