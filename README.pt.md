@@ -72,7 +72,11 @@ AgentFxTrading é um **sistema de negociação forex automatizado** que combina 
 - **Proteção de Sequência de Perdas**: Bloqueia entradas após 3 perdas consecutivas
 - **Cycle Gating (Cost Gate)**: Ignora chamadas LLM fora da sessão, dentro do OR, sobre-estendido ou em sequência de perdas — economizando 80-90% de custos de API
 - **Trend TP Disabled**: Desativa o TP fixo em forte tendência (`trending`) para maximizar ganhos com Trailing SL & Giveback Floor
-
+- **Precisão Dinâmica Multi-Ativo (Dynamic Precision)**: Ajusta casas decimais dinamicamente (5 para Forex, 3 para pares JPY, 2 para ouro, índices e cripto), prevenindo distorção de velas nos prompts
+- **Normalização Real de Pips ATR (True ATR Scaling)**: Conversão automática da volatilidade bruta para pips reais para avaliação precisa do LLM
+- **Cycle Gate Adaptativo para Cripto**: Classificação correta de criptoativos (`BTC`, `ETH`, `SOL`, `XRP`) com limites de rompimento de até 60.000 pips
+- **Filtro Adaptativo de Range Asiático**: Limites sob medida por ativo (`[200p, 8000p]` para ouro, `[12p, 100p]` para Forex) e supressão de requisições ociosas sem posições
+- **Integração de Telemetria do cBot**: cBot envia notificações de bloqueios de guardrail ao servidor FastAPI via `/api/cbot_event`
 ### ⏰ Gestão de Sessão
 - **Sessões de Negociação**: Tempos de sessão configuráveis (Londres, NY, Tóquio)
 - **Fechamento Automático no Fim do Dia**: Fecha posições automaticamente no fim da sessão
@@ -104,6 +108,39 @@ graph LR
 | **Database** | SQLite | Rastreamento de portfólio, histórico de posições |
 | **LLM** | Múltiplos | Análise de decisão de negociação |
 
+
+---
+
+## 📊 Painel de Controle (Dashboard)
+
+Monitore e gerencie o sistema de negociação em tempo real através da interface web moderna:
+```
+http://127.0.0.1:8000/dashboard
+```
+
+### Recursos do Dashboard
+
+- **Atualizações em Tempo Real**: WebSocket bidirecional para sincronização instantânea
+- **Visão Geral do Portfólio**: Posições abertas, P&L diário, taxa de acerto (Win Rate), sequência de perdas e patrimônio
+- **Tabela de Posições Ativas (Active Positions)**: Distinção visual de estratégia (`Judas SMC` roxo vs `TMS+ORB` ciano), identificador cBot, símbolo, volume, preço de entrada e PnL flutuante
+- **Histórico de Negociações (Recent Trades)**: Ordens fechadas com rótulos de estratégia e P&L líquido
+- **Gráfico de P&L Diário**: Visualização de barras do desempenho histórico
+- **Monitoramento de Guardrails**: Acompanhamento em tempo real dos bloqueios de segurança do cBot
+
+### Endpoints da API
+
+```
+GET  /dashboard                # Interface web do dashboard
+GET  /api/dashboard/summary    # Resumo de KPIs do portfólio (JSON)
+GET  /api/dashboard/positions  # Lista de posições ativas abertas (JSON)
+GET  /api/dashboard/history    # Histórico de ordens fechadas (JSON)
+GET  /api/dashboard/pnl-history # Histórico diário de P&L (JSON)
+GET  /api/dashboard/logs       # Fluxo de logs em tempo real (JSON)
+POST /api/tick                 # Telemetria de cotação e saldo dos cBots
+POST /api/cbot_event           # Telemetria de eventos e bloqueios dos cBots
+POST /portfolio/report         # Relatório de ciclo de vida de ordens
+WS   /ws/dashboard             # Transmissão WebSocket em tempo real
+```
 ---
 
 ## ⚡ Instalação Rápida
@@ -213,8 +250,15 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --UseDirectAiApi=false \
-       --UseAiGateMode=true
-     ```
+       --UseAiGateMode=true \
+       --minAsianRangePips=200.0 \
+       --maxAsianRangePips=8000.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=200.0 \
+       --breakEvenTrigger=250.0 \
+       --stoplossPip=200.0 \
+       --takeprofitPip=450.0 \
+       --enableBreakEvenPrice=true
 
    * **GBPUSD Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
      ```bash

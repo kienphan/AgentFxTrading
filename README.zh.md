@@ -72,7 +72,11 @@ AgentFxTrading是一个**自动外汇交易系统**，结合AI的力量与经过
 - **连亏保护**：连续3次亏损后阻止入场
 - **周期门控 (Cost Gate)**：在时段外、开盘区间内、超幅耗竭或连亏时自动跳过LLM调用——节省80-90%的API费用
 - **趋势取消固定止盈 (Trend TP Disabled)**：在强趋势 (`trending`) 状态下自动移除固定TP，配合追踪止损与回撤底线充分捕获单边行情
-
+- **多资产动态精度控制 (Dynamic Precision)**：实时自动适配小数位（普通外汇5位，日元对3位，黄金/指数/加密2位），防止AI提示词中K线形态失真
+- **真实ATR点数规范化 (True ATR Scaling)**：自动将各品种底层波动率数值换算为真实标准点数，确保LLM精确评估波动烈度
+- **多资产智能周期门控**：精准识别加密货币分类 (`BTC`, `ETH`, `SOL`, `XRP`)，提供最高60,000点的真实突破容限
+- **自适应亚洲区间过滤 (Adaptive Asian Range)**：品种专属亚洲区间边界（黄金 `[200p, 8000p]`，外汇 `[12p, 100p]`），并在无仓位且无假突破时静默抑制无用轮询
+- **cBot风控遥测集成**：cBot内部风控拦截事件与警告实时通过 `/api/cbot_event` 回传至FastAPI服务端
 ### ⏰ 交易时段管理
 - **交易时段**：可配置的时段时间（伦敦、纽约、东京）
 - **日终自动平仓**：时段结束时自动平仓
@@ -95,6 +99,38 @@ graph LR
     B --> I[(SQLite<br/>Portfolio DB)]
 ```
 
+---
+
+## 📊 仪表板 (Dashboard)
+
+通过现代化Web仪表板实时监控和管理自动化交易系统：
+```
+http://127.0.0.1:8000/dashboard
+```
+
+### 仪表板功能
+
+- **实时更新**：基于WebSocket实时同步头寸与盈亏
+- **投资组合概览**：活动头寸、当日P&L、胜率、连亏次数及账户资产净值
+- **活动头寸表 (Active Positions)**：直观区分策略类型（`Judas SMC` 紫色徽章 vs `TMS+ORB` 青色徽章）、cBot实例标识、交易品种、方向、手数、入场价与浮动盈亏
+- **交易历史记录 (Recent Trades)**：已平仓订单详情及策略来源与净盈亏
+- **每日P&L图表**：历史收益可视化柱状图
+- **风控事件监视**：服务端与cBot端拦截原因透明呈现
+
+### API接口
+
+```
+GET  /dashboard                # Web仪表板前端界面
+GET  /api/dashboard/summary    # 投资组合KPI汇总数据 (JSON)
+GET  /api/dashboard/positions  # 活动开仓头寸列表 (JSON)
+GET  /api/dashboard/history    # 已平仓交易历史 (JSON)
+GET  /api/dashboard/pnl-history # 每日P&L历史记录 (JSON)
+GET  /api/dashboard/logs       # 系统实时日志流 (JSON)
+POST /api/tick                 # cBot报价与净值遥测
+POST /api/cbot_event           # cBot拦截事件与警告遥测
+POST /portfolio/report         # 头寸开平仓状态汇报
+WS   /ws/dashboard             # 实时WebSocket更新通道
+```
 ---
 
 ## ⚡ 快速开始
@@ -204,8 +240,15 @@ python app/server.py
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --UseDirectAiApi=false \
-       --UseAiGateMode=true
-     ```
+       --UseAiGateMode=true \
+       --minAsianRangePips=200.0 \
+       --maxAsianRangePips=8000.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=200.0 \
+       --breakEvenTrigger=250.0 \
+       --stoplossPip=200.0 \
+       --takeprofitPip=450.0 \
+       --enableBreakEvenPrice=true
 
    * **GBPUSD 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
      ```bash

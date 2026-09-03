@@ -72,7 +72,11 @@ AgentFxTrading là **hệ thống giao dịch forex tự động** kết hợp s
 - **Bảo Vệ Chuỗi Thua**: Chặn vào lệnh sau 3 lần thua liên tiếp
 - **Cycle Gating (Cost Gate)**: Tự động bỏ qua gọi LLM khi ngoài phiên, giá trong OR, quá xa vùng cản hoặc đang chuỗi thua — tiết kiệm 80-90% chi phí API
 - **Trend TP Disabled**: Tự động hủy TP cố định khi thị trường có xu hướng mạnh (`trending`) để gồng lời tối đa bằng Trailing SL & Giveback Floor
-
+- **Độ Chính Xác Đa Tài Sản Động (Dynamic Precision)**: Tự động scale số thập phân (5 số cho Forex, 3 số cho cặp JPY, 2 số cho Vàng, Chỉ số và Crypto), chống méo mó nến trong prompt AI
+- **Chuẩn Hóa ATR Pips**: Tự động quy đổi đơn vị biến động sang pips thực tế cho từng symbol để LLM đánh giá chuẩn xác
+- **Cycle Gate Đa Lớp Cho Crypto**: Phân loại chuẩn xác nhóm Crypto (`BTC`, `ETH`, `SOL`, `XRP`) với ngưỡng trần khoảng cách breakout thực tế (lên đến 60.000 pips)
+- **Bộ Lọc Phiên Á Linh Hoạt (Adaptive Asian Range)**: Ngưỡng phiên Á tương thích từng loại tài sản (`[200p, 8000p]` cho Vàng, `[12p, 100p]` cho Forex) cùng cơ chế chặn gọi AI dư thừa khi không có vị thế
+- **Tích Hợp Telemetry cBot**: cBot tự động báo cáo các sự kiện chặn lệnh (Guardrail blocks) về FastAPI server qua `/api/cbot_event`
 ### ⏰ Quản Lý Phiên
 - **Phiên Giao Dịch**: Thời gian phiên có thể cấu hình (London, NY, Tokyo)
 - **Tự Động Đóng Cuối Ngày**: Tự động đóng vị thế khi kết thúc phiên
@@ -104,6 +108,39 @@ graph LR
 | **Database** | SQLite | Theo dõi danh mục, lịch sử vị thế |
 | **LLM** | Nhiều loại | Phân tích quyết định giao dịch |
 
+
+---
+
+## 📊 Giao Diện Dashboard
+
+Theo dõi và quản lý hệ thống giao dịch thời gian thực qua giao diện web dashboard hiện đại:
+```
+http://127.0.0.1:8000/dashboard
+```
+
+### Tính Năng Dashboard
+
+- **Cập Nhật Thời Gian Thực**: Kết nối WebSocket 2 chiều cập nhật tức thời trạng thái vị thế
+- **Tổng Quan Danh Mục**: Vị thế mở, P&L trong ngày, Win Rate, chuỗi thua, trạng thái tài khoản
+- **Bảng Vị Thế Mở (Active Positions)**: Phân loại trực quan chiến lược (`Judas SMC` badge tím vs `TMS+ORB` badge xanh), định danh cBot, symbol, khối lượng, giá vào, SL/TP và PnL thả nổi
+- **Lịch Sử Giao Dịch (Recent Trades)**: Chi tiết các lệnh đã đóng kèm nhãn bot và P&L
+- **Biểu Đồ P&L**: Trực quan hóa hiệu suất lợi nhuận hàng ngày
+- **Giám Sát Guardrail**: Theo dõi trực tiếp các sự kiện cBot và lý do chặn lệnh từ server
+
+### API Endpoints
+
+```
+GET  /dashboard                # Giao diện web dashboard
+GET  /api/dashboard/summary    # Chỉ số KPI danh mục (JSON)
+GET  /api/dashboard/positions  # Danh sách vị thế đang mở (JSON)
+GET  /api/dashboard/history    # Lịch sử lệnh đã đóng (JSON)
+GET  /api/dashboard/pnl-history # Lịch sử P&L theo ngày (JSON)
+GET  /api/dashboard/logs       # Log hệ thống thời gian thực (JSON)
+POST /api/tick                 # Telemetry giá & số dư từ cBot
+POST /api/cbot_event           # Telemetry sự kiện & cảnh báo guardrail từ cBot
+POST /portfolio/report         # Báo cáo vòng đời mở/đóng lệnh từ cBot
+WS   /ws/dashboard             # Luồng WebSocket thời gian thực
+```
 ---
 
 ## ⚡ Hướng Dẫn Cài Đặt
@@ -212,8 +249,15 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --UseDirectAiApi=false \
-       --UseAiGateMode=true
-     ```
+       --UseAiGateMode=true \
+       --minAsianRangePips=200.0 \
+       --maxAsianRangePips=8000.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=200.0 \
+       --breakEvenTrigger=250.0 \
+       --stoplossPip=200.0 \
+       --takeprofitPip=450.0 \
+       --enableBreakEvenPrice=true
 
    * **GBPUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
      ```bash

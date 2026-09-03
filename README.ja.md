@@ -72,7 +72,11 @@ AgentFxTradingは、AIの力を実証済みのテクニカル分析戦略と組�
 - **連敗保護**：3連敗後にエントリーをブロック
 - **サイクルゲーティング (Cost Gate)**：セッション外、OR内、過熱状態、連敗中にLLM呼び出しを自動スキップし、APIコストを80-90%削減
 - **トレンド時固定利確解除 (Trend TP Disabled)**：強いトレンド相場 (`trending`) で固定TPを自動解除し、トレーリングSLとギブバックフロアで利益を最大化
-
+- **銘柄別動的精度管理 (Dynamic Precision)**：小数を自動スケール（通常FXは5桁、JPYクロスは3桁、ゴールド/指数/仮想通貨は2桁）、AIプロンプト内のローソク足歪みを防止
+- **実効ATR Pips正規化 (True ATR Scaling)**：銘柄ごとの生ボラティリティ数値を実効Pips値に自動換算し、LLMがボラティリティを正確に評価
+- **暗号資産適応型サイクルゲート**：暗号資産分類 (`BTC`, `ETH`, `SOL`, `XRP`) を正確に認識し、最大60,000 pipsの実勢ブレイクアウト許容距離を設定
+- **銘柄別アジアンレンジフィルター (Adaptive Asian Range)**：ゴールド (`[200p, 8000p]`)、FX (`[12p, 100p]`) の専用レンジ境界とノーポジ時の不要リクエスト抑制
+- **cBotガードレール・テレメトリ統合**：cBot内部のエントリーブロック理由をリアルタイムに `/api/cbot_event` 経由でFastAPIサーバーに通知
 ### ⏰ セッション管理
 - **取引セッション**：設定可能なセッション時間（ロンドン、NY、東京）
 - **日末自動クローズ**：セッション終了時に自動的にポジションをクローズ
@@ -104,6 +108,39 @@ graph LR
 | **Database** | SQLite | ポートフォリオ追跡、ポジション履歴 |
 | **LLM** | 複数 | 取引判断分析 |
 
+
+---
+
+## 📊 ダッシュボード (Dashboard)
+
+モダンなWebダッシュボードを通じてリアルタイムに取引システムを監視・管理できます：
+```
+http://127.0.0.1:8000/dashboard
+```
+
+### ダッシュボード機能
+
+- **リアルタイム更新**：WebSocketによるポジション・損益のライブ同期
+- **ポートフォリオ概要**：保有ポジション、当日P&L、勝率、連敗数、口座資産・有効証拠金
+- **保有ポジション一覧 (Active Positions)**：戦略バッジ（`Judas SMC` 紫バッジ vs `TMS+ORB` 青バッジ）とcBot名、通貨ペア、ロット数、現在値、含み損益を明確に識別
+- **取引履歴 (Recent Trades)**：決済済みトレード一覧と戦略ラベル・純損益
+- **日次P&Lチャート**：パフォーマンス推移の可視化グラフ
+- **ガードレール監視**：cBot側のエントリーブロック事由のリアルタイム表示
+
+### APIエンドポイント
+
+```
+GET  /dashboard                # Webダッシュボード画面
+GET  /api/dashboard/summary    # ポートフォリオKPIサマリー (JSON)
+GET  /api/dashboard/positions  # 保有ポジション一覧 (JSON)
+GET  /api/dashboard/history    # 決済済み取引履歴 (JSON)
+GET  /api/dashboard/pnl-history # 日次P&L履歴 (JSON)
+GET  /api/dashboard/logs       # システムリアルタイムログ (JSON)
+POST /api/tick                 # cBotレート・残高テレメトリ
+POST /api/cbot_event           # cBotガードレール警告・ブロック通知
+POST /portfolio/report         # ポジション開始・決済レポート
+WS   /ws/dashboard             # リアルタイムWebSocket配信
+```
 ---
 
 ## ⚡ クイックスタート
@@ -213,8 +250,15 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --UseDirectAiApi=false \
-       --UseAiGateMode=true
-     ```
+       --UseAiGateMode=true \
+       --minAsianRangePips=200.0 \
+       --maxAsianRangePips=8000.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=200.0 \
+       --breakEvenTrigger=250.0 \
+       --stoplossPip=200.0 \
+       --takeprofitPip=450.0 \
+       --enableBreakEvenPrice=true
 
    * **GBPUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
      ```bash

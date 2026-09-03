@@ -61,7 +61,11 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Currency Exposure Control**: Prevents over-exposure to single currency
 - **Correlation Detection**: Blocks highly correlated positions
 - **Daily Loss Limits**: Automatic trading halt after max loss
-
+- **Dynamic Multi-Asset Precision**: Real-time decimal scaling (5 decimals for Forex, 3 for JPY pairs, 2 for Gold, Indices, and Crypto) preventing flatline prompt distortion
+- **True ATR Scaling**: Automated normalization of raw volatility units to pips across all symbols for precise LLM evaluation
+- **Multi-Asset Cycle Gate**: Smart overextension filtering for Crypto (`BTC`, `ETH`, `SOL`, `XRP`), Gold, Indices, and Forex
+- **Adaptive Asian Range Filter**: Symbol-specific bounds (`[200p, 8000p]` for Gold, `[12p, 100p]` for Forex, `[15p, 200p]` for JPY crosses) with idle polling suppression
+- **Guardrail Telemetry Integration**: Client-side cBot event telemetry reporting blocked trades and internal guardrail states back to the FastAPI server via `/api/cbot_event`
 ### 🛡️ Risk Management
 - **Position Memory**: Tracks MFE (Maximum Favorable Excursion) on every tick
 - **Auto Breakeven**: Moves SL to entry (+0.1x ATR offset) when profit reaches $\ge 0.8\times$ ATR
@@ -122,18 +126,24 @@ http://127.0.0.1:8000/dashboard
 
 - **Real-time Updates**: WebSocket connection for live position tracking
 - **Portfolio Overview**: Open positions, daily P&L, win rate, loss streak
-- **Active Positions Table**: Bot ID, symbol, side, volume, entry price, SL/TP
-- **Trade History**: Recent closed trades with P&L
+- **Active Positions Table**: Strategy badges (`Judas SMC` vs `TMS+ORB`), Bot ID, symbol, side, volume, entry price, SL/TP
+- **Trade History**: Recent closed trades with strategy classification & P&L
 - **P&L Chart**: Visual representation of daily performance
+- **Bot Guardrail Telemetry**: Live tracking of cBot guardrail events and execution blocks
 
 ### API Endpoints
 
 ```
-GET /dashboard              # Web interface
-GET /api/dashboard/summary  # Portfolio summary (JSON)
-GET /api/dashboard/positions # Active positions (JSON)
-GET /api/dashboard/history  # Trade history (JSON)
-WS  /ws/dashboard           # WebSocket for real-time updates
+GET  /dashboard                # Web interface
+GET  /api/dashboard/summary    # Portfolio summary (JSON)
+GET  /api/dashboard/positions  # Active positions (JSON)
+GET  /api/dashboard/history    # Trade history (JSON)
+GET  /api/dashboard/pnl-history # Daily P&L history (JSON)
+GET  /api/dashboard/logs       # Server logs & execution traces (JSON)
+POST /api/tick                 # Direct tick telemetry from cBots
+POST /api/cbot_event           # cBot guardrail blocks & event telemetry
+POST /portfolio/report         # Position open/close lifecycle reporting
+WS   /ws/dashboard             # WebSocket for real-time updates
 ```
 ---
 
@@ -244,7 +254,15 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --ApiUrl="http://127.0.0.1:8000/trade" \
        --AccountLabel="demo" \
        --UseDirectAiApi=false \
-       --UseAiGateMode=true
+       --UseAiGateMode=true \
+       --minAsianRangePips=200.0 \
+       --maxAsianRangePips=8000.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=200.0 \
+       --breakEvenTrigger=250.0 \
+       --stoplossPip=200.0 \
+       --takeprofitPip=450.0 \
+       --enableBreakEvenPrice=true
      ```
 
    * **GBPUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
