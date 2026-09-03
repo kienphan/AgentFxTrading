@@ -102,10 +102,10 @@ namespace cAlgo.Robots
         [Parameter("Asian Session End (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 6, MinValue = 0, MaxValue = 23)]
         public int asianEndHour { get; set; }
 
-        [Parameter("Min Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 50.0, MinValue = 10.0, MaxValue = 500.0)]
+        [Parameter("Min Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 50.0, MinValue = 5.0, MaxValue = 5000.0)]
         public double minAsianRangePips { get; set; }
 
-        [Parameter("Max Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 350.0, MinValue = 50.0, MaxValue = 1000.0)]
+        [Parameter("Max Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 350.0, MinValue = 20.0, MaxValue = 20000.0)]
         public double maxAsianRangePips { get; set; }
 
         [Parameter("London Killzone Start (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 7, MinValue = 0, MaxValue = 23)]
@@ -120,7 +120,7 @@ namespace cAlgo.Robots
         [Parameter("NY Killzone End (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 16, MinValue = 0, MaxValue = 23)]
         public int nyEndHour { get; set; }
 
-        [Parameter("Judas Sweep Buffer (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 15.0, MinValue = 1.0, MaxValue = 100.0)]
+        [Parameter("Judas Sweep Buffer (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 15.0, MinValue = 1.0, MaxValue = 500.0)]
         public double sweepBufferPips { get; set; }
 
         [Parameter("Draw Asian Range Visuals", Group = "Asian Range & Judas Sweep", DefaultValue = true)]
@@ -402,6 +402,19 @@ namespace cAlgo.Robots
             try { InitializeRiskManagement(); } catch (Exception ex) { Print($"[Risk Init Warning] {ex.Message}"); }
             try { InitializeStrategyIndicators(); } catch (Exception ex) { Print($"[Indicators Init Warning] {ex.Message}"); }
             try { InitializeUI(); } catch (Exception ex) { Print($"[UI Init Warning] {ex.Message}"); }
+            // Auto-scale Asian Range & buffer for Gold (XAUUSD where 1 pip = $0.01) if using unscaled defaults
+            string symUp = SymbolName.ToUpperInvariant();
+            if (symUp.Contains("XAU") || symUp.Contains("GOLD"))
+            {
+                if (maxAsianRangePips <= 500.0)
+                {
+                    minAsianRangePips = 200.0;  // $2.00 min Asian Range
+                    maxAsianRangePips = 8000.0; // $80.00 max Asian Range
+                    if (sweepBufferPips <= 15.0) sweepBufferPips = 30.0; // $0.30 sweep buffer
+                    Print($"[Auto-Scale XAUUSD] Scaled Asian Range for Gold: Min={minAsianRangePips}p, Max={maxAsianRangePips}p, Buffer={sweepBufferPips}p");
+                }
+            }
+
 
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(aiTimeoutSeconds > 0 ? aiTimeoutSeconds : 300);
