@@ -132,7 +132,16 @@
                                             {% endif %}
                                             <span class="account-name">{{ pos.account_label }}</span>
                                         </td>
-                                        <td>{{ pos.bot_id }}</td>
+                                        <td>
+                                            {% set b_lower = (pos.bot_id or '') | lower %}
+                                            {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
+                                            <div class="bot-cell">
+                                                <span class="bot-badge {% if is_judas %}bot-badge--judas{% else %}bot-badge--tms{% endif %}">
+                                                    <span class="bot-dot"></span>{% if is_judas %}Judas SMC{% else %}TMS+ORB{% endif %}
+                                                </span>
+                                                <span class="bot-id-text" title="{{ pos.bot_id }}">{{ pos.bot_id }}</span>
+                                            </div>
+                                        </td>
                                         <td class="td-mono font-bold">{{ pos.symbol }}</td>
                                         <td>
                                             {% if pos.side == 'BUY' %}
@@ -195,7 +204,16 @@
                                             {% endif %}
                                             <span class="account-name">{{ trade.account_label }}</span>
                                         </td>
-                                        <td>{{ trade.bot_id }}</td>
+                                        <td>
+                                            {% set b_lower = (trade.bot_id or '') | lower %}
+                                            {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
+                                            <div class="bot-cell">
+                                                <span class="bot-badge {% if is_judas %}bot-badge--judas{% else %}bot-badge--tms{% endif %}">
+                                                    <span class="bot-dot"></span>{% if is_judas %}Judas SMC{% else %}TMS+ORB{% endif %}
+                                                </span>
+                                                <span class="bot-id-text" title="{{ trade.bot_id }}">{{ trade.bot_id }}</span>
+                                            </div>
+                                        </td>
                                         <td class="td-mono font-bold">{{ trade.symbol }}</td>
                                         <td>
                                             {% if trade.side == 'BUY' %}
@@ -493,6 +511,14 @@
         function pnlClass(v){return Number(v)>=0?'kpi-value--profit':'kpi-value--loss'}
         function accountBadge(t){return t==='live'?'<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>':'<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>'}
         function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${s}</span>`}
+        function botBadge(b){
+            if(!b)return '<span class="bot-badge bot-badge--default"><span class="bot-dot"></span>N/A</span>';
+            const bl=String(b).toLowerCase(),isJ=bl.includes('judas')||bl.includes('asian')||bl.includes('smc');
+            return `<div class="bot-cell">
+                <span class="bot-badge ${isJ?'bot-badge--judas':'bot-badge--tms'}"><span class="bot-dot"></span>${isJ?'Judas SMC':'TMS+ORB'}</span>
+                <span class="bot-id-text" title="${b}">${b}</span>
+            </div>`;
+        }
 
         let selectedAccountId='all';
         const accountSelector=document.getElementById('account-selector');
@@ -550,7 +576,7 @@
                     
                     return `<tr>
                         <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td>
-                        <td>${p.bot_id}</td>
+                        <td>${botBadge(p.bot_id)}</td>
                         <td class="td-mono font-bold">${p.symbol}</td>
                         <td>${sideChip(p.side)}</td>
                         <td>${p.volume}L</td>
@@ -570,7 +596,7 @@
             } else {
                 tb.innerHTML=history.map(t=>`<tr>
                     <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td>
-                    <td>${t.bot_id}</td>
+                    <td>${botBadge(t.bot_id)}</td>
                     <td class="td-mono font-bold">${t.symbol}</td>
                     <td>${sideChip(t.side)}</td>
                     <td>${t.volume}L</td>
