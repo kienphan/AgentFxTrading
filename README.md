@@ -123,11 +123,12 @@ After starting the server, open your browser:
 | :--- | :--- | :--- |
 | **Demo** | `http://127.0.0.1:8000/demo/dashboard` *(or `/demo`)* | Isolated Paper Trading dashboard & telemetry |
 | **Real / Live** | `http://127.0.0.1:8000/real/dashboard` *(or `/real`, `/live`)* | Isolated Real Money trading dashboard & execution telemetry |
-| **All** | `http://127.0.0.1:8000/dashboard` | Aggregated view of all accounts (Demo + Live) |
+| **Auto-Redirect** | `http://127.0.0.1:8000/` *(or `/dashboard`)* | Auto-routes to your last active mode (Demo or Real) |
 
 ### Features
 
-- **Multi-Account Scope Switcher**: One-click header toggle (`All | Demo | Real / Live`) with context alert banners (`🔴 LIVE TRADING MODE` vs `🟡 DEMO MODE`).
+- **Strict Mode Isolation**: Pure binary switching (`Demo | Real`) eliminates accidental mixing of paper and real capital.
+- **Last-Mode Persistence**: The system remembers your active trading mode via server persistence & cookies; accessing `/` or `/dashboard` automatically takes you to the mode you last used.
 - **Complete Data Isolation**: URL-based routing isolates KPI metrics, open positions, trade history, Docker bot configurations, and reasoning logs between Demo and Real accounts.
 - **Real-time Updates**: WebSocket connection for live position tracking and P&L sync.
 - **Active Positions Table**: Strategy badges (`Judas SMC` vs `TMS+ORB`), Bot ID, symbol, side, volume, entry price, live market price, SL/TP, and unrealized P&L.
@@ -140,8 +141,8 @@ After starting the server, open your browser:
 ```
 GET  /demo/dashboard           # Demo web dashboard (isolated)
 GET  /real/dashboard           # Real/Live web dashboard (isolated)
-GET  /dashboard                # Aggregated web dashboard (all accounts)
-GET  /api/dashboard/summary    # Portfolio KPI summary (supports ?account_id=demo|live|all|<id>)
+GET  /                         # Auto-redirects to last active mode
+GET  /dashboard                # Auto-redirects to last active mode
 GET  /api/dashboard/positions  # Active positions (supports ?account_id=demo|live|all|<id>)
 GET  /api/dashboard/history    # Closed trade history (supports ?account_id=demo|live|all|<id>)
 GET  /api/dashboard/pnl-history# Daily P&L history (supports ?account_id=demo|live|all|<id>)

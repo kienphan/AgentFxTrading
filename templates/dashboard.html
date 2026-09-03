@@ -25,23 +25,20 @@
         </div>
         <div class="topbar-controls">
             <div class="trade-mode-switch" role="group" aria-label="Trade Mode Switch">
-                <a href="/dashboard" class="trade-mode-btn {% if current_mode == 'all' %}active{% endif %}" data-mode="all" id="btn-mode-all">All</a>
                 <a href="/demo/dashboard" class="trade-mode-btn trade-mode-btn--demo {% if current_mode == 'demo' %}active{% endif %}" data-mode="demo" id="btn-mode-demo">Demo</a>
-                <a href="/real/dashboard" class="trade-mode-btn trade-mode-btn--live {% if current_mode == 'live' %}active{% endif %}" data-mode="live" id="btn-mode-live">Real / Live</a>
+                <a href="/real/dashboard" class="trade-mode-btn trade-mode-btn--live {% if current_mode in ('real', 'live') %}active{% endif %}" data-mode="real" id="btn-mode-real">Real</a>
             </div>
             <div class="account-select-wrap">
                 <label for="account-selector">Account</label>
                 <select id="account-selector" class="account-select">
-                    {% if current_mode == 'all' %}
-                    <option value="all" data-type="all">All Accounts (Total)</option>
-                    {% elif current_mode == 'live' %}
+                    {% if current_mode in ('real', 'live') %}
                     <option value="live" data-type="live">All Real Accounts</option>
                     {% else %}
                     <option value="demo" data-type="demo">All Demo Accounts</option>
                     {% endif %}
                     {% for account in accounts %}
                     <option value="{{ account.account_id }}" data-type="{{ account.account_type }}">
-                        {{ account.label }} ({{ account.account_number }}) — {% if account.account_type == 'live' %}LIVE{% else %}DEMO{% endif %}
+                        {{ account.label }} ({{ account.account_number }})
                     </option>
                     {% endfor %}
                 </select>
@@ -53,15 +50,13 @@
         </div>
     </header>
     
-    <div id="mode-context-bar" class="mode-context-bar mode-context-bar--{{ current_mode }}">
+    <div id="mode-context-bar" class="mode-context-bar mode-context-bar--{% if current_mode in ('real', 'live') %}live{% else %}demo{% endif %}">
         <span class="mode-context-dot"></span>
         <span id="mode-context-text" class="mode-context-text">
-            {% if current_mode == 'live' %}
-            <strong>🔴 REAL / LIVE TRADING MODE</strong> · Real Money Environment — Đang kết nối tài khoản thật, hãy kiểm tra kỹ tham số rủi ro!
-            {% elif current_mode == 'demo' %}
-            <strong>🟡 DEMO MODE</strong> · Paper Trading Environment — Giám sát tài khoản ảo an toàn, không rủi ro
+            {% if current_mode in ('real', 'live') %}
+            <strong>🔴 REAL MODE</strong> · Real Money Trading — Đang kết nối tài khoản thật, hãy kiểm tra kỹ tham số rủi ro!
             {% else %}
-            <strong>🌐 ALL ACCOUNTS</strong> · Tổng quan toàn bộ danh mục tài khoản (Demo &amp; Live)
+            <strong>🟡 DEMO MODE</strong> · Paper Trading Environment — Giám sát tài khoản ảo an toàn, không rủi ro
             {% endif %}
         </span>
     </div>
@@ -416,12 +411,11 @@
                 return;
             }
             
-            const filteredBots = (currentMode === 'all') 
-                ? bots 
-                : bots.filter(b => (b.account_type || 'demo') === currentMode);
+            const targetType = (currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo';
+            const filteredBots = bots.filter(b => (b.account_type || 'demo') === targetType);
                 
             if(!filteredBots.length) {
-                tbody.innerHTML = `<tr><td colspan="7" class="td-dim">No ${currentMode.toUpperCase()} bots configured. Use "+ Add Bot" to create one.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="td-dim">No ${targetType.toUpperCase()} bots configured. Use "+ Add Bot" to create one.</td></tr>`;
                 return;
             }
 
@@ -564,8 +558,8 @@
             </div>`;
         }
 
-        let currentMode = '{{ current_mode }}' || 'all';
-        let selectedAccountId = currentMode === 'all' ? 'all' : currentMode;
+        let currentMode = '{{ current_mode }}' || 'demo';
+        let selectedAccountId = (currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo';
         const accountSelector = document.getElementById('account-selector');
 
         async function refreshDashboardData() {
@@ -587,12 +581,10 @@
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const targetMode = btn.dataset.mode;
-                if (targetMode === 'live') {
+                if (targetMode === 'real' || targetMode === 'live') {
                     window.location.href = '/real/dashboard';
-                } else if (targetMode === 'demo') {
-                    window.location.href = '/demo/dashboard';
                 } else {
-                    window.location.href = '/dashboard';
+                    window.location.href = '/demo/dashboard';
                 }
             });
         });
@@ -640,7 +632,7 @@
             document.getElementById('trades-today').textContent=summary.trades_today;
             const lEl=document.getElementById('loss-streak');lEl.textContent=summary.loss_streak;lEl.className=`kpi-value ${summary.loss_streak>=3?'kpi-value--warn':''}`;
             document.getElementById('last-updated').textContent=new Date().toLocaleTimeString();
-            const isMultiAcc = (selectedAccountId === 'all' || selectedAccountId === 'demo' || selectedAccountId === 'live');
+            const isMultiAcc = (selectedAccountId === 'demo' || selectedAccountId === 'live');
             document.querySelectorAll('.col-account').forEach(el => { isMultiAcc ? el.classList.remove('hidden') : el.classList.add('hidden') });
             const bC=document.getElementById('account-balance'),eC=document.getElementById('account-equity');
             if(bC)bC.textContent=formatMoney(summary.account_balance||0);
@@ -677,7 +669,7 @@
             }
         }
         function updateTradeHistory(history){
-            const isMultiAcc = (selectedAccountId === 'all' || selectedAccountId === 'demo' || selectedAccountId === 'live');
+            const isMultiAcc = (selectedAccountId === 'demo' || selectedAccountId === 'live');
             const tb=document.getElementById('history-table');if(!tb)return;const ah=isMultiAcc?'':'hidden';
             if(!history.length){
                 tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>';

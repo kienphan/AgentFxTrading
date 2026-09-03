@@ -266,10 +266,44 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
         conn.close()
     return list(reversed(history))  # Reverse to chronological order
 
+TRADE_MODE_FILE = PROJECT_ROOT / "webui_data" / "trade_mode.json"
+DEFAULT_TRADE_MODE = "demo"
+
+def get_persisted_trade_mode(request: Optional[Request] = None) -> str:
+    """Read persisted trade mode from cookie, file, or default to demo."""
+    if request:
+        cookie_mode = request.cookies.get("agentfx_trade_mode")
+        if cookie_mode in ("demo", "real", "live"):
+            return "real" if cookie_mode in ("real", "live") else "demo"
+            
+    if not TRADE_MODE_FILE.is_file():
+        return DEFAULT_TRADE_MODE
+    try:
+        with open(TRADE_MODE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        mode = str(data.get("mode", DEFAULT_TRADE_MODE)).strip().lower()
+        return "real" if mode in ("real", "live") else "demo"
+    except Exception:
+        return DEFAULT_TRADE_MODE
+
+def set_persisted_trade_mode(mode: str) -> str:
+    """Persist trade mode to file."""
+    m = "real" if mode in ("real", "live") else "demo"
+    try:
+        TRADE_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(TRADE_MODE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"mode": m}, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to persist trade mode: {e}")
+    return m
+
 @router.get("/", response_class=HTMLResponse)
+@router.get("/dashboard", response_class=HTMLResponse)
 async def root_redirect(request: Request):
-    """Redirect root to /demo/dashboard."""
-    return RedirectResponse(url="/demo/dashboard")
+    """Redirect to the last visited trade mode (/real/dashboard or /demo/dashboard)."""
+    mode = get_persisted_trade_mode(request)
+    dest = "/real/dashboard" if mode == "real" else "/demo/dashboard"
+    return RedirectResponse(url=dest)
 
 @router.get("/demo", response_class=HTMLResponse)
 async def demo_redirect(request: Request):
@@ -280,22 +314,21 @@ async def demo_redirect(request: Request):
 async def real_redirect(request: Request):
     return RedirectResponse(url="/real/dashboard")
 
-@router.get("/dashboard", response_class=HTMLResponse)
 @router.get("/demo/dashboard", response_class=HTMLResponse)
 @router.get("/real/dashboard", response_class=HTMLResponse)
 @router.get("/live/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    """Render dashboard HTML page tailored to URL route."""
+    """Render dashboard HTML page tailored to URL route (strictly demo or real)."""
     path = request.url.path
     if path.startswith("/real") or path.startswith("/live"):
-        mode = "live"
+        mode = "real"
         filter_acc = "live"
-    elif path.startswith("/demo"):
+    else:
         mode = "demo"
         filter_acc = "demo"
-    else:
-        mode = "all"
-        filter_acc = "all"
+        
+    # Persist last used mode
+    set_persisted_trade_mode(mode)
         
     summary = get_portfolio_summary(filter_acc)
     positions = get_active_positions(filter_acc)
@@ -304,12 +337,9 @@ async def dashboard_page(request: Request):
     
     registry = get_account_registry()
     all_accounts = registry.list_accounts()
-    if mode in ("demo", "live"):
-        accounts = [acc for acc in all_accounts if acc.get("account_type") == mode]
-    else:
-        accounts = all_accounts
+    accounts = [acc for acc in all_accounts if acc.get("account_type") == ("live" if mode == "real" else "demo")]
     
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
@@ -318,10 +348,11 @@ async def dashboard_page(request: Request):
             "history": history,
             "pnl_history": pnl_history,
             "accounts": accounts,
-            "all_accounts": all_accounts,
             "current_mode": mode
         }
     )
+    response.set_cookie("agentfx_trade_mode", mode, max_age=30*86400)
+    return response
 
 @router.get("/api/dashboard/summary")
 async def api_dashboard_summary(account_id: str = "all"):

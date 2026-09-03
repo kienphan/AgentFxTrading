@@ -119,11 +119,13 @@ Theo dõi và quản lý hệ thống giao dịch thời gian thực qua giao di
 | :--- | :--- | :--- |
 | **Demo** | `http://127.0.0.1:8000/demo/dashboard` *(hoặc `/demo`)* | Dashboard tài khoản Paper Trading (tách biệt độc lập) |
 | **Real / Live** | `http://127.0.0.1:8000/real/dashboard` *(hoặc `/real`, `/live`)* | Dashboard tài khoản tiền thật Real/Live (tách biệt độc lập) |
-| **Tất cả (All)** | `http://127.0.0.1:8000/dashboard` | Xem tổng quan toàn bộ danh mục tài khoản (Demo + Live) |
+| **Tự Động Chuyển** | `http://127.0.0.1:8000/` *(hoặc `/dashboard`)* | Tự động điều hướng về chế độ hoạt động gần nhất (Demo hoặc Real) |
 
 ### Tính Năng Dashboard
 
-- **Nút Switch Chế Độ Đa Tài Khoản**: Chuyển đổi nhanh 1-click (`All | Demo | Real / Live`) ngay trên Header với thanh trạng thái cảnh báo trực quan (`🔴 LIVE TRADING MODE` vs `🟡 DEMO MODE`).
+- **Phân Lập Nhị Phân Nghiêm Ngặt**: Chỉ duy trì 2 chế độ độc lập (`Demo | Real`), loại bỏ hoàn toàn chế độ All để tránh nhầm lẫn giữa tiền thật và tiền ảo.
+- **Ghi Nhớ Chế Độ Gần Nhất**: Hệ thống tự động ghi nhớ chế độ bạn truy cập lần cuối (qua cookie & file persistence); khi vào `/` hoặc `/dashboard`, hệ thống sẽ tự động đưa bạn về đúng chế độ gần nhất.
+- **Nút Switch Chuyển Đổi Nhanh**: Chuyển đổi 1-click (`Demo | Real`) ngay trên Header với thanh trạng thái cảnh báo trực quan (`🔴 REAL MODE` vs `🟡 DEMO MODE`).
 - **Phân Lập Dữ Liệu Tuyệt Đối**: Định tuyến URL tách biệt 100% số dư (Balance/Equity), vị thế mở, lịch sử giao dịch, cấu hình bot Docker và nhật ký reasoning giữa tài khoản Demo và Live.
 - **Cập Nhật Thời Gian Thực**: Kết nối WebSocket 2 chiều cập nhật tức thời trạng thái vị thế và P&L thả nổi.
 - **Bảng Vị Thế Mở (Active Positions)**: Phân loại trực quan chiến lược (`Judas SMC` badge tím vs `TMS+ORB` badge xanh), định danh cBot, symbol, khối lượng, giá vào, SL/TP và PnL thả nổi.
@@ -136,8 +138,8 @@ Theo dõi và quản lý hệ thống giao dịch thời gian thực qua giao di
 ```
 GET  /demo/dashboard           # Giao diện web dashboard Demo (phân lập)
 GET  /real/dashboard           # Giao diện web dashboard Real/Live (phân lập)
-GET  /dashboard                # Giao diện web dashboard tổng hợp (All)
-GET  /api/dashboard/summary    # Chỉ số KPI danh mục (hỗ trợ ?account_id=demo|live|all|<id>)
+GET  /                         # Tự động chuyển hướng về chế độ gần nhất
+GET  /dashboard                # Tự động chuyển hướng về chế độ gần nhất
 GET  /api/dashboard/positions  # Danh sách vị thế đang mở (hỗ trợ ?account_id=demo|live|all|<id>)
 GET  /api/dashboard/history    # Lịch sử lệnh đã đóng (hỗ trợ ?account_id=demo|live|all|<id>)
 GET  /api/dashboard/pnl-history# Lịch sử P&L theo ngày (hỗ trợ ?account_id=demo|live|all|<id>)

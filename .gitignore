@@ -50,6 +50,7 @@ logs/
 data/
 *.csv
 
+webui_data/
 # OS
 Thumbs.db
 
