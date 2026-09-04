@@ -693,6 +693,8 @@
         const logAutoscroll = document.getElementById('log-autoscroll');
         const logRefreshBtn = document.getElementById('log-refresh-btn');
         const logClearBtn = document.getElementById('log-clear-btn');
+        let rawLogLines = [];
+        let currentLogDate = '';
 
         function colorizeLogLine(line) {
             let formatted = line
@@ -732,9 +734,9 @@
                 : rawLogLines;
 
             if (!filtered.length) {
-                const msg = currentMode === 'live' 
-                    ? 'No LIVE log entries found. (Current running bots are on DEMO).'
-                    : 'No matching log entries found.';
+                const msg = (currentMode === 'real' || currentMode === 'live')
+                    ? 'No LIVE log entries found for this date. (Bots may be outside trading hours or check Demo mode).'
+                    : 'No DEMO log entries found for this date. (Bots are currently running on LIVE. Check Real mode or select a past date).';
                 logBox.innerHTML = `<div class="log-line td-dim">${msg}</div>`;
                 return;
             }
@@ -750,7 +752,7 @@
                 const base = `/api/dashboard/logs?lines=150&mode=${currentMode}&account_id=${selectedAccountId}`;
                 const url = dateParam ? `${base}&date_str=${dateParam}` : base;
                 const res = await fetch(url);
-                
+                const data = await res.json();
                 rawLogLines = data.lines || [];
                 currentLogDate = data.date || '';
 
