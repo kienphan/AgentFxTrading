@@ -958,6 +958,10 @@ namespace cAlgo.Robots
             sellSignal = false;
             signalName = "NONE";
 
+            if (IsNewsPauseActive(out string activeNews))
+            {
+                return;
+            }
             if (!IsGoldenKillzone(Server.Time, out _)) return;
             if (_asianHigh <= 0 || _asianLow <= 0) return;
             if (_asianRangePips < minAsianRangePips || _asianRangePips > maxAsianRangePips) return;
@@ -1380,6 +1384,45 @@ namespace cAlgo.Robots
                 }
             }
         }
+        private bool IsCurrencyAffected(string newsCountry)
+        {
+            if (string.IsNullOrWhiteSpace(newsCountry)) return false;
+            string country = newsCountry.Trim().ToUpperInvariant();
+            string sym = SymbolName.ToUpperInvariant();
+
+            // Direct match (e.g. EUR, USD, GBP, JPY in EURUSD, GBPJPY)
+            if (sym.Contains(country)) return true;
+
+            // Metals, Indices & Crypto mapped to primary currency
+            if ((sym.Contains("XAU") || sym.Contains("GOLD") || sym.Contains("US30") || sym.Contains("USTEC") || sym.Contains("BTC") || sym.Contains("ETH")) && country == "USD")
+                return true;
+            if (sym.Contains("DE40") && country == "EUR")
+                return true;
+
+            return false;
+        }
+
+        private bool IsNewsPauseActive(out string activeNewsTitle)
+        {
+            activeNewsTitle = string.Empty;
+            if (!enableNewsFilter || RunningMode != RunningMode.RealTime || _newsEvents == null || _newsEvents.Count == 0)
+                return false;
+
+            DateTime now = DateTime.UtcNow;
+            foreach (var item in _newsEvents)
+            {
+                if (highImpactOnly && item.Impact != "High") continue;
+                if (!IsCurrencyAffected(item.Country)) continue;
+
+                if (now >= item.Date.AddMinutes(-pauseBeforeNewsMins) && now <= item.Date.AddMinutes(pauseAfterNewsMins))
+                {
+                    activeNewsTitle = $"[{item.Country}] {item.Title} ({item.Date:HH:mm} UTC)";
+                    return true;
+                }
+            }
+            return false;
+        }
+
 
         private void FetchForexFactoryNews()
         {
@@ -2818,6 +2861,12 @@ Reply strictly with JSON object.";
 
                 string action = (decision.action ?? "").Trim().ToUpperInvariant();
                 Print($"[AI Decision] Action: {action} | Symbol: {SymbolName} | Confidence: {decision.confidence:F1}% | Reason: {decision.reason}");
+                if ((action == "BUY" || action == "SELL") && IsNewsPauseActive(out string activeNews))
+                {
+                    Print($"[News Shield] Blocked {action} entry on {SymbolName} due to active High Impact news: {activeNews}");
+                    return;
+                }
+
 
                 if (action == "CLOSE_ALL")
                 {
