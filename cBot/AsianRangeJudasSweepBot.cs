@@ -414,7 +414,9 @@ namespace cAlgo.Robots
                     minAsianRangePips = 200.0;  // $2.00 min Asian Range
                     maxAsianRangePips = 8000.0; // $80.00 max Asian Range
                     if (sweepBufferPips <= 15.0) sweepBufferPips = 30.0; // $0.30 sweep buffer
-                    Print($"[Auto-Scale XAUUSD] Scaled Asian Range for Gold: Min={minAsianRangePips}p, Max={maxAsianRangePips}p, Buffer={sweepBufferPips}p");
+                    if (stoplossPip <= 200.0) stoplossPip = 350.0; // $3.50 default SL for Gold
+                    if (takeprofitPip <= 400.0) takeprofitPip = 700.0; // $7.00 default TP for Gold
+                    Print($"[Auto-Scale XAUUSD] Scaled Asian Range for Gold: Min={minAsianRangePips}p, Max={maxAsianRangePips}p, Buffer={sweepBufferPips}p, SL={stoplossPip}p, TP={takeprofitPip}p");
                 }
             }
             try { InitializeAsianSession(); } catch (Exception ex) { Print($"[Asian Range Init Warning] {ex.Message}"); }
@@ -674,7 +676,14 @@ namespace cAlgo.Robots
             Position openedPosition = args.Position;
             if (openedPosition.Label == label && _httpClient != null)
             {
-                _ = ReportPositionOpen(openedPosition, stoplossPip, takeprofitPip, _lastAgentReason);
+                double realSlPips = (openedPosition.StopLoss.HasValue && Symbol.PipSize > 0)
+                    ? Math.Round(Math.Abs(openedPosition.EntryPrice - openedPosition.StopLoss.Value) / Symbol.PipSize, 1)
+                    : stoplossPip;
+                double realTpPips = (openedPosition.TakeProfit.HasValue && Symbol.PipSize > 0)
+                    ? Math.Round(Math.Abs(openedPosition.EntryPrice - openedPosition.TakeProfit.Value) / Symbol.PipSize, 1)
+                    : takeprofitPip;
+
+                _ = ReportPositionOpen(openedPosition, realSlPips, realTpPips, _lastAgentReason);
                 _lastAgentReason = "";
                 SendLiveTickTelemetry(force: true);
             }
