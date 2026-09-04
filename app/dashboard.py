@@ -39,7 +39,7 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         account_filter = ""
         if account_id and account_id != "all":
             if account_id in ("demo", "live"):
-                account_filter = " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ?)"
+                account_filter = " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)"
                 params.append(account_id)
             else:
                 account_filter = " AND account_id = ?"
@@ -88,7 +88,7 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         account_balance = None
         account_equity = None
         if account_id in ("demo", "live"):
-            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE account_type = ? AND last_balance > 0", (account_id,))
+            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE account_type = ? AND is_configured = 1 AND last_balance > 0", (account_id,))
             sum_row = cursor.fetchone()
             if sum_row and sum_row[0] is not None:
                 account_balance = sum_row[0]
@@ -100,7 +100,7 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
                 account_balance = acc_row[0]
                 account_equity = acc_row[1]
         else:
-            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE last_balance > 0")
+            cursor = conn.execute("SELECT SUM(last_balance), SUM(last_equity) FROM accounts WHERE is_configured = 1 AND last_balance > 0")
             sum_row = cursor.fetchone()
             if sum_row and sum_row[0] is not None:
                 account_balance = sum_row[0]
@@ -136,7 +136,7 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
         """
         params = []
         if account_id in ("demo", "live"):
-            query += " AND a.account_type = ?"
+            query += " AND a.account_type = ? AND a.is_configured = 1"
             params.append(account_id)
         elif account_id and account_id != "all":
             query += " AND p.account_id = ?"
@@ -211,7 +211,7 @@ def get_trade_history(limit: int = 50, account_id: str = "all") -> List[Dict]:
         """
         params = []
         if account_id in ("demo", "live"):
-            query += " AND a.account_type = ?"
+            query += " AND a.account_type = ? AND a.is_configured = 1"
             params.append(account_id)
         elif account_id and account_id != "all":
             query += " AND p.account_id = ?"
@@ -246,7 +246,7 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
         """
         params = []
         if account_id in ("demo", "live"):
-            query += " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ?)"
+            query += " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)"
             params.append(account_id)
         elif account_id and account_id != "all":
             query += " AND account_id = ?"
@@ -336,7 +336,7 @@ async def dashboard_page(request: Request):
     pnl_history = get_daily_pnl_history(30, filter_acc)
     
     registry = get_account_registry()
-    all_accounts = registry.list_accounts()
+    all_accounts = registry.list_accounts(include_unconfigured=False)
     accounts = [acc for acc in all_accounts if acc.get("account_type") == ("live" if mode == "real" else "demo")]
     
     response = templates.TemplateResponse(
@@ -515,17 +515,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 async def broadcast_update():
     """Broadcast dashboard update to all connected clients."""
-    # With per-account views, broadcast sends the "all" view. 
-    # Clients on specific accounts will refetch or wait for their next ping.
-    summary = get_portfolio_summary("all")
-    positions = get_active_positions("all")
-    await manager.broadcast({
-        "type": "update",
-        "account_id": "all",
-        "summary": summary,
-        "positions": positions
-    })
-
+    for target in ["demo", "live", "all"]:
+        summary = get_portfolio_summary(target)
+        positions = get_active_positions(target)
+        await manager.broadcast({
+            "type": "update",
+            "account_id": target,
+            "summary": summary,
+            "positions": positions
+        })
 
 
 # --- Docker Management Routes ---
@@ -554,7 +552,7 @@ async def api_get_bots():
         cfg["container_id"] = status_info.get("id", "")
         cmd_lower = (cfg.get("run_command") or "").lower()
         name_lower = (cfg.get("name") or "").lower()
-        if 'accountlabel="live"' in cmd_lower or "accountlabel='live'" in cmd_lower or "-live" in name_lower or "live-" in name_lower or "_live" in name_lower:
+        if 'accountlabel="live"' in cmd_lower or "accountlabel='live'" in cmd_lower or "accountlabel=live" in cmd_lower or "-live" in name_lower or "live-" in name_lower or "_live" in name_lower or "--account=6094347" in cmd_lower:
             cfg["account_type"] = "live"
         else:
             cfg["account_type"] = "demo"

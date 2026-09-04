@@ -859,6 +859,7 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
             if tf_ctx:
                 sw_str = ""
                 if tf_ctx.swing_structure:
+                    sw = tf_ctx.swing_structure
                     sw_str = f" | Swings: High={format_price(sw.last_swing_high, snapshot.symbol)} ({sw.swing_high_type}), Low={format_price(sw.last_swing_low, snapshot.symbol)} ({sw.swing_low_type}), PrevH={format_price(sw.prev_swing_high, snapshot.symbol)}, PrevL={format_price(sw.prev_swing_low, snapshot.symbol)} [Struct: {sw.market_structure}]"
                 lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{sw_str}")
         if lines:
@@ -1126,12 +1127,15 @@ async def handle_telemetry_tick(request: dict):
     try:
         bot_id = sanitize_bot_id(request.get("bot_id", "default"))
         account_number = str(request.get("account_number", "0"))
-        account_type = str(request.get("account_type", "demo"))
+        registry = get_account_registry()
+        account_type = request.get("account_type")
+        if not account_type:
+            account_type = registry.get_account_type(account_number) or "demo"
+        account_type = str(account_type)
         account_label = request.get("account_label")
         balance = float(request.get("balance", request.get("equity", 0.0)) or 0.0)
         equity = float(request.get("equity", request.get("balance", 0.0)) or 0.0)
         
-        registry = get_account_registry()
         account_id = registry.upsert_from_bot(
             account_number=account_number,
             account_type=account_type,
@@ -1182,13 +1186,16 @@ async def report_position(request: dict):
         action = request.get("action")
         symbol = request.get("symbol")
         
-        account_number = request.get("account_number", "0")
-        account_type = request.get("account_type", "demo")
-        account_label = request.get("account_label")
-        account_balance = request.get("account_balance", 0)
-        account_equity = request.get("account_equity", 0)
-        
+        account_number = str(request.get("account_number", "0"))
         registry = get_account_registry()
+        account_type = request.get("account_type")
+        if not account_type:
+            account_type = registry.get_account_type(account_number) or "demo"
+        account_type = str(account_type)
+        account_label = request.get("account_label")
+        account_balance = float(request.get("account_balance", 0) or 0)
+        account_equity = float(request.get("account_equity", 0) or 0)
+        
         account_id = registry.upsert_from_bot(
             account_number=account_number,
             account_type=account_type,

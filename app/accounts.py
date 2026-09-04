@@ -96,9 +96,14 @@ class AccountRegistry:
             
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # 1. Exact match (account_number, acc_type)
             cursor.execute("SELECT account_id FROM accounts WHERE account_number = ? AND account_type = ?", (account_number, acc_type))
             row = cursor.fetchone()
             
+            # 2. If no exact match, but this account_number is already configured, prioritize the configured account!
+            if not row:
+                cursor.execute("SELECT account_id FROM accounts WHERE account_number = ? AND is_configured = 1", (account_number,))
+                row = cursor.fetchone()
             if row:
                 account_id = row["account_id"]
                 update_query = """
@@ -127,7 +132,7 @@ class AccountRegistry:
             conn.commit()
             return account_id
             
-    def list_accounts(self, include_unconfigured: bool = True) -> List[Dict]:
+    def list_accounts(self, include_unconfigured: bool = False) -> List[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             query = """
@@ -150,6 +155,13 @@ class AccountRegistry:
             cursor.execute("SELECT account_id FROM accounts WHERE account_number = ? AND account_type = ?", (account_number, acc_type))
             row = cursor.fetchone()
             return row["account_id"] if row else None
+
+    def get_account_type(self, account_number: str) -> Optional[str]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT account_type FROM accounts WHERE account_number = ? ORDER BY is_configured DESC LIMIT 1", (account_number,))
+            row = cursor.fetchone()
+            return row["account_type"] if row else None
 
 # Global registry accessor pattern
 _account_registry = None

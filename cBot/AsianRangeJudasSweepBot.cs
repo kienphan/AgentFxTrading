@@ -414,6 +414,7 @@ namespace cAlgo.Robots
                     Print($"[Auto-Scale XAUUSD] Scaled Asian Range for Gold: Min={minAsianRangePips}p, Max={maxAsianRangePips}p, Buffer={sweepBufferPips}p");
                 }
             }
+            try { InitializeAsianSession(); } catch (Exception ex) { Print($"[Asian Range Init Warning] {ex.Message}"); }
 
 
             _httpClient = new HttpClient();
@@ -812,6 +813,70 @@ namespace cAlgo.Robots
             catch (Exception ex)
             {
                 Print($"[MTF Init Notice] H4 Bars initialization: {ex.Message}");
+            }
+        }
+
+        private void InitializeAsianSession()
+        {
+            try
+            {
+                if (Bars == null || Bars.Count == 0) return;
+
+                DateTime now = Server.Time;
+                DateTime targetDate = now.Date;
+
+                int maxLookback = Math.Min(120, Bars.Count);
+                double maxHigh = double.MinValue;
+                double minLow = double.MaxValue;
+                bool foundAny = false;
+
+                // 1. Scan today's Asian session bars
+                for (int i = Bars.Count - 1; i >= Bars.Count - maxLookback; i--)
+                {
+                    if (i < 0) break;
+                    var bar = Bars[i];
+                    DateTime barTime = bar.OpenTime;
+
+                    if (barTime.Date == targetDate && barTime.Hour >= asianStartHour && barTime.Hour < asianEndHour)
+                    {
+                        if (bar.High > maxHigh) maxHigh = bar.High;
+                        if (bar.Low < minLow) minLow = bar.Low;
+                        foundAny = true;
+                    }
+                }
+
+                // 2. If before or in early Asian session and no bars today yet, fallback to previous trading day
+                if (!foundAny && now.Hour < asianEndHour)
+                {
+                    DateTime prevDate = targetDate.AddDays(now.DayOfWeek == DayOfWeek.Monday ? -3 : -1);
+                    for (int i = Bars.Count - 1; i >= Bars.Count - maxLookback; i--)
+                    {
+                        if (i < 0) break;
+                        var bar = Bars[i];
+                        DateTime barTime = bar.OpenTime;
+
+                        if (barTime.Date == prevDate && barTime.Hour >= asianStartHour && barTime.Hour < asianEndHour)
+                        {
+                            if (bar.High > maxHigh) maxHigh = bar.High;
+                            if (bar.Low < minLow) minLow = bar.Low;
+                            foundAny = true;
+                            targetDate = prevDate;
+                        }
+                    }
+                }
+
+                if (foundAny && maxHigh > double.MinValue && minLow < double.MaxValue)
+                {
+                    _asianSessionDate = targetDate;
+                    _asianHigh = maxHigh;
+                    _asianLow = minLow;
+                    _asianRangePips = Symbol.PipSize > 0 ? (_asianHigh - _asianLow) / Symbol.PipSize : 0;
+                    Print($"[Asian Range Initialized] Date={targetDate:yyyy-MM-dd} High={_asianHigh:F5} Low={_asianLow:F5} Range={_asianRangePips:F1} pips");
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[Asian Range Init Warning] {ex.Message}");
             }
         }
 
@@ -2246,7 +2311,7 @@ Reply strictly with JSON object.";
                     asian_low = _asianLow,
                     asian_range_pips = _asianRangePips,
                     killzone_session = _activeKillzone,
-                    bias_direction = _allowedAiDirection,
+                    bias_direction = (!string.IsNullOrEmpty(allowedDirection) && allowedDirection != "NONE") ? allowedDirection : _allowedAiDirection,
                     traditional_signal = _traditionalSignal,
                     signal_window_bars = _barsSinceCross
                 };
@@ -2481,6 +2546,8 @@ Reply strictly with JSON object.";
                 {
                     bot_id = snapshot.bot_id,
                     account_number = snapshot.account_number,
+                    account_type = snapshot.account_type,
+                    account_label = snapshot.account_label,
                     symbol = snapshot.symbol,
                     bid = snapshot.bid,
                     ask = snapshot.ask,
@@ -2646,6 +2713,8 @@ Reply strictly with JSON object.";
                 {
                     bot_id = BotId,
                     account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = string.IsNullOrWhiteSpace(AccountLabel) ? Account.BrokerName : $"{Account.BrokerName} ({AccountLabel.Trim()})",
                     symbol = SymbolName,
                     bid = Symbol.Bid,
                     ask = Symbol.Ask,
