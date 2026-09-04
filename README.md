@@ -1230,6 +1230,7 @@ ELSE:
 |:---|:---:|:---|
 | `UseDirectAiApi` | `false` | `false` = Local Server Hub (`http://127.0.0.1:8000`), `true` = Direct Cloud API |
 | `UseAiGateMode` | `true` | Two-tier gate: Judas Sweep triggers gate → AI Agent confirms entry |
+| `enableIndicatorCloseInAiMode` | `false` | Disable premature legacy EMA 9/21 cross-close in AI Gate Mode, allowing position lifecycle to be fully managed by TP/SL, Breakeven, Trailing SL, and AI decisions (`CLOSE_ALL` / `ADJUST`) |
 | `AiConfidenceThreshold` | `70.0%` | Minimum AI confidence score required to execute BUY/SELL |
 | `AiSlMinFloorPips` | `200.0` | Minimum SL floor ($2.00 on XAUUSD) to prevent noise stop-outs |
 | `asianStartHour` | `0` | Asian Session Start Hour (UTC) |
@@ -1241,6 +1242,11 @@ ELSE:
 | `nyStartHour` | `12` | New York Overlap Killzone Start Hour (UTC) |
 | `nyEndHour` | `16` | New York Overlap Killzone End Hour (UTC) |
 | `sweepBufferPips` | `15.0` | Minimum wick penetration beyond Asian High/Low (pips) |
+| `enableNewsFilter` | `true` | Active ForexFactory News Shield with automated currency matching (USD for Gold/Indices/Crypto, EUR/USD/GBP/JPY for Forex) |
+| `pauseBeforeNewsMins` | `30` | Minutes to pause sweep detection and new trade entries before High-Impact news |
+| `pauseAfterNewsMins` | `30` | Minutes to pause sweep detection and new trade entries after High-Impact news |
+| `highImpactOnly` | `true` | Filter Red Folder / High Impact news events only |
+| `closePositionsBeforeNews` | `false` | Close open positions before high-impact news |
 | `riskFactor` | `1.0` | Account risk allocation factor (%) (Recommended: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move SL to breakeven after trigger |
 | `breakEvenTrigger` | `250.0 pips` | Profit distance to activate breakeven ($2.50 on Gold) |
@@ -1252,11 +1258,11 @@ ELSE:
 | **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` | `M15` |
 | **Asian Session (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **Min / Max Asian Range** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **Judas Sweep Buffer** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **Min / Max Asian Range** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **Judas Sweep Buffer** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
 | **AI SL Minimum Floor** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Default Stop Loss** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Default Take Profit** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **Default Stop Loss** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Default Take Profit** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Breakeven Trigger** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **AI Confidence Threshold** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
 | **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |

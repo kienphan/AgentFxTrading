@@ -1207,6 +1207,7 @@ ELSE:
 |:---|:---:|:---|
 | `UseDirectAiApi` | `false` | `false` = ローカルサーバーHub (`http://127.0.0.1:8000`), `true` = クラウドAPI直結 |
 | `UseAiGateMode` | `true` | 2段階ゲート：Judas Sweep方向判定 → AI Agentエントリー確認 |
+| `enableIndicatorCloseInAiMode` | `false` | AI Gate Mode時のEMA 9/21交差による早期手仕舞いを無効化し、TP/SL、建値、トレーリング、AI判断（`CLOSE_ALL` / `ADJUST`）にポジション管理を一任 |
 | `AiConfidenceThreshold` | `70.0%` | BUY/SELL注文を実行するために必要な最低AI信頼度 |
 | `AiSlMinFloorPips` | `200.0` | 最低SL保護床（ゴールド $2.00）、ノイズによる狩りを防止 |
 | `asianStartHour` | `0` | アジアセッション開始時間（UTC） |
@@ -1218,6 +1219,11 @@ ELSE:
 | `nyStartHour` | `12` | ニューヨークキルゾーン開始時間（UTC） |
 | `nyEndHour` | `16` | ニューヨークキルゾーン終了時間（UTC） |
 | `sweepBufferPips` | `15.0` | アジア高値・安値を突き抜ける最小ヒゲ幅（pips） |
+| `enableNewsFilter` | `true` | 通貨自動判定付きForexFactory高影響ニュースシールド（ゴールド/株価指数/暗号資産はUSD、為替はEUR/USD/GBP/JPY） |
+| `pauseBeforeNewsMins` | `30` | 赤色（High Impact）ニュース発表前のエントリー停止時間（分） |
+| `pauseAfterNewsMins` | `30` | 赤色（High Impact）ニュース発表後のエントリー停止時間（分） |
+| `highImpactOnly` | `true` | 赤色ニュース（High Impact）のみをフィルター |
+| `closePositionsBeforeNews` | `false` | 重要ニュース発表前に保有ポジションを一括決済 |
 | `riskFactor` | `1.0` | 1トレードあたりの口座リスク配分割合 (%) (推奨: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | 目標到達時にSLを自動で建値に移動 |
 | `breakEvenTrigger` | `250.0 pips` | 建値移動を発動する利益距離（ゴールド $2.50） |
@@ -1228,11 +1234,11 @@ ELSE:
 | **推奨時間枠** | `M15` | `M15` | `M15` | `M15` | `M15` |
 | **アジア時間 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **キルゾーン (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **アジアレンジ幅 (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **スイープヒゲ深さ (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **アジアレンジ幅 (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **スイープヒゲ深さ (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
 | **AI SL 保護床 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **デフォルト損切り (SL)** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **デフォルト利確 (TP)** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **デフォルト損切り (SL)** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **デフォルト利確 (TP)** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **建値移動発動距離 (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **最低 AI 信頼度スコア** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
 | **1トレードリスク割合** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |

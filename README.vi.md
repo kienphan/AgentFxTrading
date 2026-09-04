@@ -1232,6 +1232,7 @@ ELSE:
 |:---|:---:|:---|
 | `UseDirectAiApi` | `false` | `false` = Local Server Hub (`http://127.0.0.1:8000`), `true` = Direct Cloud API |
 | `UseAiGateMode` | `true` | Cổng lọc 2 tầng: Judas Sweep định hướng → AI Agent xác nhận điểm vào |
+| `enableIndicatorCloseInAiMode` | `false` | Vô hiệu hóa việc đóng lệnh non bằng giao cắt EMA 9/21 trong chế độ AI, nhường toàn quyền quản lý lệnh cho TP/SL, Breakeven, Trailing SL và quyết định AI (`CLOSE_ALL` / `ADJUST`) |
 | `AiConfidenceThreshold` | `70.0%` | Ngưỡng tin cậy AI tối thiểu để thực hiện lệnh BUY/SELL |
 | `AiSlMinFloorPips` | `200.0` | Sàn bảo vệ SL tối thiểu ($2.00 trên Vàng) chống quét râu/spread |
 | `asianStartHour` | `0` | Giờ bắt đầu phiên Á (UTC Hour) |
@@ -1243,6 +1244,11 @@ ELSE:
 | `nyStartHour` | `12` | Giờ bắt đầu New York Overlap Killzone (UTC) |
 | `nyEndHour` | `16` | Giờ kết thúc New York Overlap Killzone (UTC) |
 | `sweepBufferPips` | `15.0` | Biên độ quét râu tối thiểu vượt đỉnh/đáy Á (pips) |
+| `enableNewsFilter` | `true` | Khiên chắn tin tức ForexFactory tự động khớp đồng tiền (USD cho Vàng/Chỉ số/Crypto, EUR/USD/GBP/JPY cho Forex) |
+| `pauseBeforeNewsMins` | `30` | Thời gian tạm dừng phát hiện tín hiệu và mở lệnh trước tin Đỏ (phút) |
+| `pauseAfterNewsMins` | `30` | Thời gian tạm dừng phát hiện tín hiệu và mở lệnh sau tin Đỏ (phút) |
+| `highImpactOnly` | `true` | Chỉ lọc tin Đỏ (High Impact News) |
+| `closePositionsBeforeNews` | `false` | Đóng toàn bộ lệnh đang chạy trước khi tin Đỏ diễn ra |
 | `riskFactor` | `1.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh (Khuyến nghị: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Tự động dời SL về hòa vốn khi đạt mục tiêu |
 | `breakEvenTrigger` | `250.0 pips` | Điểm kích hoạt hòa vốn ($2.50 trên Vàng) |
@@ -1253,11 +1259,11 @@ ELSE:
 | **Khung Thời Gian** | `M15` | `M15` | `M15` | `M15` | `M15` |
 | **Phiên Á (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Khung Giờ Killzones** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **Biên Độ Phiên Á (Min / Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **Độ Sâu Râu Quét (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **Biên Độ Phiên Á (Min / Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **Độ Sâu Râu Quét (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
 | **Sàn SL Tối Thiểu (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Stop Loss Mặc Định** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Take Profit Mặc Định** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **Stop Loss Mặc Định** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Take Profit Mặc Định** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Điểm Kích Hoạt Hòa Vốn (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **Điểm Tin Cậy AI Tối Thiểu** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
 | **Tỷ Lệ Rủi Ro / Lệnh** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |

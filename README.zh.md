@@ -1197,6 +1197,7 @@ ELSE:
 |:---|:---:|:---|
 | `UseDirectAiApi` | `false` | `false` = 本地服务器Hub (`http://127.0.0.1:8000`), `true` = 直连云端API |
 | `UseAiGateMode` | `true` | 二级门控：Judas Sweep定向门控 → AI Agent精细入场确认 |
+| `enableIndicatorCloseInAiMode` | `false` | 在AI Gate模式下禁用EMA 9/21死叉提前平仓，将仓位生命周期完全交由TP/SL、保本、移动止损及AI决策（`CLOSE_ALL` / `ADJUST`）管理 |
 | `AiConfidenceThreshold` | `70.0%` | 执行 BUY/SELL 需满足的最低 AI 置信度评分 |
 | `AiSlMinFloorPips` | `200.0` | 最低止损地板（黄金 $2.00），防止被突发点差/引线扫损 |
 | `asianStartHour` | `0` | 亚盘开始时间（UTC Hour） |
@@ -1208,6 +1209,11 @@ ELSE:
 | `nyStartHour` | `12` | 纽约猎杀时段开始时间（UTC） |
 | `nyEndHour` | `16` | 纽约猎杀时段结束时间（UTC） |
 | `sweepBufferPips` | `15.0` | 刺穿亚盘高低点的最小引线幅度（pips） |
+| `enableNewsFilter` | `true` | 具备货币自动匹配的ForexFactory高影响新闻盾（黄金/指数/加密货币对齐USD，外汇对齐EUR/USD/GBP/JPY） |
+| `pauseBeforeNewsMins` | `30` | 红色高影响新闻发布前暂停信号检测与入场（分钟） |
+| `pauseAfterNewsMins` | `30` | 红色高影响新闻发布后暂停信号检测与入场（分钟） |
+| `highImpactOnly` | `true` | 仅过滤红色重大新闻（High Impact News） |
+| `closePositionsBeforeNews` | `false` | 重大新闻发布前强制平掉所有持仓 |
 | `riskFactor` | `1.0` | 每笔交易风险资金分配系数 (%) (建议 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | 盈利达到目标后自动将止损移至保本 |
 | `breakEvenTrigger` | `250.0 pips` | 触发保本的盈利距离（黄金 $2.50） |
@@ -1218,11 +1224,11 @@ ELSE:
 | **推荐时间框架** | `M15` | `M15` | `M15` | `M15` | `M15` |
 | **亚盘时段 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **猎杀时段 (Killzones)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **亚盘幅度限制 (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **扫荡引线深度 (Buffer)** | `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **亚盘幅度限制 (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **扫荡引线深度 (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
 | **AI SL 保底地板 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **默认止损 (Stop Loss)** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **默认止盈 (Take Profit)** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **默认止损 (Stop Loss)** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **默认止盈 (Take Profit)** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **保本触发点 (BE Trigger)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **最低 AI 置信度评分** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
 | **单笔风险占比** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |

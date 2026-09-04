@@ -1207,6 +1207,7 @@ ELSE:
 |:---|:---:|:---|
 | `UseDirectAiApi` | `false` | `false` = Hub de Servidor Local (`http://127.0.0.1:8000`), `true` = Cloud API Direta |
 | `UseAiGateMode` | `true` | Portão de 2 camadas: Judas Sweep direciona → AI Agent confirma entrada |
+| `enableIndicatorCloseInAiMode` | `false` | Desativa fechamento prematuro por cruzamento de EMA 9/21 no modo AI, delegando controle total da posição para TP/SL, Breakeven, Trailing SL e decisões da IA (`CLOSE_ALL` / `ADJUST`) |
 | `AiConfidenceThreshold` | `70.0%` | Pontuação mínima de confiança da IA para executar ordens BUY/SELL |
 | `AiSlMinFloorPips` | `200.0` | Piso de segurança de SL ($2.00 no Ouro) contra ruídos e spreads |
 | `asianStartHour` | `0` | Hora de início da sessão asiática (UTC) |
@@ -1218,6 +1219,11 @@ ELSE:
 | `nyStartHour` | `12` | Hora de início do Killzone de Nova York (UTC) |
 | `nyEndHour` | `16` | Hora de término do Killzone de Nova York (UTC) |
 | `sweepBufferPips` | `15.0` | Penetração mínima do pavio além das máximas/mínimas asiáticas (pips) |
+| `enableNewsFilter` | `true` | Escudo de notícias de alto impacto do ForexFactory com correspondência automática de moedas (USD para Ouro/Índices/Cripto, EUR/USD/GBP/JPY para Forex) |
+| `pauseBeforeNewsMins` | `30` | Minutos para pausar detecção de sweep e novas entradas antes de notícias de alto impacto |
+| `pauseAfterNewsMins` | `30` | Minutos para pausar detecção de sweep e novas entradas após notícias de alto impacto |
+| `highImpactOnly` | `true` | Filtrar apenas eventos de notícias vermelhas (High Impact) |
+| `closePositionsBeforeNews` | `false` | Fechar posições abertas antes de notícias de alto impacto |
 | `riskFactor` | `1.0` | Fator de alocação de risco da conta por operação (%) (Recomendado: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move automaticamente o SL para o zero ao atingir a meta |
 | `breakEvenTrigger` | `250.0 pips` | Distância de lucro para acionar o breakeven ($2.50 no Ouro) |
@@ -1228,11 +1234,11 @@ ELSE:
 | **Timeframe Recomendado** | `M15` | `M15` | `M15` | `M15` | `M15` |
 | **Sessão Asiática (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **Range Asiático (Min/Max)** | `50.0 / 350.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **Profundidade do Pavio (Buffer)**| `15.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
+| **Range Asiático (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
+| **Profundidade do Pavio (Buffer)**| `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
 | **Piso de SL AI (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Stop Loss Padrão** | `150.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Take Profit Padrão** | `300.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
+| **Stop Loss Padrão** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
+| **Take Profit Padrão** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
 | **Gatilho de Breakeven (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
 | **Confiança Mínima da IA** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
 | **Risco por Operação** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
