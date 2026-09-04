@@ -1243,6 +1243,10 @@ async def report_position(request: dict):
         elif action == "close":
             exit_price = request.get("exit_price")
             pnl = request.get("pnl", 0)
+            if not exit_price or exit_price == 0:
+                latest = portfolio_manager.get_latest_price(symbol)
+                if latest:
+                    exit_price = latest.get("bid") or latest.get("ask")
             
             success = portfolio_manager.close_position(
                 bot_id=bot_id,

@@ -684,9 +684,20 @@ namespace cAlgo.Robots
             Position closedPosition = args.Position;
             if (closedPosition.Label != label) return;
 
+            double exitPrice = closedPosition.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+            try
+            {
+                var hist = History.FirstOrDefault(h => h.PositionId == closedPosition.Id) ?? History.FindLast(label, SymbolName);
+                if (hist != null && hist.ClosingPrice > 0)
+                {
+                    exitPrice = hist.ClosingPrice;
+                }
+            }
+            catch { }
+
             if (_httpClient != null)
             {
-                _ = ReportPositionClosed(closedPosition, closedPosition.NetProfit);
+                _ = ReportPositionClosed(closedPosition, closedPosition.NetProfit, exitPrice);
                 SendLiveTickTelemetry(force: true);
             }
 
@@ -2649,7 +2660,7 @@ Reply strictly with JSON object.";
             }
         }
 
-        private async Task ReportPositionClosed(Position position, double pnl)
+        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice)
         {
             try
             {
@@ -2665,7 +2676,7 @@ Reply strictly with JSON object.";
                     bot_id = BotId,
                     action = "close",
                     symbol = SymbolName,
-                    exit_price = position.EntryPrice,
+                    exit_price = exitPrice,
                     pnl = pnl,
                     account_number = Account.Number.ToString(),
                     account_type = Account.IsLive ? "live" : "demo",
