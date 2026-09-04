@@ -65,6 +65,9 @@ namespace cAlgo.Robots
 
         [Parameter("AI Gate Mode (Pre-filter: EMA cross â†’ AI entry)", Group = "AI Agent Settings", DefaultValue = true)]
         public bool UseAiGateMode { get; set; }
+        [Parameter("Enable Indicator (EMA) Close in AI Mode ?", Group = "AI Agent Settings", DefaultValue = false)]
+        public bool enableIndicatorCloseInAiMode { get; set; }
+
 
         [Parameter("AI SL Minimum Floor (pips, 0=disabled)", Group = "AI Agent Settings", DefaultValue = 200.0, MinValue = 0)]
         public double AiSlMinFloorPips { get; set; }
@@ -485,7 +488,7 @@ namespace cAlgo.Robots
             }
             // ───────────────────────────────────────────────────────────────────
 
-            if (UseAiGateMode && _calculateOnBarClosed)
+            if (UseAiGateMode && _calculateOnBarClosed && enableIndicatorCloseInAiMode)
             {
                 // GATE MODE: Traditional logic handles CLOSE signals only.
                 // AI Agent is the sole authority for new ENTRY decisions.
