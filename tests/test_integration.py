@@ -275,6 +275,124 @@ def test_eth_crypto_classification():
     if decision is not None:
         assert "Breakout overextended" not in decision.reason
 
+def test_exhaustion_breakout_guard_ustec():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData
+
+    # Case 1: USTEC on 2026-09-04 scenario:
+    # Breakout distance = 695p, decisive, in entry window, but NO bounce.
+    # 695p > max_direct_breakout_dist (450p) -> Must be BLOCKED as exhaustion breakout!
+    snap_ustec_exhausted = MarketSnapshot(
+        symbol="USTEC",
+        timeframe="Minute15",
+        ask=29507.5,
+        bid=29507.3,
+        atr_pips=500.0,
+        tms=TmsSignals(bias="BEARISH"),
+        chart_tms=TmsSignals(bias="BEARISH", tdi_bounce_bear=False, price_below_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="down",
+            breakout_distance_pips=695.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=0
+        )
+    )
+    decision1 = evaluate_cycle_gate(snap_ustec_exhausted)
+    assert decision1 is not None
+    assert decision1.action == "HOLD"
+    assert "Breakout candle exhausted" in decision1.reason
+
+    # Case 2: Clean, fresh breakout (200p <= 450p) -> Model 1 allowed (returns None for LLM processing)
+    snap_ustec_fresh = MarketSnapshot(
+        symbol="USTEC",
+        timeframe="Minute15",
+        ask=29557.5,
+        bid=29557.3,
+        atr_pips=500.0,
+        tms=TmsSignals(bias="BEARISH"),
+        chart_tms=TmsSignals(bias="BEARISH", tdi_bounce_bear=False, price_below_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="down",
+            breakout_distance_pips=200.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=1
+        )
+    )
+    decision2 = evaluate_cycle_gate(snap_ustec_fresh)
+    assert decision2 is None  # Allowed to proceed to LLM!
+
+    # Case 3: Retest + TDI Bounce (Model 2) with distance = 695p -> Allowed!
+    snap_ustec_bounce = MarketSnapshot(
+        symbol="USTEC",
+        timeframe="Minute15",
+        ask=29507.5,
+        bid=29507.3,
+        atr_pips=500.0,
+        tms=TmsSignals(bias="BEARISH"),
+        chart_tms=TmsSignals(bias="BEARISH", tdi_bounce_bear=True, price_below_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="down",
+            breakout_distance_pips=695.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=3
+        )
+    )
+    decision3 = evaluate_cycle_gate(snap_ustec_bounce)
+    assert decision3 is None  # Model 2 Bounce allowed!
+
+    # Case 4: Extreme overextension (> 1200p) even with bounce -> Blocked!
+    snap_ustec_overextended = MarketSnapshot(
+        symbol="USTEC",
+        timeframe="Minute15",
+        ask=29400.0,
+        bid=29399.0,
+        atr_pips=500.0,
+        tms=TmsSignals(bias="BEARISH"),
+        chart_tms=TmsSignals(bias="BEARISH", tdi_bounce_bear=True, price_below_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="down",
+            breakout_distance_pips=1350.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=3
+        )
+    )
+    decision4 = evaluate_cycle_gate(snap_ustec_overextended)
+    assert decision4 is not None
+    assert decision4.action == "HOLD"
+    assert "Breakout overextended" in decision4.reason
+
+def test_chart_tms_exit_signal_cycle_gate():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, PositionInfo, TmsSignals
+
+    # Holding SELL position, chart_tms signals exit_short=True (e.g. tdi_cross_up)
+    snap_pos = MarketSnapshot(
+        symbol="USTEC",
+        timeframe="Minute15",
+        ask=29566.5,
+        bid=29566.5,
+        position=PositionInfo(
+            side="SELL",
+            entry_price=29503.4,
+            unrealized_pnl=-5.68,
+            unrealized_pnl_pips=-631.0,
+            mfe_pips=55.0,
+            giveback_pips=686.0
+        ),
+        tms=TmsSignals(bias="BEARISH", exit_short=False),  # Macro TMS doesn't have exit
+        chart_tms=TmsSignals(bias="BEARISH", exit_short=True, exit_reason="tdi_cross_up")
+    )
+    decision = evaluate_cycle_gate(snap_pos)
+    assert decision is not None
+    assert decision.action == "CLOSE_ALL"
+    assert "TMS exit signal triggered (tdi_cross_up)" in decision.reason
+
 def test_format_price_and_prompt_precision():
     from app.server import format_price, build_judas_sweep_user_prompt, MarketSnapshot, BarData, StrategyData
     assert format_price(1.35034, "GBPUSD") == "1.35034"

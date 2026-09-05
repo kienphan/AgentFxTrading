@@ -305,15 +305,16 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     }
 }
 
-/* --- Trade Mode Switcher (DEMO | REAL) --- */
+/* --- Modern Trade Mode Switcher (DEMO | REAL) --- */
 .trade-mode-switch {
     display: inline-flex;
     align-items: center;
-    background: var(--bg-elevated);
+    background: rgba(15, 23, 42, 0.8);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 3px;
     gap: 3px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 .trade-mode-btn {
     border: 1px solid transparent;
@@ -322,34 +323,51 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     font-family: var(--font-ui);
     font-size: 0.75rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 5px 14px;
-    border-radius: 4px;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    line-height: 1.2;
+    gap: 6px;
+    line-height: 1;
+}
+.trade-mode-btn i, .trade-mode-btn svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 2.2;
+    transition: transform 0.2s ease;
 }
 .trade-mode-btn:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
     text-decoration: none;
 }
+.trade-mode-btn:hover i, .trade-mode-btn:hover svg {
+    transform: scale(1.1);
+}
 .trade-mode-btn--demo.active {
-    background: rgba(59, 130, 246, 0.2);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(14, 165, 233, 0.15));
     color: #60a5fa;
-    border-color: rgba(96, 165, 250, 0.4);
-    box-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+    border-color: rgba(96, 165, 250, 0.5);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
+}
+.trade-mode-btn--demo.active i, .trade-mode-btn--demo.active svg {
+    color: #38bdf8;
+    stroke: #38bdf8;
 }
 .trade-mode-btn--live.active {
-    background: rgba(239, 68, 68, 0.2);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(244, 63, 94, 0.15));
     color: #f87171;
-    border-color: rgba(248, 113, 113, 0.4);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+    border-color: rgba(248, 113, 113, 0.5);
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.35);
+}
+.trade-mode-btn--live.active i, .trade-mode-btn--live.active svg {
+    color: #f87171;
+    stroke: #f87171;
+    animation: pulse-dot 2s infinite ease-in-out;
 }
 
 /* --- Mode Context Bar --- */

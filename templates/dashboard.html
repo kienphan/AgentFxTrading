@@ -26,8 +26,14 @@
         </div>
         <div class="topbar-controls">
             <div class="trade-mode-switch" role="group" aria-label="Trade Mode Switch">
-                <a href="/demo/dashboard" class="trade-mode-btn trade-mode-btn--demo {% if current_mode == 'demo' %}active{% endif %}" data-mode="demo" id="btn-mode-demo">Demo</a>
-                <a href="/real/dashboard" class="trade-mode-btn trade-mode-btn--live {% if current_mode in ('real', 'live') %}active{% endif %}" data-mode="real" id="btn-mode-real">Real</a>
+                <a href="/demo/dashboard" class="trade-mode-btn trade-mode-btn--demo {% if current_mode == 'demo' %}active{% endif %}" data-mode="demo" id="btn-mode-demo">
+                    <i data-lucide="shield-check"></i>
+                    <span>Demo</span>
+                </a>
+                <a href="/real/dashboard" class="trade-mode-btn trade-mode-btn--live {% if current_mode in ('real', 'live') %}active{% endif %}" data-mode="real" id="btn-mode-real">
+                    <i data-lucide="flame"></i>
+                    <span>Real</span>
+                </a>
             </div>
             <div class="account-select-wrap">
                 <label for="account-selector">Account</label>
@@ -328,9 +334,9 @@
                                         <th>Win Rate</th>
                                         <th>Profit Factor</th>
                                         <th>Trades</th>
+                                        <th>Net P&amp;L</th>
                                         <th>Closed PnL</th>
                                         <th>Floating PnL</th>
-                                        <th>Total Net PnL</th>
                                         <th>Quant Score</th>
                                     </tr>
                                 </thead>
@@ -362,23 +368,38 @@
                                                 <span class="tier-badge tier-badge--{{ bot.tier_badge }}">{{ bot.tier_label }}</span>
                                             </td>
                                             <td>
-                                                <span class="font-mono font-bold" style="color: {% if bot.win_rate >= 60 %}var(--profit){% elif bot.win_rate >= 40 %}#fbbf24{% else %}var(--loss){% endif %};">
-                                                    {{ "%.1f"|format(bot.win_rate) }}%
-                                                </span>
-                                                <div class="td-dim" style="font-size:0.65rem;">{{ bot.total_wins }}W / {{ bot.total_losses }}L</div>
+                                                {% if bot.total_trades == 0 %}
+                                                    <span class="td-dim">--</span>
+                                                {% elif bot.total_wins == 0 %}
+                                                    <span class="font-mono font-bold pnl-negative">0.0%</span>
+                                                    <div class="td-dim" style="font-size:0.65rem;">0W / {{ bot.total_losses }}L</div>
+                                                {% else %}
+                                                    <span class="font-mono font-bold" style="color: {% if bot.win_rate >= 60 %}var(--profit){% elif bot.win_rate >= 40 %}#fbbf24{% else %}var(--loss){% endif %};">
+                                                        {{ "%.1f"|format(bot.win_rate) }}%
+                                                    </span>
+                                                    <div class="td-dim" style="font-size:0.65rem;">{{ bot.total_wins }}W / {{ bot.total_losses }}L</div>
+                                                {% endif %}
                                             </td>
-                                            <td class="font-mono">
-                                                {{ "%.2f"|format(bot.profit_factor) }}
+                                            <td>
+                                                {% if bot.total_trades == 0 %}
+                                                    <span class="td-dim">--</span>
+                                                {% elif bot.profit_factor == 0 %}
+                                                    <span class="font-mono pnl-negative" title="No winning trades">0.00</span>
+                                                {% else %}
+                                                    <span class="font-mono">{{ "%.2f"|format(bot.profit_factor) }}</span>
+                                                {% endif %}
                                             </td>
                                             <td class="font-mono">{{ bot.total_trades }}</td>
+                                            <td>
+                                                <span class="pnl-chip {% if bot.total_pnl_usd > 0 %}pnl-chip--profit{% elif bot.total_pnl_usd < 0 %}pnl-chip--loss{% else %}td-dim{% endif %}">
+                                                    {% if bot.total_pnl_usd > 0 %}+{% endif %}${{ "%.2f"|format(bot.total_pnl_usd) }}
+                                                </span>
+                                            </td>
                                             <td class="font-mono {% if bot.closed_pnl_usd >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
                                                 ${{ "%.2f"|format(bot.closed_pnl_usd) }}
                                             </td>
                                             <td class="font-mono {% if bot.floating_pnl_usd > 0 %}pnl-positive{% elif bot.floating_pnl_usd < 0 %}pnl-negative{% else %}td-dim{% endif %}">
                                                 ${{ "%.2f"|format(bot.floating_pnl_usd) }}
-                                            </td>
-                                            <td class="font-mono font-bold {% if bot.total_pnl_usd >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
-                                                ${{ "%.2f"|format(bot.total_pnl_usd) }}
                                             </td>
                                             <td>
                                                 <div class="score-pill">
@@ -988,14 +1009,29 @@
                     <td><span class="symbols-chip">${bot.symbol_display}</span></td>
                     <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>
                     <td>
-                        <span class="font-mono font-bold" style="color: ${winRateColor};">${bot.win_rate.toFixed(1)}%</span>
-                        <div class="td-dim" style="font-size:0.65rem;">${bot.total_wins}W / ${bot.total_losses}L</div>
+                        ${bot.total_trades === 0
+                            ? '<span class="td-dim">--</span>'
+                            : bot.total_wins === 0
+                                ? `<span class="font-mono font-bold pnl-negative">0.0%</span><div class="td-dim" style="font-size:0.65rem;">0W / ${bot.total_losses}L</div>`
+                                : `<span class="font-mono font-bold" style="color: ${winRateColor};">${bot.win_rate.toFixed(1)}%</span><div class="td-dim" style="font-size:0.65rem;">${bot.total_wins}W / ${bot.total_losses}L</div>`
+                        }
                     </td>
-                    <td class="font-mono">${bot.profit_factor.toFixed(2)}</td>
+                    <td>
+                        ${bot.total_trades === 0
+                            ? '<span class="td-dim">--</span>'
+                            : bot.profit_factor === 0
+                                ? '<span class="font-mono pnl-negative" title="No winning trades">0.00</span>'
+                                : `<span class="font-mono">${bot.profit_factor.toFixed(2)}</span>`
+                        }
+                    </td>
                     <td class="font-mono">${bot.total_trades}</td>
+                    <td>
+                        <span class="pnl-chip ${bot.total_pnl_usd > 0 ? 'pnl-chip--profit' : (bot.total_pnl_usd < 0 ? 'pnl-chip--loss' : 'td-dim')}">
+                            ${bot.total_pnl_usd > 0 ? '+' : ''}$${bot.total_pnl_usd.toFixed(2)}
+                        </span>
+                    </td>
                     <td class="font-mono ${closedPnlClass}">$${bot.closed_pnl_usd.toFixed(2)}</td>
                     <td class="font-mono ${floatingPnlClass}">$${bot.floating_pnl_usd.toFixed(2)}</td>
-                    <td class="font-mono font-bold ${totalPnlClass}">$${bot.total_pnl_usd.toFixed(2)}</td>
                     <td>
                         <div class="score-pill">
                             <span style="color: ${bot.tier_color};">${bot.composite_score}</span>
