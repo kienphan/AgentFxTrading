@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[Установка](#-быстрый-старт) • [Возможности](#-возможности) • [Стратегия](#-торговая-стратегия) • [API Документация](#-api-документация) • [Вклад](#-вклад)
+[Установка](#-быстрый-старт) • [Возможности](#-возможности) • [Стратегия](#-торговая-стратегия) • [API Документация](#-api-документация) • [Поддержка и Брокер](#-поддержка-и-рекомендуемый-брокер) • [Вклад](#-вклад)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [API Документация](#-api-документация)
 - [Разработка](#-разработка)
 - [Производительность](#-производительность)
+- [Поддержка и Рекомендуемый Брокер](#-поддержка-и-рекомендуемый-брокер)
 - [Вклад](#-вклад)
 - [Лицензия](#-лицензия)
 
@@ -148,7 +150,7 @@ WS   /ws/dashboard             # Поток WebSocket в реальном вре
 ### Предварительные Требования
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+ (Нет счета? Зарегистрируйтесь на [IC Markets cTrader](https://ic.com/?camp=95400) с Raw Spread и минимальной задержкой)
 - API ключ LLM (Qwen/OpenAI/Claude/Gemini/DeepSeek)
 
 ### 1. Установка Зависимостей Python
@@ -1474,6 +1476,19 @@ AgentFxTrading/
 
 ---
 
+## ☕ Поддержка и Рекомендуемый Брокер
+
+Если **AgentFxTrading** помогает вам в торговле и автоматизации, вы можете поддержать развитие проекта:
+
+- ☕ **Buy Me a Coffee**: Угостить автора кофе для покрытия расходов на серверы и тестирование API моделей: [buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126).
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **Рекомендуемый Брокер cTrader**:  
+  Ищете надежного брокера для запуска cBot с минимальной задержкой исполнения? Зарегистрируйтесь по партнерской ссылке: **[Открыть счет в IC Markets cTrader](https://ic.com/?camp=95400)**.  
+  *Преимущества: спреды Raw от 0.0 пунктов, глубокая ликвидность, сверхбыстрое исполнение ордеров, полная оптимизация под cTrader и алготрейдинг.*
+
+---
 ## 🤝 Вклад
 
 Вклад приветствуется! Вот как вы можете помочь:
@@ -1517,7 +1532,7 @@ AgentFxTrading/
 
 <div align="center">
 
-**Если вы находите этот проект полезным, пожалуйста, поставьте ⭐!**
+**Если вы находите этот проект полезным, пожалуйста, поставьте ⭐ и [угостите автора кофе](https://buymeacoffee.com/kaz126)!**
 
 [⬆ Наверх](#-agentfxtrading---автоматизированная-торговая-система-с-ии)
 

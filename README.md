@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/kienphan/AgentFxTrading?style=social)](https://github.com/kienphan/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/kienphan/AgentFxTrading?style=social)](https://github.com/kienphan/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/kienphan/AgentFxTrading)](https://github.com/kienphan/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[Installation](#-quick-start) • [Features](#-features) • [Strategy](#-trading-strategy) • [API Docs](#-api-documentation) • [Contributing](#-contributing)
+[Installation](#-quick-start) • [Features](#-features) • [Strategy](#-trading-strategy) • [API Docs](#-api-documentation) • [Support](#-support--broker) • [Contributing](#-contributing)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [API Documentation](#-api-documentation)
 - [Development](#-development)
 - [Performance](#-performance)
+- [Support & Broker](#-support--broker)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -160,7 +162,7 @@ WS   /ws/dashboard             # WebSocket for real-time dashboard updates
 ### Prerequisites
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+ (Need an account? Sign up at [IC Markets cTrader](https://ic.com/?camp=95400) for Raw Spreads & low latency)
 - LLM API key (Qwen/OpenAI/Claude/Gemini/DeepSeek)
 
 ### 1. Install Python Dependencies
@@ -1550,6 +1552,19 @@ Edit `SYSTEM_PROMPT` in `app/server.py` to adjust trading logic.
 
 ---
 
+## ☕ Support & Broker
+
+If you find **AgentFxTrading** helpful for your automated trading, consider supporting the project:
+
+- ☕ **Buy Me a Coffee**: Support ongoing development, model testing, and maintenance via [buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126).
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **Recommended cTrader Broker**:  
+  Looking for a top-tier broker to run cTrader and automated bots? Register via our partner link: **[Open an IC Markets cTrader Account](https://ic.com/?camp=95400)**.  
+  *Features: Raw spread pricing from 0.0 pips, institutional-grade liquidity, ultra-low latency execution, and full cTrader / cBot support.*
+
+---
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how you can help:
@@ -1600,7 +1615,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**If you find this project useful, please consider giving it a ⭐!**
+**If you find this project useful, please consider giving it a ⭐ and [buying me a coffee](https://buymeacoffee.com/kaz126)!**
 
 [⬆ Back to Top](#-agentfxtrading---ai-powered-automated-trading-system)
 
