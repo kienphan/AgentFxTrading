@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[Cài Đặt](#-hướng-dẫn-cài-đặt) • [Tính Năng](#-tính-năng) • [Chiến Lược](#-chiến-lược-giao-dịch) • [API Docs](#-api-documentation) • [Đóng Góp](#-đóng-góp)
+[Cài Đặt](#-hướng-dẫn-cài-đặt) • [Tính Năng](#-tính-năng) • [Chiến Lược](#-chiến-lược-giao-dịch) • [API Docs](#-api-documentation) • [Ủng Hộ](#-ủng-hộ--sàn-giao-dịch) • [Đóng Góp](#-đóng-góp)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [API Documentation](#-api-documentation)
 - [Phát Triển](#-phát-triển)
 - [Hiệu Suất](#-hiệu-suất)
+- [Ủng Hộ & Sàn Giao Dịch](#-ủng-hộ--sàn-giao-dịch)
 - [Đóng Góp](#-đóng-góp)
 - [Giấy Phép](#-giấy-phép)
 
@@ -157,7 +159,7 @@ WS   /ws/dashboard             # Luồng WebSocket thời gian thực
 ### Yêu Cầu Hệ Thống
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+ (Chưa có tài khoản? Đăng ký [IC Markets cTrader](https://ic.com/?camp=95400) để nhận Raw Spread và độ trễ cực thấp)
 - API key LLM (Qwen/OpenAI/Claude/Gemini/DeepSeek)
 
 ### 1. Cài Đặt Dependencies Python
@@ -1555,6 +1557,19 @@ pytest tests/
 
 ---
 
+## ☕ Ủng Hộ & Sàn Giao Dịch
+
+Nếu bạn thấy **AgentFxTrading** hữu ích trong quá trình giao dịch và tự động hóa:
+
+- ☕ **Buy Me a Coffee**: Mời tác giả một ly cà phê để tiếp thêm năng lượng phát triển và nghiên cứu thêm mô hình AI: [buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126).
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **Sàn Giao Dịch cTrader Đề Xuất**:  
+  Bạn cần tài khoản broker uy tín để chạy cBot thuật toán? Hãy đăng ký mở tài khoản qua link đối tác: **[Mở Tài Khoản IC Markets cTrader](https://ic.com/?camp=95400)**.  
+  *Ưu điểm: Spread siêu mỏng từ 0.0 pip, thanh khoản sâu, tốc độ khớp lệnh cực nhanh, hoàn toàn tương thích và tối ưu cho cTrader / cBot.*
+
+---
 ## 🤝 Đóng Góp
 
 Mọi đóng góp đều được chào đón! Đây là cách bạn có thể giúp đỡ:
@@ -1605,7 +1620,7 @@ Dự án này được cấp phép theo Giấy Phép MIT - xem file [LICENSE](LI
 
 <div align="center">
 
-**Nếu bạn thấy dự án này hữu ích, hãy xem xét cho nó một ⭐!**
+**Nếu bạn thấy dự án này hữu ích, hãy xem xét cho nó một ⭐ và [mời tác giả ly cà phê](https://buymeacoffee.com/kaz126)!**
 
 [⬆ Lên Đầu Trang](#-agentfxtrading---hệ-thống-giao-dịch-tự-động-với-ai)
 

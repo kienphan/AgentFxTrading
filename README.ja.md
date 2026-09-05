@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[インストール](#-クイックスタート) • [機能](#-機能) • [戦略](#-取引戦略) • [APIドキュメント](#-apiドキュメント) • [貢献](#-貢献)
+[インストール](#-クイックスタート) • [機能](#-機能) • [戦略](#-取引戦略) • [APIドキュメント](#-apiドキュメント) • [サポート＆おすすめブローカー](#-サポートおすすめブローカー) • [貢献](#-貢献)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [APIドキュメント](#-apiドキュメント)
 - [開発](#-開発)
 - [パフォーマンス](#-パフォーマンス)
+- [サポート＆おすすめブローカー](#-サポートおすすめブローカー)
 - [貢献](#-貢献)
 - [ライセンス](#-ライセンス)
 
@@ -148,7 +150,7 @@ WS   /ws/dashboard             # リアルタイムWebSocket配信
 ### 前提条件
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+（口座をお持ちでない場合は、低スプレッド・低遅延の [IC Markets cTrader](https://ic.com/?camp=95400) での口座開設を推奨します）
 - LLM APIキー（Qwen/OpenAI/Claude/Gemini/DeepSeek）
 
 ### 1. Python依存関係のインストール
@@ -1474,6 +1476,19 @@ AgentFxTrading/
 
 ---
 
+## ☕ サポート＆おすすめブローカー
+
+**AgentFxTrading** がお役に立ちましたら、プロジェクトの継続的な開発をぜひご支援ください：
+
+- ☕ **Buy Me a Coffee**: サーバー費用やAIモデル検証のサポートとして、コーヒー1杯をごちそうしてください：[buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126)。
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **おすすめ cTrader ブローカー**:  
+  cBot による自動売買に最適な低遅延ブローカーをお探しなら、提携リンクより口座開設いただけます：**[IC Markets cTrader 口座開設](https://ic.com/?camp=95400)**。  
+  *特徴：Rawスプレッド 0.0 pips〜、豊富な流動性、極小レイテンシー約定、cTrader / cBot 自動売買に完全最適化。*
+
+---
 ## 🤝 貢献
 
 貢献を歓迎します！以下があなたが助けられる方法です：
@@ -1517,7 +1532,7 @@ AgentFxTrading/
 
 <div align="center">
 
-**このプロジェクトが役に立つと思ったら、⭐を付けてください！**
+**このプロジェクトが役に立つと思ったら、⭐と[コーヒーのサポート](https://buymeacoffee.com/kaz126)をよろしくお願いします！**
 
 [⬆ トップに戻る](#-agentfxtrading---ai搭載自動取引システム)
 

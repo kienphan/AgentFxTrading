@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[安装](#-快速开始) • [功能](#-功能特性) • [策略](#-交易策略) • [API文档](#-api文档) • [贡献](#-贡献)
+[安装](#-快速开始) • [功能](#-功能特性) • [策略](#-交易策略) • [API文档](#-api文档) • [支持与推荐经纪商](#-支持与推荐经纪商) • [贡献](#-贡献)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [API文档](#-api文档)
 - [开发](#-开发)
 - [性能](#-性能)
+- [支持与推荐经纪商](#-支持与推荐经纪商)
 - [贡献](#-贡献)
 - [许可证](#-许可证)
 
@@ -138,7 +140,7 @@ WS   /ws/dashboard             # 实时WebSocket更新通道
 ### 前提条件
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+（还没有账户？推荐注册 [IC Markets cTrader](https://ic.com/?camp=95400)，享Raw Spread原始点差与超低延迟）
 - LLM API密钥（Qwen/OpenAI/Claude/Gemini/DeepSeek）
 
 ### 1. 安装Python依赖
@@ -1464,6 +1466,19 @@ AgentFxTrading/
 
 ---
 
+## ☕ 支持与推荐经纪商
+
+如果您觉得 **AgentFxTrading** 对您的量化交易有所帮助，欢迎支持本项目持续发展：
+
+- ☕ **Buy Me a Coffee**: 请作者喝杯咖啡，支持开发、服务器与AI模型测试成本：[buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126)。
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **推荐 cTrader 经纪商**:  
+  需要稳定低延迟的经纪商来运行 cBot 自动策略？欢迎通过合作链接开户：**[注册 IC Markets cTrader 账户](https://ic.com/?camp=95400)**。  
+  *特点：0.0 点差起 Raw Spread、机构级流动性、毫秒级超低延迟执行，完美支持 cTrader 与量化交易。*
+
+---
 ## 🤝 贡献
 
 欢迎贡献！以下是您可以帮助的方式：
@@ -1507,7 +1522,7 @@ AgentFxTrading/
 
 <div align="center">
 
-**如果您觉得这个项目有用，请考虑给它一个⭐！**
+**如果您觉得这个项目有用，请考虑给它一个⭐并[请作者喝杯咖啡](https://buymeacoffee.com/kaz126)！**
 
 [⬆ 返回顶部](#-agentfxtrading---ai驱动的自动交易系统)
 

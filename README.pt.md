@@ -10,10 +10,11 @@
 [![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
 [![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
 [![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
 
-[Instalação](#-instalação-rápida) • [Recursos](#-recursos) • [Estratégia](#-estratégia-de-negociação) • [API Docs](#-documentação-da-api) • [Contribuir](#-contribuindo)
+[Instalação](#-instalação-rápida) • [Recursos](#-recursos) • [Estratégia](#-estratégia-de-negociação) • [API Docs](#-documentação-da-api) • [Apoio & Corretora](#-apoio--corretora-recomendada) • [Contribuir](#-contribuindo)
 
 </div>
 
@@ -30,6 +31,7 @@
 - [Documentação da API](#-documentação-da-api)
 - [Desenvolvimento](#-desenvolvimento)
 - [Performance](#-performance)
+- [Apoio & Corretora Recomendada](#-apoio--corretora-recomendada)
 - [Contribuindo](#-contribuindo)
 - [Licença](#-licença)
 
@@ -148,7 +150,7 @@ WS   /ws/dashboard             # Transmissão WebSocket em tempo real
 ### Pré-requisitos
 
 - Python 3.9+
-- cTrader 4.x+
+- cTrader 4.x+ (Não tem conta? Cadastre-se na [IC Markets cTrader](https://ic.com/?camp=95400) com spreads Raw e baixíssima latência)
 - Chave API LLM (Qwen/OpenAI/Claude/Gemini/DeepSeek)
 
 ### 1. Instalar Dependências Python
@@ -1474,6 +1476,19 @@ Editar `SYSTEM_PROMPT` em `app/server.py` para ajustar lógica de negociação.
 
 ---
 
+## ☕ Apoio & Corretora Recomendada
+
+Se o **AgentFxTrading** tem sido útil para suas negociações automatizadas, considere apoiar o projeto:
+
+- ☕ **Buy Me a Coffee**: Pague um café ao autor para ajudar nos custos de servidores e testes de modelos de IA: [buymeacoffee.com/kaz126](https://buymeacoffee.com/kaz126).
+
+  [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=kaz126&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://buymeacoffee.com/kaz126)
+
+- 📈 **Corretora cTrader Recomendada**:  
+  Precisa de uma corretora confiável para rodar seus cBots com execução ultrarrápida? Abra sua conta pelo link parceiro: **[Abrir Conta na IC Markets cTrader](https://ic.com/?camp=95400)**.  
+  *Vantagens: Spreads Raw a partir de 0.0 pips, liquidez institucional, latência ultrabaixa, totalmente otimizado para cTrader e estratégias automatizadas.*
+
+---
 ## 🤝 Contribuindo
 
 Contribuições são bem-vindas! Aqui está como você pode ajudar:
@@ -1517,7 +1532,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 <div align="center">
 
-**Se você acha este projeto útil, considere dar uma ⭐!**
+**Se você acha este projeto útil, considere dar uma ⭐ e [pagar um café ao autor](https://buymeacoffee.com/kaz126)!**
 
 [⬆ Voltar ao Topo](#-agentfxtrading---sistema-de-negociação-automatizado-com-ia)
 
