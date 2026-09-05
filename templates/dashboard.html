@@ -66,6 +66,10 @@
                 <span class="nav-icon">📊</span>
                 <span class="nav-label">Overview</span>
             </a>
+            <a href="#" class="nav-item" data-target="view-leaderboard" title="Leaderboard">
+                <span class="nav-icon">🏆</span>
+                <span class="nav-label">Leaderboard</span>
+            </a>
             <a href="#" class="nav-item" data-target="view-docker" title="Docker Bots">
                 <span class="nav-icon">🤖</span>
                 <span class="nav-label">Docker Bots</span>
@@ -267,6 +271,135 @@
                     </div>
                 </section>
             </div>
+
+            <!-- Leaderboard View -->
+            <div id="view-leaderboard" class="view-section">
+                <!-- Leaderboard KPI Summary Grid -->
+                <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                    <div class="kpi-card">
+                        <div class="kpi-label">👑 Top Performer</div>
+                        <div id="lb-top-performer" class="kpi-value font-bold" style="color: #fbbf24; font-size: 0.95rem;">
+                            {% if leaderboard and leaderboard.top_performer %}
+                                {{ leaderboard.top_performer.bot_name }} ({{ leaderboard.top_performer.composite_score }}/100)
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">🎯 Fleet Win Rate</div>
+                        <div id="lb-fleet-winrate" class="kpi-value font-bold kpi-value--mono" style="color: #38bdf8;">
+                            {{ "%.1f"|format(leaderboard.fleet_win_rate if leaderboard else 0) }}%
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">💰 Fleet Net PnL</div>
+                        <div id="lb-fleet-pnl" class="kpi-value font-bold kpi-value--mono {% if leaderboard and leaderboard.fleet_total_pnl_usd >= 0 %}kpi-value--profit{% else %}kpi-value--loss{% endif %}">
+                            ${{ "%.2f"|format(leaderboard.fleet_total_pnl_usd if leaderboard else 0) }}
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">🤖 Total Tracked Bots</div>
+                        <div id="lb-total-bots" class="kpi-value font-bold kpi-value--mono">
+                            {{ leaderboard.total_bots if leaderboard else 0 }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leaderboard Table Panel -->
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <span class="panel-title">🏆 cBot Performance &amp; Quant Ranking</span>
+                            <span class="td-dim" style="font-size: 0.72rem; margin-left: 10px;">Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency</span>
+                        </div>
+                        <button id="lb-refresh-btn" class="log-btn" style="margin-left:auto;">🔄 Refresh</button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th class="rank-cell">Rank</th>
+                                        <th>Bot Strategy</th>
+                                        <th>Symbols</th>
+                                        <th>Tier Badge</th>
+                                        <th>Win Rate</th>
+                                        <th>Profit Factor</th>
+                                        <th>Trades</th>
+                                        <th>Closed PnL</th>
+                                        <th>Floating PnL</th>
+                                        <th>Total Net PnL</th>
+                                        <th>Quant Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="leaderboard-table-body">
+                                    {% if leaderboard and leaderboard.rankings %}
+                                        {% for bot in leaderboard.rankings %}
+                                        <tr>
+                                            <td class="rank-cell">
+                                                {% if bot.rank == 1 %}
+                                                    <span class="rank-badge-1">🥇 1</span>
+                                                {% elif bot.rank == 2 %}
+                                                    <span class="rank-badge-2">🥈 2</span>
+                                                {% elif bot.rank == 3 %}
+                                                    <span class="rank-badge-3">🥉 3</span>
+                                                {% else %}
+                                                    <span class="td-dim">{{ bot.rank }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="bot-cell">
+                                                    <span class="font-bold" style="color: var(--text-primary);">{{ bot.bot_name }}</span>
+                                                    <span class="bot-id-text">{{ bot.bot_id }}</span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="symbols-chip">{{ bot.symbol_display }}</span>
+                                            </td>
+                                            <td>
+                                                <span class="tier-badge tier-badge--{{ bot.tier_badge }}">{{ bot.tier_label }}</span>
+                                            </td>
+                                            <td>
+                                                <span class="font-mono font-bold" style="color: {% if bot.win_rate >= 60 %}var(--profit){% elif bot.win_rate >= 40 %}#fbbf24{% else %}var(--loss){% endif %};">
+                                                    {{ "%.1f"|format(bot.win_rate) }}%
+                                                </span>
+                                                <div class="td-dim" style="font-size:0.65rem;">{{ bot.total_wins }}W / {{ bot.total_losses }}L</div>
+                                            </td>
+                                            <td class="font-mono">
+                                                {{ "%.2f"|format(bot.profit_factor) }}
+                                            </td>
+                                            <td class="font-mono">{{ bot.total_trades }}</td>
+                                            <td class="font-mono {% if bot.closed_pnl_usd >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                                                ${{ "%.2f"|format(bot.closed_pnl_usd) }}
+                                            </td>
+                                            <td class="font-mono {% if bot.floating_pnl_usd > 0 %}pnl-positive{% elif bot.floating_pnl_usd < 0 %}pnl-negative{% else %}td-dim{% endif %}">
+                                                ${{ "%.2f"|format(bot.floating_pnl_usd) }}
+                                            </td>
+                                            <td class="font-mono font-bold {% if bot.total_pnl_usd >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                                                ${{ "%.2f"|format(bot.total_pnl_usd) }}
+                                            </td>
+                                            <td>
+                                                <div class="score-pill">
+                                                    <span style="color: {{ bot.tier_color }};">{{ bot.composite_score }}</span>
+                                                    <span class="score-bar-bg">
+                                                        <span class="score-bar-fill" style="width: {{ bot.composite_score }}%; background: {{ bot.tier_color }};"></span>
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="11" class="empty-state">No bot trading history recorded yet</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
             
             <!-- Docker Bots View -->
             <div id="view-docker" class="view-section">
@@ -388,6 +521,8 @@
                         fetchAgentLogs(logDateSelect.value);
                     } else if (targetId === 'view-docker') {
                         fetchBots();
+                    } else if (targetId === 'view-leaderboard') {
+                        fetchLeaderboard();
                     }
                 }
             });
@@ -593,6 +728,7 @@
         accountSelector.addEventListener('change', async (e) => {
             selectedAccountId = e.target.value;
             refreshDashboardData();
+            fetchLeaderboard();
         });
 
         const ctx=document.getElementById('pnl-chart').getContext('2d');
@@ -781,6 +917,109 @@
                 fetchAgentLogs(currentLogDate);
             }
         }, 3000);
+
+        // --- Leaderboard Integration ---
+        async function fetchLeaderboard() {
+            try {
+                const accId = typeof selectedAccountId !== 'undefined' ? selectedAccountId : 'all';
+                const res = await fetch(`/api/leaderboard?account_id=${accId}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                renderLeaderboard(data);
+            } catch(e) {
+                console.error("Error fetching leaderboard", e);
+            }
+        }
+
+        function renderLeaderboard(data) {
+            if (!data) return;
+            const topPerfEl = document.getElementById('lb-top-performer');
+            if (topPerfEl) {
+                if (data.top_performer) {
+                    topPerfEl.textContent = `${data.top_performer.bot_name} (${data.top_performer.composite_score}/100)`;
+                } else {
+                    topPerfEl.textContent = 'N/A';
+                }
+            }
+            const fleetWinrateEl = document.getElementById('lb-fleet-winrate');
+            if (fleetWinrateEl) {
+                fleetWinrateEl.textContent = `${(data.fleet_win_rate || 0).toFixed(1)}%`;
+            }
+            const fleetPnlEl = document.getElementById('lb-fleet-pnl');
+            if (fleetPnlEl) {
+                const pnl = data.fleet_total_pnl_usd || 0;
+                fleetPnlEl.textContent = `$${pnl.toFixed(2)}`;
+                fleetPnlEl.className = `kpi-value font-bold kpi-value--mono ${pnl >= 0 ? 'kpi-value--profit' : 'kpi-value--loss'}`;
+            }
+            const totalBotsEl = document.getElementById('lb-total-bots');
+            if (totalBotsEl) {
+                totalBotsEl.textContent = data.total_bots || 0;
+            }
+
+            const tbody = document.getElementById('leaderboard-table-body');
+            if (!tbody) return;
+
+            if (!data.rankings || data.rankings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No bot trading history recorded yet</td></tr>';
+                return;
+            }
+
+            let html = '';
+            data.rankings.forEach(bot => {
+                let rankDisplay = `<span class="td-dim">${bot.rank}</span>`;
+                if (bot.rank === 1) rankDisplay = '<span class="rank-badge-1">🥇 1</span>';
+                else if (bot.rank === 2) rankDisplay = '<span class="rank-badge-2">🥈 2</span>';
+                else if (bot.rank === 3) rankDisplay = '<span class="rank-badge-3">🥉 3</span>';
+
+                const winRateColor = bot.win_rate >= 60 ? 'var(--profit)' : (bot.win_rate >= 40 ? '#fbbf24' : 'var(--loss)');
+                const closedPnlClass = bot.closed_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const floatingPnlClass = bot.floating_pnl_usd > 0 ? 'pnl-positive' : (bot.floating_pnl_usd < 0 ? 'pnl-negative' : 'td-dim');
+                const totalPnlClass = bot.total_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
+
+                html += `<tr>
+                    <td class="rank-cell">${rankDisplay}</td>
+                    <td>
+                        <div class="bot-cell">
+                            <span class="font-bold" style="color: var(--text-primary);">${bot.bot_name}</span>
+                            <span class="bot-id-text">${bot.bot_id}</span>
+                        </div>
+                    </td>
+                    <td><span class="symbols-chip">${bot.symbol_display}</span></td>
+                    <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>
+                    <td>
+                        <span class="font-mono font-bold" style="color: ${winRateColor};">${bot.win_rate.toFixed(1)}%</span>
+                        <div class="td-dim" style="font-size:0.65rem;">${bot.total_wins}W / ${bot.total_losses}L</div>
+                    </td>
+                    <td class="font-mono">${bot.profit_factor.toFixed(2)}</td>
+                    <td class="font-mono">${bot.total_trades}</td>
+                    <td class="font-mono ${closedPnlClass}">$${bot.closed_pnl_usd.toFixed(2)}</td>
+                    <td class="font-mono ${floatingPnlClass}">$${bot.floating_pnl_usd.toFixed(2)}</td>
+                    <td class="font-mono font-bold ${totalPnlClass}">$${bot.total_pnl_usd.toFixed(2)}</td>
+                    <td>
+                        <div class="score-pill">
+                            <span style="color: ${bot.tier_color};">${bot.composite_score}</span>
+                            <span class="score-bar-bg">
+                                <span class="score-bar-fill" style="width: ${Math.min(100, Math.max(0, bot.composite_score))}%; background: ${bot.tier_color};"></span>
+                            </span>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        const lbRefreshBtn = document.getElementById('lb-refresh-btn');
+        if (lbRefreshBtn) {
+            lbRefreshBtn.addEventListener('click', () => fetchLeaderboard());
+        }
+
+        // Periodic refresh for leaderboard if active
+        setInterval(() => {
+            const lbView = document.getElementById('view-leaderboard');
+            if (lbView && lbView.classList.contains('active') && !document.hidden) {
+                fetchLeaderboard();
+            }
+        }, 8000);
         connectWebSocket();
     </script>
 </body></html>

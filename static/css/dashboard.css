@@ -369,3 +369,86 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 }
 .mode-context-bar--demo .mode-context-dot { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
 .mode-context-bar--live .mode-context-dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: pulse-dot 2s ease-in-out infinite; }
+
+/* --- Leaderboard Styles --- */
+.tier-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.tier-badge--TIER_S {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+}
+.tier-badge--TIER_A {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.tier-badge--TIER_B {
+    background: rgba(148, 163, 184, 0.15);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+.tier-badge--TIER_C {
+    background: rgba(248, 113, 113, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+}
+.rank-cell {
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-align: center;
+    width: 44px;
+}
+.rank-badge-1 {
+    color: #fbbf24;
+    text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+}
+.rank-badge-2 {
+    color: #cbd5e1;
+}
+.rank-badge-3 {
+    color: #f97316;
+}
+.score-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+.score-bar-bg {
+    width: 60px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+.score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #3b82f6, #38bdf8);
+    transition: width 0.3s ease;
+}
+.symbols-chip {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--accent-bright);
+    background: rgba(59, 130, 246, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    white-space: nowrap;
+}
