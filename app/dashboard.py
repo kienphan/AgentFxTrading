@@ -13,6 +13,7 @@ import json
 from datetime import datetime, date
 from typing import Dict, List, Optional
 from app.accounts import get_account_registry
+from app.leaderboard import compute_bot_leaderboard
 import logging
 
 logger = logging.getLogger(__name__)
@@ -334,6 +335,7 @@ async def dashboard_page(request: Request):
     positions = get_active_positions(filter_acc)
     history = get_trade_history(20, filter_acc)
     pnl_history = get_daily_pnl_history(30, filter_acc)
+    leaderboard = compute_bot_leaderboard(filter_acc)
     
     registry = get_account_registry()
     all_accounts = registry.list_accounts(include_unconfigured=False)
@@ -348,7 +350,8 @@ async def dashboard_page(request: Request):
             "history": history,
             "pnl_history": pnl_history,
             "accounts": accounts,
-            "current_mode": mode
+            "current_mode": mode,
+            "leaderboard": leaderboard,
         }
     )
     response.set_cookie("agentfx_trade_mode", mode, max_age=30*86400)
@@ -377,6 +380,12 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
     """API endpoint for daily P&L history."""
     return get_daily_pnl_history(days, account_id)
 
+
+@router.get("/api/leaderboard")
+@router.get("/api/dashboard/leaderboard")
+async def api_dashboard_leaderboard(account_id: str = "all"):
+    """API endpoint for bot performance leaderboard and quant tier ranking."""
+    return compute_bot_leaderboard(account_id)
 
 @router.get("/api/dashboard/logs")
 async def api_dashboard_logs(
