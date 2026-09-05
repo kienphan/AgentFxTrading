@@ -45,6 +45,9 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
 @media(min-width:600px){.kpi-grid{grid-template-columns:repeat(4,1fr)}}
 @media(min-width:1024px){.kpi-grid{grid-template-columns:repeat(8,minmax(0,1fr))}}
+.kpi-grid--4{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
+@media(min-width:600px){.kpi-grid--4{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1024px){.kpi-grid--4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .kpi-card{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:8px 10px;min-height:58px;display:flex;flex-direction:column;justify-content:center;transition:border-color .15s,transform .15s;overflow:hidden}
 .kpi-card:hover{border-color:var(--border);transform:translateY(-1px)}
 .kpi-label{font-size:0.60rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -68,6 +71,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .td-mono{font-family:var(--font-mono);font-size:0.75rem}.td-dim{color:var(--text-muted);font-size:0.72rem}
 .td-current-price{color:#f0f0f0;font-weight:600}
 .font-bold{font-weight:700}
+.font-mono{font-family:var(--font-mono);font-size:0.75rem}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:3px;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em}
 .badge--live{background:var(--profit-soft);color:var(--live);border:1px solid rgba(125,189,30,0.3)}
 .badge--demo{background:rgba(66,165,245,0.12);color:var(--demo);border:1px solid rgba(66,165,245,0.3)}
@@ -176,7 +180,15 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     color: var(--accent-bright);
 }
 .nav-icon {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.nav-icon svg, .nav-icon [data-lucide] {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.75;
 }
 .nav-label {
     font-size: 0.65rem;
@@ -426,6 +438,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     font-family: var(--font-mono);
     font-weight: 700;
     font-size: 0.82rem;
+    white-space: nowrap;
 }
 .score-bar-bg {
     width: 60px;
@@ -452,3 +465,30 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     border: 1px solid rgba(59, 130, 246, 0.2);
     white-space: nowrap;
 }
+
+/* --- Lucide Icon Helpers --- */
+.kpi-icon {
+    width: 13px;
+    height: 13px;
+    vertical-align: -2px;
+    margin-right: 3px;
+    display: inline-block;
+}
+.panel-icon {
+    width: 15px;
+    height: 15px;
+    vertical-align: -2px;
+    margin-right: 6px;
+    display: inline-block;
+}
+.btn-icon {
+    width: 13px;
+    height: 13px;
+    vertical-align: -2px;
+    margin-right: 4px;
+    display: inline-block;
+}
+.text-amber { color: #fbbf24; stroke: #fbbf24; }
+.text-cyan { color: #38bdf8; stroke: #38bdf8; }
+.text-green { color: var(--profit); stroke: var(--profit); }
+.text-blue { color: var(--accent-bright); stroke: var(--accent-bright); }
