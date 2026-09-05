@@ -394,6 +394,74 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --enableBreakEvenPrice=true
      ```
 
+   * **BTCUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-btcusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=BTCUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-btcusd-judas" \
+       --label="cbot-btcusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=10000.0 \
+       --maxAsianRangePips=400000.0 \
+       --sweepBufferPips=1500.0 \
+       --AiSlMinFloorPips=20000.0 \
+       --breakEvenTrigger=25000.0 \
+       --stoplossPip=25000.0 \
+       --takeprofitPip=60000.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=1.0
+     ```
+
+   * **ETHUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-ethusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=ETHUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-ethusd-judas" \
+       --label="cbot-ethusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=800.0 \
+       --maxAsianRangePips=35000.0 \
+       --sweepBufferPips=150.0 \
+       --AiSlMinFloorPips=1500.0 \
+       --breakEvenTrigger=2000.0 \
+       --stoplossPip=2000.0 \
+       --takeprofitPip=5000.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=1.0
+     ```
+
    * **XAUUSD TMS+ORB (M15 - ニューヨークセッション)**:
      ```bash
      docker run -d \
@@ -944,105 +1012,6 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --TrendTpDisabled=true
      ```
 
-   * **BTCUSD (M15 - ニューヨークセッション / 暗号資産モメンタム)**:
-     ```bash
-     docker run -d \
-       --name cbot-btcusd \
-       --restart unless-stopped \
-       --network host \
-       -v $(pwd):/workspace \
-       -v /root:/root \
-       ghcr.io/spotware/ctrader-console:latest \
-       run /workspace/cBot/AiAgentBot.algo \
-       --ctid=your_email@example.com \
-       --pwd-file=/root/ctrader_data/ctid_pwd \
-       --account=YOUR_ACCOUNT_ID \
-       --symbol=BTCUSD \
-       --period=m15 \
-       --full-access \
-       --BotId="btcusd_m15" \
-       --ApiUrl="http://127.0.0.1:8000/trade" \
-       --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
-       --SessionName="newyork" \
-       --OrbStartHour=13 \
-       --SessionEndHour=22 \
-       --SessionDstRule="US" \
-       --MinDecisiveBreakoutPips=150.0 \
-       --MinOrWidthPips=300.0 \
-       --OrbBufferPips=50.0 \
-       --PartialCloseRatio=0.5 \
-       --EnablePostTpGate=true \
-       --BounceTradeEnabled=true \
-       --BounceDistanceThreshold=1.5 \
-       --RiskPerTradePercent=0.2 \
-       --UseAtr=true \
-       --AtrPeriod=14 \
-       --AtrSlMultiplier=2.0 \
-       --AtrTpMultiplier=3.5 \
-       --BreakevenTriggerAtr=1.5 \
-       --BreakevenOffsetAtr=0.1 \
-       --TrailTriggerAtr=2.5 \
-       --TrailDistanceAtr=1.5 \
-       --MinSlAtr=1.0 \
-       --MaxSlAtr=4.0 \
-       --MinTpAtr=1.5 \
-       --MaxTpAtr=8.0 \
-       --MaxGivebackAtr=1.5 \
-       --PostTpPullbackAtr=0.5 \
-       --TrendTpDisabled=true
-     ```
-
-   * **ETHUSD (M15 - ニューヨークセッション / 暗号資産モメンタム)**:
-     ```bash
-     docker run -d \
-       --name cbot-ethusd \
-       --restart unless-stopped \
-       --network host \
-       -v $(pwd):/workspace \
-       -v /root:/root \
-       ghcr.io/spotware/ctrader-console:latest \
-       run /workspace/cBot/AiAgentBot.algo \
-       --ctid=your_email@example.com \
-       --pwd-file=/root/ctrader_data/ctid_pwd \
-       --account=YOUR_ACCOUNT_ID \
-       --symbol=ETHUSD \
-       --period=m15 \
-       --full-access \
-       --BotId="ethusd_m15" \
-       --ApiUrl="http://127.0.0.1:8000/trade" \
-       --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
-       --SessionName="newyork" \
-       --OrbStartHour=13 \
-       --SessionEndHour=22 \
-       --SessionDstRule="US" \
-       --MinDecisiveBreakoutPips=80.0 \
-       --MinOrWidthPips=150.0 \
-       --OrbBufferPips=25.0 \
-       --PartialCloseRatio=0.5 \
-       --EnablePostTpGate=true \
-       --BounceTradeEnabled=true \
-       --BounceDistanceThreshold=1.5 \
-       --RiskPerTradePercent=0.2 \
-       --UseAtr=true \
-       --AtrPeriod=14 \
-       --AtrSlMultiplier=2.0 \
-       --AtrTpMultiplier=3.5 \
-       --BreakevenTriggerAtr=1.5 \
-       --BreakevenOffsetAtr=0.1 \
-       --TrailTriggerAtr=2.5 \
-       --TrailDistanceAtr=1.5 \
-       --MinSlAtr=1.0 \
-       --MaxSlAtr=4.0 \
-       --MinTpAtr=1.5 \
-       --MaxTpAtr=8.0 \
-       --MaxGivebackAtr=1.5 \
-       --PostTpPullbackAtr=0.5 \
-       --TrendTpDisabled=true
-     ```
 ### 5. 取引開始！🎉
 
 ボットは自動的に：
@@ -1231,48 +1200,21 @@ ELSE:
 | `breakEvenTrigger` | `250.0 pips` | 建値移動を発動する利益距離（ゴールド $2.50） |
 ### 🏹 アジアンレンジ・ジューダススイープ推奨プリセット表 (Asian Range Judas Sweep)
 
-| パラメータ | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **推奨時間枠** | `M15` | `M15` | `M15` | `M15` | `M15` |
-| **アジア時間 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
-| **キルゾーン (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **アジアレンジ幅 (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **スイープヒゲ深さ (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
-| **AI SL 保護床 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **デフォルト損切り (SL)** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **デフォルト利確 (TP)** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
-| **建値移動発動距離 (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
-| **最低 AI 信頼度スコア** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **1トレードリスク割合** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| パラメータ | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY | BTCUSD | ETHUSD |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **推奨時間枠** | `M15` | `M15` | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **アジア時間 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **キルゾーン (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **アジアレンジ幅 (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
+| **スイープヒゲ深さ (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **AI SL 保護床 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
+| **デフォルト損切り (SL)** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **デフォルト利確 (TP)** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **建値移動発動距離 (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **最低 AI 信頼度スコア** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **1トレードリスク割合** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
 
 ### 📊 TMS + ORB 推奨プリセット表 (銘柄別)
-#### Cryptocurrency
-
-| Parameter | BTCUSD | ETHUSD |
-| :--- | :--- | :--- |
-| **Trading Session** | New York | New York |
-| **DST Rule** | `US` | `US` |
-| **Min Decisive Breakout** | `150.0 pips` | `80.0 pips` |
-| **Min OR Width** | `300.0 pips` | `150.0 pips` |
-| **ORB Buffer** | `50.0 pips` | `25.0 pips` |
-| **Breakeven Trigger** | `1.5x ATR` | `1.5x ATR` |
-| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` |
-| **Trail Trigger** | `2.5x ATR` | `2.5x ATR` |
-| **Trail Distance** | `1.5x ATR` | `1.5x ATR` |
-| **Min SL / Max SL** | `1.0x / 4.0x ATR` | `1.0x / 4.0x ATR` |
-| **Min TP / Max TP** | `1.5x / 8.0x ATR` | `1.5x / 8.0x ATR` |
-| **Max Giveback** | `1.5x ATR` | `1.5x ATR` |
-| **Recommended Timeframe** | `M15` | `M15` |
-| **EMA Period** | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
-| **TDI Bounce Trade** | `1.5` | `1.5` |
-| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` |
-| **Risk per Trade** | `0.2%` | `0.2%` |
-| **Use ATR for SL/TP** | `true` | `true` |
-| **ATR Period** | `14` | `14` |
-| **ATR SL Multiplier** | `2.0x ATR` | `2.0x ATR` |
-| **ATR TP Multiplier** | `3.5x ATR` | `3.5x ATR` |
-
 #### Metals & Indices
 
 | Parameter | XAUUSD | US30 | USTEC | DE40 |

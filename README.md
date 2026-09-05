@@ -66,7 +66,7 @@ AgentFxTrading is an **autonomous forex trading system** that combines the power
 - **Dynamic Multi-Asset Precision**: Real-time decimal scaling (5 decimals for Forex, 3 for JPY pairs, 2 for Gold, Indices, and Crypto) preventing flatline prompt distortion
 - **True ATR Scaling**: Automated normalization of raw volatility units to pips across all symbols for precise LLM evaluation
 - **Multi-Asset Cycle Gate**: Smart overextension filtering for Crypto (`BTC`, `ETH`, `SOL`, `XRP`), Gold, Indices, and Forex
-- **Adaptive Asian Range Filter**: Symbol-specific bounds (`[200p, 8000p]` for Gold, `[12p, 100p]` for Forex, `[15p, 200p]` for JPY crosses) with idle polling suppression
+- **Adaptive Asian Range Filter**: Symbol-specific bounds (`[200p, 8000p]` for Gold, `[12p, 100p]` for Forex, `[15p, 200p]` for JPY crosses, `[10000p, 400000p]` for BTC, `[800p, 35000p]` for ETH) with idle polling suppression
 - **Guardrail Telemetry Integration**: Client-side cBot event telemetry reporting blocked trades and internal guardrail states back to the FastAPI server via `/api/cbot_event`
 ### 🛡️ Risk Management
 - **Position Memory**: Tracks MFE (Maximum Favorable Excursion) on every tick
@@ -419,6 +419,74 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --stoplossPip=25.0 \
        --takeprofitPip=50.0 \
        --enableBreakEvenPrice=true
+     ```
+
+   * **BTCUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-btcusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=BTCUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-btcusd-judas" \
+       --label="cbot-btcusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=10000.0 \
+       --maxAsianRangePips=400000.0 \
+       --sweepBufferPips=1500.0 \
+       --AiSlMinFloorPips=20000.0 \
+       --breakEvenTrigger=25000.0 \
+       --stoplossPip=25000.0 \
+       --takeprofitPip=60000.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=1.0
+     ```
+
+   * **ETHUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
+     ```bash
+     docker run -d \
+       --name cbot-ethusd-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=ETHUSD \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-ethusd-judas" \
+       --label="cbot-ethusd-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=800.0 \
+       --maxAsianRangePips=35000.0 \
+       --sweepBufferPips=150.0 \
+       --AiSlMinFloorPips=1500.0 \
+       --breakEvenTrigger=2000.0 \
+       --stoplossPip=2000.0 \
+       --takeprofitPip=5000.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=1.0
      ```
 
    * **XAUUSD TMS+ORB (M15 - New York Session)**:
@@ -967,105 +1035,6 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --TrendTpDisabled=true
      ```
 
-   * **BTCUSD (M15 - New York Session / Crypto Momentum)**:
-     ```bash
-     docker run -d \
-       --name cbot-btcusd \
-       --restart unless-stopped \
-       --network host \
-       -v $(pwd):/workspace \
-       -v /root:/root \
-       ghcr.io/spotware/ctrader-console:latest \
-       run /workspace/cBot/AiAgentBot.algo \
-       --ctid=your_email@example.com \
-       --pwd-file=/root/ctrader_data/ctid_pwd \
-       --account=YOUR_ACCOUNT_ID \
-       --symbol=BTCUSD \
-       --period=m15 \
-       --full-access \
-       --BotId="btcusd_m15" \
-       --ApiUrl="http://127.0.0.1:8000/trade" \
-       --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
-       --SessionName="newyork" \
-       --OrbStartHour=13 \
-       --SessionEndHour=22 \
-       --SessionDstRule="US" \
-       --MinDecisiveBreakoutPips=150.0 \
-       --MinOrWidthPips=300.0 \
-       --OrbBufferPips=50.0 \
-       --PartialCloseRatio=0.5 \
-       --EnablePostTpGate=true \
-       --BounceTradeEnabled=true \
-       --BounceDistanceThreshold=1.5 \
-       --RiskPerTradePercent=0.2 \
-       --UseAtr=true \
-       --AtrPeriod=14 \
-       --AtrSlMultiplier=2.0 \
-       --AtrTpMultiplier=3.5 \
-       --BreakevenTriggerAtr=1.5 \
-       --BreakevenOffsetAtr=0.1 \
-       --TrailTriggerAtr=2.5 \
-       --TrailDistanceAtr=1.5 \
-       --MinSlAtr=1.0 \
-       --MaxSlAtr=4.0 \
-       --MinTpAtr=1.5 \
-       --MaxTpAtr=8.0 \
-       --MaxGivebackAtr=1.5 \
-       --PostTpPullbackAtr=0.5 \
-       --TrendTpDisabled=true
-     ```
-
-   * **ETHUSD (M15 - New York Session / Crypto Momentum)**:
-     ```bash
-     docker run -d \
-       --name cbot-ethusd \
-       --restart unless-stopped \
-       --network host \
-       -v $(pwd):/workspace \
-       -v /root:/root \
-       ghcr.io/spotware/ctrader-console:latest \
-       run /workspace/cBot/AiAgentBot.algo \
-       --ctid=your_email@example.com \
-       --pwd-file=/root/ctrader_data/ctid_pwd \
-       --account=YOUR_ACCOUNT_ID \
-       --symbol=ETHUSD \
-       --period=m15 \
-       --full-access \
-       --BotId="ethusd_m15" \
-       --ApiUrl="http://127.0.0.1:8000/trade" \
-       --AccountLabel="demo" \
-       --TmsTimeFrame="Hour" \
-       --EmaPeriod=5 \
-       --SessionName="newyork" \
-       --OrbStartHour=13 \
-       --SessionEndHour=22 \
-       --SessionDstRule="US" \
-       --MinDecisiveBreakoutPips=80.0 \
-       --MinOrWidthPips=150.0 \
-       --OrbBufferPips=25.0 \
-       --PartialCloseRatio=0.5 \
-       --EnablePostTpGate=true \
-       --BounceTradeEnabled=true \
-       --BounceDistanceThreshold=1.5 \
-       --RiskPerTradePercent=0.2 \
-       --UseAtr=true \
-       --AtrPeriod=14 \
-       --AtrSlMultiplier=2.0 \
-       --AtrTpMultiplier=3.5 \
-       --BreakevenTriggerAtr=1.5 \
-       --BreakevenOffsetAtr=0.1 \
-       --TrailTriggerAtr=2.5 \
-       --TrailDistanceAtr=1.5 \
-       --MinSlAtr=1.0 \
-       --MaxSlAtr=4.0 \
-       --MinTpAtr=1.5 \
-       --MaxTpAtr=8.0 \
-       --MaxGivebackAtr=1.5 \
-       --PostTpPullbackAtr=0.5 \
-       --TrendTpDisabled=true
-     ```
 ### 5. Start Trading! 🎉
 
 The bot will automatically:
@@ -1255,48 +1224,21 @@ ELSE:
 
 ### 🏹 Recommended Presets for Asian Range Judas Sweep
 
-| Parameter | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` | `M15` |
-| **Asian Session (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
-| **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
-| **Min / Max Asian Range** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` |
-| **Judas Sweep Buffer** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` |
-| **AI SL Minimum Floor** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Default Stop Loss** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` |
-| **Default Take Profit** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` |
-| **Breakeven Trigger** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` |
-| **AI Confidence Threshold** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| Parameter | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY | BTCUSD | ETHUSD |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Recommended Timeframe** | `M15` | `M15` | `M15` | `M15` | `M15` | `M15` | `M15` |
+| **Asian Session (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
+| **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
+| **Min / Max Asian Range** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
+| **Judas Sweep Buffer** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **AI SL Minimum Floor** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
+| **Default Stop Loss** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Default Take Profit** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **Breakeven Trigger** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **AI Confidence Threshold** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
+| **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
 
 ### 📊 Recommended Presets for TMS + ORB (by Symbol)
-#### Cryptocurrency
-
-| Parameter | BTCUSD | ETHUSD |
-| :--- | :--- | :--- |
-| **Trading Session** | New York | New York |
-| **DST Rule** | `US` | `US` |
-| **Min Decisive Breakout** | `150.0 pips` | `80.0 pips` |
-| **Min OR Width** | `300.0 pips` | `150.0 pips` |
-| **ORB Buffer** | `50.0 pips` | `25.0 pips` |
-| **Breakeven Trigger** | `1.5x ATR` | `1.5x ATR` |
-| **Breakeven Offset** | `0.1x ATR` | `0.1x ATR` |
-| **Trail Trigger** | `2.5x ATR` | `2.5x ATR` |
-| **Trail Distance** | `1.5x ATR` | `1.5x ATR` |
-| **Min SL / Max SL** | `1.0x / 4.0x ATR` | `1.0x / 4.0x ATR` |
-| **Min TP / Max TP** | `1.5x / 8.0x ATR` | `1.5x / 8.0x ATR` |
-| **Max Giveback** | `1.5x ATR` | `1.5x ATR` |
-| **Recommended Timeframe** | `M15` | `M15` |
-| **EMA Period** | `5` | `5` |
-| **Post-TP Gate / Pullback** | `true` (`0.5x ATR`) | `true` (`0.5x ATR`) |
-| **TDI Bounce Trade** | `1.5` | `1.5` |
-| **Partial Close at BE** | `0.5 (50%)` | `0.5 (50%)` |
-| **Risk per Trade** | `0.2%` | `0.2%` |
-| **Use ATR for SL/TP** | `true` | `true` |
-| **ATR Period** | `14` | `14` |
-| **ATR SL Multiplier** | `2.0x ATR` | `2.0x ATR` |
-| **ATR TP Multiplier** | `3.5x ATR` | `3.5x ATR` |
-
 #### Metals & Indices
 
 | Parameter | XAUUSD | US30 | USTEC | DE40 |
