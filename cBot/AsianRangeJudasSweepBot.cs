@@ -105,10 +105,10 @@ namespace cAlgo.Robots
         [Parameter("Asian Session End (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 6, MinValue = 0, MaxValue = 23)]
         public int asianEndHour { get; set; }
 
-        [Parameter("Min Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 50.0, MinValue = 5.0, MaxValue = 5000.0)]
+        [Parameter("Min Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 50.0, MinValue = 5.0, MaxValue = 500000.0)]
         public double minAsianRangePips { get; set; }
 
-        [Parameter("Max Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 350.0, MinValue = 20.0, MaxValue = 20000.0)]
+        [Parameter("Max Asian Range (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 350.0, MinValue = 20.0, MaxValue = 1000000.0)]
         public double maxAsianRangePips { get; set; }
 
         [Parameter("London Killzone Start (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 7, MinValue = 0, MaxValue = 23)]
@@ -123,7 +123,7 @@ namespace cAlgo.Robots
         [Parameter("NY Killzone End (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 16, MinValue = 0, MaxValue = 23)]
         public int nyEndHour { get; set; }
 
-        [Parameter("Judas Sweep Buffer (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 15.0, MinValue = 1.0, MaxValue = 500.0)]
+        [Parameter("Judas Sweep Buffer (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 15.0, MinValue = 1.0, MaxValue = 50000.0)]
         public double sweepBufferPips { get; set; }
 
         [Parameter("Draw Asian Range Visuals", Group = "Asian Range & Judas Sweep", DefaultValue = true)]

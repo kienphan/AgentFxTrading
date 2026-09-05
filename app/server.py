@@ -546,8 +546,10 @@ def evaluate_judas_sweep_gate(snapshot: MarketSnapshot) -> Optional[AgentDecisio
                 min_asian_pips, max_asian_pips = 100.0, 10000.0  # $10.00 to $100.00 (or $1.00-$100.00 depending on broker digits)
             elif any(jpy in sym_up for jpy in ["JPY"]):
                 min_asian_pips, max_asian_pips = 15.0, 200.0
-            elif any(cr in sym_up for cr in ["BTC", "ETH", "CRYPTO"]):
-                min_asian_pips, max_asian_pips = 500.0, 30000.0
+            elif "BTC" in sym_up:
+                min_asian_pips, max_asian_pips = 10000.0, 400000.0  # $100 to $4,000 USD on BTC
+            elif any(cr in sym_up for cr in ["ETH", "CRYPTO"]):
+                min_asian_pips, max_asian_pips = 800.0, 35000.0     # $8 to $350 USD on ETH
             elif any(idx in sym_up for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"]):
                 min_asian_pips, max_asian_pips = 50.0, 2000.0
             else:
