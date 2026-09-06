@@ -526,3 +526,308 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .price-flash-down {
     animation: flashDown 0.8s ease-out;
 }
+
+/* ==========================================================================
+   Task 1: Market Sessions & Judas Killzone Bar
+   ========================================================================== */
+.market-session-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-bottom: 12px;
+    font-size: 0.78rem;
+}
+.session-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.session-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    transition: all 0.2s ease;
+}
+.session-pill--active {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.35);
+    color: #4ade80;
+}
+.session-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #64748b;
+}
+.session-pill--active .session-pill-dot {
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e;
+    animation: pulse 2s infinite;
+}
+.kz-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #facc15;
+}
+.kz-banner--active {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #f87171;
+    animation: borderGlow 2s infinite alternate;
+}
+@keyframes borderGlow {
+    0% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.2); }
+    100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+}
+.market-clock {
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ==========================================================================
+   Task 3: AI Decision & Reasoning Card Widget
+   ========================================================================== */
+.ai-decision-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+.ai-decision-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(to bottom, #6366f1, #38bdf8);
+}
+.ai-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.ai-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ai-sparkle-icon {
+    color: #818cf8;
+    width: 18px;
+    height: 18px;
+}
+.ai-card-title {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: #f8fafc;
+    letter-spacing: 0.3px;
+}
+.ai-card-body {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+}
+@media (max-width: 860px) {
+    .ai-card-body {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+}
+.ai-action-badge {
+    font-size: 1.1rem;
+    font-weight: 800;
+    padding: 6px 14px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ai-action--BUY {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+}
+.ai-action--SELL {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.ai-action--HOLD {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+}
+.ai-confidence-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 130px;
+}
+.ai-confidence-label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+}
+.ai-confidence-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.ai-confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #22c55e);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+.ai-reason-text {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+}
+.ai-checklist-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+.ai-pill-tag {
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+}
+
+/* ==========================================================================
+   Task 4: Dual Chart Layout & Asset Exposure Doughnut
+   ========================================================================== */
+.analytics-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+@media (max-width: 900px) {
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.chart-toggle-group {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-surface-2);
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.chart-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+.chart-btn.active {
+    background: var(--accent-bright);
+    color: #fff;
+}
+.exposure-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    height: 100%;
+    min-height: 180px;
+}
+.exposure-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 0.72rem;
+    justify-content: center;
+}
+
+/* ==========================================================================
+   Task 5: Mobile Responsive & Thumb-friendly Cards
+   ========================================================================== */
+@media (max-width: 768px) {
+    .app-body {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100% !important;
+        flex-direction: row;
+        justify-content: space-around;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 4px 0;
+        position: sticky;
+        top: 0;
+        z-index: 99;
+    }
+    .nav-label {
+        font-size: 0.65rem;
+    }
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px;
+    }
+    .kpi-card {
+        padding: 10px;
+    }
+    .kpi-value {
+        font-size: 1.1rem;
+    }
+    .table-wrap {
+        overflow-x: auto;
+    }
+    .market-session-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

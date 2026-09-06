@@ -78,7 +78,7 @@ def sanitize_bot_id(bot_id: Optional[str]) -> str:
     return cleaned.strip("\"'“”‘’`") or "default"
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
-from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, manager as ws_manager, WebSocketLogHandler
+from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, broadcast_decision, record_ai_decision, manager as ws_manager, WebSocketLogHandler
 from app.accounts import init_account_registry, get_account_registry
 
 # Attach WebSocket live log handler to root logger
@@ -1301,6 +1301,12 @@ async def trade_decision(snapshot: MarketSnapshot):
             f"TP: {decision_dict.get('tp_pips', 0)}p | Conf: {decision_dict.get('confidence', 80.0):.1f}% | "
             f"Reason: {decision_dict.get('reason', '')}"
         )
+
+        try:
+            record_ai_decision(decision_dict)
+            await broadcast_decision(decision_dict)
+        except Exception:
+            pass
 
         return AgentDecision(**decision_dict)
     except Exception as e:

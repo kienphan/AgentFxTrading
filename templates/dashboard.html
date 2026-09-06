@@ -88,6 +88,77 @@
         </nav>
         <main class="main-content">
             <div id="view-dashboard" class="view-section active">
+                <!-- Market Sessions & Judas Killzone Bar (Task 1) -->
+                <div class="market-session-bar" id="market-session-bar">
+                    <div class="session-group">
+                        <span class="td-dim font-bold" style="font-size:0.75rem;"><i data-lucide="clock" class="kpi-icon text-cyan"></i> Sessions:</span>
+                        <span class="session-pill {% if market_sessions.sessions.sydney.active %}session-pill--active{% endif %}" id="sess-sydney" title="Sydney: 21:00-06:00 UTC">
+                            <span class="session-pill-dot"></span>Sydney
+                        </span>
+                        <span class="session-pill {% if market_sessions.sessions.tokyo.active %}session-pill--active{% endif %}" id="sess-tokyo" title="Tokyo: 00:00-09:00 UTC">
+                            <span class="session-pill-dot"></span>Tokyo
+                        </span>
+                        <span class="session-pill {% if market_sessions.sessions.london.active %}session-pill--active{% endif %}" id="sess-london" title="London: 07:00-16:00 UTC">
+                            <span class="session-pill-dot"></span>London
+                        </span>
+                        <span class="session-pill {% if market_sessions.sessions.new_york.active %}session-pill--active{% endif %}" id="sess-ny" title="New York: 12:00-21:00 UTC">
+                            <span class="session-pill-dot"></span>New York
+                        </span>
+                        <span class="badge {% if market_sessions.is_forex_weekend %}badge--warn{% else %}badge--live{% endif %}" id="market-forex-badge" style="font-size:0.7rem;">
+                            Forex: {{ market_sessions.forex_status }}
+                        </span>
+                    </div>
+                    <div class="session-group">
+                        <span class="kz-banner {% if market_sessions.killzone.active %}kz-banner--active{% endif %}" id="kz-banner">
+                            <i data-lucide="flame" class="kpi-icon"></i>
+                            <span id="kz-title">Judas Killzone: {{ market_sessions.killzone.name }}</span>
+                            <span class="td-dim font-mono" id="kz-countdown" style="font-size:0.7rem; margin-left:4px;">({{ market_sessions.killzone.next_in }})</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- AI Decision & Reasoning Card Widget (Task 3) -->
+                <div class="ai-decision-card" id="ai-decision-card">
+                    <div class="ai-card-header">
+                        <div class="ai-card-title-group">
+                            <i data-lucide="sparkles" class="ai-sparkle-icon"></i>
+                            <span class="ai-card-title">Live AI Reasoning &amp; Strategy Signals</span>
+                            <span class="td-dim" id="ai-card-timestamp" style="font-size: 0.72rem;">Waiting for incoming bar decisions...</span>
+                        </div>
+                        <div class="ai-confidence-wrap">
+                            <div class="ai-confidence-label">
+                                <span>AI Confidence</span>
+                                <span id="ai-confidence-value" class="font-bold">--%</span>
+                            </div>
+                            <div class="ai-confidence-bar">
+                                <div class="ai-confidence-fill" id="ai-confidence-fill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ai-card-body">
+                        <div id="ai-action-badge-wrap">
+                            <span class="ai-action-badge ai-action--HOLD" id="ai-action-badge">
+                                <span id="ai-action-icon">⏸</span>
+                                <span id="ai-action-text">HOLD</span>
+                            </span>
+                        </div>
+                        <div>
+                            <div class="ai-reason-text" id="ai-reason-text">
+                                {% if latest_decisions and latest_decisions|length > 0 %}
+                                    <strong>[{{ latest_decisions[0].symbol or 'GLOBAL' }}]</strong> {{ latest_decisions[0].reason or 'Monitoring killzone setups & liquidity pools.' }}
+                                {% else %}
+                                    Waiting for first real-time cBot market snapshot...
+                                {% endif %}
+                            </div>
+                            <div class="ai-checklist-group" id="ai-checklist-group">
+                                <span class="ai-pill-tag" id="ai-pill-symbol">Symbol: {{ positions[0].symbol if positions else 'XAUUSD/EURUSD' }}</span>
+                                <span class="ai-pill-tag" id="ai-pill-tf">TF: M15</span>
+                                <span class="ai-pill-tag" id="ai-pill-regime">Engine: Dual TMS+Judas</span>
+                                <span class="ai-pill-tag" id="ai-pill-risk">Max Risk Cap: $12.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- KPI Metrics Cards (Strict 1 Row) -->
                 <div class="kpi-grid">
@@ -268,15 +339,32 @@
                     </div>
                 </section>
 
-                <!-- Daily P&L · 30D Chart (Bottom, Separated) -->
-                <section class="panel chart-panel">
-                    <div class="panel-header">
-                        <span class="panel-title">Daily P&amp;L · 30D</span>
-                    </div>
-                    <div class="panel-body panel-body--chart">
-                        <canvas id="pnl-chart"></canvas>
-                    </div>
-                </section>
+                <!-- Analytics Section: Dual Chart & Asset Exposure (Task 4) -->
+                <div class="analytics-grid">
+                    <section class="panel chart-panel">
+                        <div class="panel-header">
+                            <span class="panel-title" id="pnl-chart-title">Performance Analytics</span>
+                            <div class="chart-toggle-group">
+                                <button type="button" class="chart-btn active" id="btn-chart-daily" data-chart="daily">Daily P&amp;L</button>
+                                <button type="button" class="chart-btn" id="btn-chart-equity" data-chart="equity">Equity Curve</button>
+                            </div>
+                        </div>
+                        <div class="panel-body panel-body--chart">
+                            <canvas id="pnl-chart"></canvas>
+                        </div>
+                    </section>
+                    <section class="panel exposure-panel">
+                        <div class="panel-header">
+                            <span class="panel-title"><i data-lucide="pie-chart" class="panel-icon text-cyan"></i> Active Asset Exposure</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="exposure-wrap">
+                                <canvas id="exposure-chart" style="max-height: 180px;"></canvas>
+                                <div id="exposure-empty-msg" class="td-dim" style="display:none; font-size:0.8rem; margin:auto;">No active position volume</div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </div>
 
             <!-- Leaderboard View -->
@@ -767,12 +855,137 @@
             fetchLeaderboard();
         });
 
+        let currentChartType = 'daily';
+        let rawDailyHistory = {{ pnl_history | tojson }};
+        let initialExposure = {{ exposure | tojson }};
+
         const ctx=document.getElementById('pnl-chart').getContext('2d');
-        const pnlData={{ pnl_history | tojson }};
-        const pnlChart=new Chart(ctx,{type:'bar',data:{labels:pnlData.map(d=>d.date),datasets:[{label:'Daily P&L',data:pnlData.map(d=>d.pnl),backgroundColor:pnlData.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),borderColor:pnlData.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),borderWidth:1,borderRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#333',titleColor:'#f0f0f0',bodyColor:'#a0a0a0'}},scales:{y:{beginAtZero:true,grid:{color:'rgba(64,64,64,0.5)'},ticks:{color:'#a0a0a0',callback:v=>'$'+v}},x:{grid:{display:false},ticks:{color:'#a0a0a0',maxRotation:0}}}}});
+        const pnlChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: rawDailyHistory.map(d=>d.date),
+                datasets: [{
+                    label: 'Daily P&L',
+                    data: rawDailyHistory.map(d=>d.pnl),
+                    backgroundColor: rawDailyHistory.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),
+                    borderColor: rawDailyHistory.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),
+                    borderWidth: 1,
+                    borderRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#1e293b', titleColor: '#f0f0f0', bodyColor: '#a0a0a0' }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(64,64,64,0.3)' }, ticks: { color: '#a0a0a0', callback: v => '$' + v } },
+                    x: { grid: { display: false }, ticks: { color: '#a0a0a0', maxRotation: 0 } }
+                }
+            }
+        });
 
-        function updatePnlChart(h){pnlChart.data.labels=h.map(d=>d.date);pnlChart.data.datasets[0].data=h.map(d=>d.pnl);pnlChart.data.datasets[0].backgroundColor=h.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)');pnlChart.data.datasets[0].borderColor=h.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)');pnlChart.update()}
+        function updatePnlChart(h) {
+            rawDailyHistory = h;
+            if (currentChartType === 'daily') {
+                pnlChart.config.type = 'bar';
+                pnlChart.data.labels = h.map(d=>d.date);
+                pnlChart.data.datasets = [{
+                    label: 'Daily P&L',
+                    data: h.map(d=>d.pnl),
+                    backgroundColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),
+                    borderColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),
+                    borderWidth: 1,
+                    borderRadius: 2
+                }];
+            } else {
+                pnlChart.config.type = 'line';
+                let cum = 0;
+                const cumData = h.map(d => { cum += (d.pnl || 0); return parseFloat(cum.toFixed(2)); });
+                pnlChart.data.labels = h.map(d=>d.date);
+                pnlChart.data.datasets = [{
+                    label: 'Cumulative Equity',
+                    data: cumData,
+                    borderColor: '#38bdf8',
+                    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                    fill: true,
+                    tension: 0.25,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#38bdf8'
+                }];
+            }
+            pnlChart.update();
+        }
 
+        // Chart toggle handlers
+        document.getElementById('btn-chart-daily').addEventListener('click', () => {
+            currentChartType = 'daily';
+            document.getElementById('btn-chart-daily').classList.add('active');
+            document.getElementById('btn-chart-equity').classList.remove('active');
+            document.getElementById('pnl-chart-title').textContent = 'Daily P&L · 30D';
+            updatePnlChart(rawDailyHistory);
+        });
+        document.getElementById('btn-chart-equity').addEventListener('click', () => {
+            currentChartType = 'equity';
+            document.getElementById('btn-chart-equity').classList.add('active');
+            document.getElementById('btn-chart-daily').classList.remove('active');
+            document.getElementById('pnl-chart-title').textContent = 'Cumulative Equity Curve';
+            updatePnlChart(rawDailyHistory);
+        });
+
+        // Asset Exposure Doughnut Chart
+        const expCtx = document.getElementById('exposure-chart').getContext('2d');
+        let exposureChart = new Chart(expCtx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(initialExposure.by_asset_class || {}),
+                datasets: [{
+                    data: Object.values(initialExposure.by_asset_class || {}),
+                    backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'],
+                    borderWidth: 1,
+                    borderColor: '#1e293b'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10, color: '#a0a0a0', font: { size: 10 } } }
+                },
+                cutout: '65%'
+            }
+        });
+
+        function updateExposureChart(positions) {
+            const byClass = { "Forex": 0.0, "Gold/Metals": 0.0, "Crypto": 0.0, "Indices": 0.0 };
+            let totalVol = 0;
+            positions.forEach(p => {
+                const sym = (p.symbol || '').toUpperCase();
+                const vol = parseFloat(p.volume) || 0;
+                totalVol += vol;
+                if (sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL')) byClass['Crypto'] += vol;
+                else if (sym.includes('XAU') || sym.includes('GOLD')) byClass['Gold/Metals'] += vol;
+                else if (sym.includes('US30') || sym.includes('USTEC') || sym.includes('DE40')) byClass['Indices'] += vol;
+                else byClass['Forex'] += vol;
+            });
+            const filtered = Object.entries(byClass).filter(([_, v]) => v > 0);
+            const emptyMsg = document.getElementById('exposure-empty-msg');
+            const expCanvas = document.getElementById('exposure-chart');
+            if (!filtered.length) {
+                if (emptyMsg) emptyMsg.style.display = 'block';
+                if (expCanvas) expCanvas.style.display = 'none';
+            } else {
+                if (emptyMsg) emptyMsg.style.display = 'none';
+                if (expCanvas) expCanvas.style.display = 'block';
+                exposureChart.data.labels = filtered.map(([k]) => k);
+                exposureChart.data.datasets[0].data = filtered.map(([_, v]) => parseFloat(v.toFixed(2)));
+                exposureChart.update();
+            }
+        }
+        updateExposureChart({{ positions | tojson }});
         let ws=null,pingInterval=null;
         function setConn(on){const el=document.getElementById('connection-status');if(on){el.className='status-pill status-pill--online';el.innerHTML='<span class="status-dot"></span><span>Connected</span>'}else{el.className='status-pill status-pill--offline';el.innerHTML='<span class="status-dot"></span><span>Disconnected</span>'}}
         function connectWebSocket(){
@@ -802,6 +1015,8 @@
                         handleLiveTick(d);
                     } else if(d.type==='event') {
                         handleLiveEvent(d);
+                    } else if(d.type==='ai_decision') {
+                        handleLiveDecision(d.decision);
                     }
                 } catch(err) {
                     console.error('Error handling WS message:', err);
@@ -809,6 +1024,35 @@
             };
             ws.onclose=()=>{setConn(false);if(pingInterval)clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};
             ws.onerror=(e)=>console.error('WS error:',e);
+        }
+
+        function handleLiveDecision(dec) {
+            if (!dec) return;
+            const action = (dec.action || 'HOLD').toUpperCase();
+            const badge = document.getElementById('ai-action-badge');
+            const text = document.getElementById('ai-action-text');
+            const icon = document.getElementById('ai-action-icon');
+            if (badge && text && icon) {
+                badge.className = `ai-action-badge ai-action--${action}`;
+                text.textContent = action;
+                icon.textContent = action === 'BUY' ? '▲' : (action === 'SELL' ? '▼' : '⏸');
+            }
+            const confVal = document.getElementById('ai-confidence-value');
+            const confFill = document.getElementById('ai-confidence-fill');
+            const confNum = parseFloat(dec.confidence) || 80;
+            if (confVal) confVal.textContent = `${confNum.toFixed(1)}%`;
+            if (confFill) confFill.style.width = `${Math.min(100, Math.max(0, confNum))}%`;
+
+            const reasonEl = document.getElementById('ai-reason-text');
+            if (reasonEl) {
+                reasonEl.innerHTML = `<strong>[${dec.symbol || 'SYMBOL'}]</strong> ${dec.reason || 'Decision processed by AI model.'}`;
+            }
+            const pillSym = document.getElementById('ai-pill-symbol');
+            if (pillSym && dec.symbol) pillSym.textContent = `Symbol: ${dec.symbol}`;
+            const pillTf = document.getElementById('ai-pill-tf');
+            if (pillTf && dec.timeframe) pillTf.textContent = `TF: ${dec.timeframe}`;
+            const tsEl = document.getElementById('ai-card-timestamp');
+            if (tsEl) tsEl.textContent = `Updated: ${new Date().toLocaleTimeString()} (GMT+7)`;
         }
 
         function handleLiveTick(tick) {
@@ -910,7 +1154,42 @@
                     </tr>`;
                 }).join('');
             }
+            if (typeof updateExposureChart === 'function') {
+                updateExposureChart(positions);
+            }
         }
+
+        // Periodic Session & Killzone Status Refresher
+        async function refreshMarketSessions() {
+            try {
+                const res = await fetch('/api/dashboard/sessions');
+                if (!res.ok) return;
+                const s = await res.json();
+                const setPill = (id, active) => {
+                    const el = document.getElementById(id);
+                    if (el) el.className = `session-pill ${active ? 'session-pill--active' : ''}`;
+                };
+                setPill('sess-sydney', s.sessions.sydney.active);
+                setPill('sess-tokyo', s.sessions.tokyo.active);
+                setPill('sess-london', s.sessions.london.active);
+                setPill('sess-ny', s.sessions.new_york.active);
+
+                const kzBanner = document.getElementById('kz-banner');
+                const kzTitle = document.getElementById('kz-title');
+                const kzCount = document.getElementById('kz-countdown');
+                if (kzBanner && kzTitle && kzCount) {
+                    kzBanner.className = `kz-banner ${s.killzone.active ? 'kz-banner--active' : ''}`;
+                    kzTitle.textContent = `Judas Killzone: ${s.killzone.name}`;
+                    kzCount.textContent = `(${s.killzone.next_in})`;
+                }
+                const fxBadge = document.getElementById('market-forex-badge');
+                if (fxBadge) {
+                    fxBadge.className = `badge ${s.is_forex_weekend ? 'badge--warn' : 'badge--live'}`;
+                    fxBadge.textContent = `Forex: ${s.forex_status}`;
+                }
+            } catch(e) { }
+        }
+        setInterval(refreshMarketSessions, 60000);
         function updateTradeHistory(history){
             const isMultiAcc = (selectedAccountId === 'demo' || selectedAccountId === 'live');
             const tb=document.getElementById('history-table');if(!tb)return;const ah=isMultiAcc?'':'hidden';

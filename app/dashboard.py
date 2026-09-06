@@ -11,7 +11,7 @@ from pathlib import Path
 import sqlite3
 import json
 import asyncio
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional
 from app.accounts import get_account_registry
 from app.leaderboard import compute_bot_leaderboard
@@ -268,6 +268,133 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
         conn.close()
     return list(reversed(history))  # Reverse to chronological order
 
+
+# --- In-Memory Store for Latest AI Decisions ---
+_latest_decisions: List[Dict] = []
+
+def record_ai_decision(decision: Dict):
+    """Store the latest AI decision in memory (FIFO 20)."""
+    global _latest_decisions
+    _latest_decisions.insert(0, decision)
+    if len(_latest_decisions) > 20:
+        _latest_decisions = _latest_decisions[:20]
+
+def get_latest_ai_decisions(limit: int = 5) -> List[Dict]:
+    """Get latest AI decisions."""
+    return _latest_decisions[:limit]
+
+def get_market_sessions_info() -> Dict:
+    """Calculate current market sessions, Judas killzones, and weekend status."""
+    now_utc = datetime.now(timezone.utc)
+    weekday = now_utc.weekday()  # 0=Monday ... 4=Friday, 5=Saturday, 6=Sunday
+    hour = now_utc.hour
+    minute = now_utc.minute
+    current_time_dec = hour + (minute / 60.0)
+
+    # Forex market schedule: Closes Friday 21:00 UTC, Opens Sunday 21:00 UTC
+    is_forex_weekend = (weekday == 4 and current_time_dec >= 21.0) or (weekday == 5) or (weekday == 6 and current_time_dec < 21.0)
+
+    # Trading Sessions (UTC)
+    # Sydney: 21:00 - 06:00 UTC
+    sydney_active = (current_time_dec >= 21.0 or current_time_dec < 6.0) and not (weekday == 5 or (weekday == 4 and current_time_dec >= 21.0))
+    # Tokyo: 00:00 - 09:00 UTC
+    tokyo_active = (0.0 <= current_time_dec < 9.0) and not is_forex_weekend
+    # London: 07:00 - 16:00 UTC
+    london_active = (7.0 <= current_time_dec < 16.0) and not is_forex_weekend
+    # New York: 12:00 - 21:00 UTC
+    ny_active = (12.0 <= current_time_dec < 21.0) and not is_forex_weekend
+
+    # Judas Killzones (UTC)
+    # London Open Killzone: 07:00 - 10:00 UTC
+    london_kz = (7.0 <= current_time_dec < 10.0) and not is_forex_weekend
+    # New York Overlap Killzone: 12:30 - 16:00 UTC
+    ny_kz = (12.5 <= current_time_dec < 16.0) and not is_forex_weekend
+
+    active_kz_name = "Outside Killzones"
+    if london_kz:
+        active_kz_name = "London Open Killzone (07:00-10:00 UTC)"
+    elif ny_kz:
+        active_kz_name = "NY Overlap Killzone (12:30-16:00 UTC)"
+
+    # Next Killzone Countdown
+    next_kz_text = ""
+    if london_kz or ny_kz:
+        next_kz_text = "Active Now"
+    elif not is_forex_weekend:
+        if current_time_dec < 7.0:
+            diff_h = 7.0 - current_time_dec
+            next_kz_text = f"London KZ in {int(diff_h)}h {int((diff_h%1)*60)}m"
+        elif current_time_dec < 12.5:
+            diff_h = 12.5 - current_time_dec
+            next_kz_text = f"NY KZ in {int(diff_h)}h {int((diff_h%1)*60)}m"
+        else:
+            diff_h = (24.0 - current_time_dec) + 7.0
+            next_kz_text = f"London KZ in {int(diff_h)}h {int((diff_h%1)*60)}m"
+    else:
+        next_kz_text = "Market opens Mon 07:00 UTC"
+
+    return {
+        "utc_time": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "gmt7_time": (now_utc + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S (GMT+7)"),
+        "is_forex_weekend": is_forex_weekend,
+        "forex_status": "CLOSED (Weekend)" if is_forex_weekend else "OPEN",
+        "crypto_status": "OPEN 24/7",
+        "sessions": {
+            "sydney": {"name": "Sydney", "active": sydney_active, "hours": "21:00-06:00 UTC"},
+            "tokyo": {"name": "Tokyo", "active": tokyo_active, "hours": "00:00-09:00 UTC"},
+            "london": {"name": "London", "active": london_active, "hours": "07:00-16:00 UTC"},
+            "new_york": {"name": "New York", "active": ny_active, "hours": "12:00-21:00 UTC"}
+        },
+        "killzone": {
+            "active": (london_kz or ny_kz),
+            "name": active_kz_name,
+            "next_in": next_kz_text
+        }
+    }
+
+def get_asset_exposure(account_id: str = "all") -> Dict:
+    """Compute asset exposure distribution by volume and count for active positions."""
+    positions = get_active_positions(account_id)
+    total_volume = sum(float(p.get("volume", 0) or 0) for p in positions)
+    by_symbol: Dict[str, float] = {}
+    by_asset_class: Dict[str, float] = {"Forex": 0.0, "Gold/Metals": 0.0, "Crypto": 0.0, "Indices": 0.0}
+
+    for p in positions:
+        sym = (p.get("symbol") or "UNKNOWN").upper()
+        vol = float(p.get("volume", 0) or 0)
+        by_symbol[sym] = round(by_symbol.get(sym, 0.0) + vol, 2)
+
+        if "BTC" in sym or "ETH" in sym or "SOL" in sym or "XRP" in sym:
+            by_asset_class["Crypto"] += vol
+        elif "XAU" in sym or "GOLD" in sym:
+            by_asset_class["Gold/Metals"] += vol
+        elif "US30" in sym or "USTEC" in sym or "DE40" in sym or "NAS" in sym:
+            by_asset_class["Indices"] += vol
+        else:
+            by_asset_class["Forex"] += vol
+
+    by_asset_class = {k: round(v, 2) for k, v in by_asset_class.items() if v > 0}
+    return {
+        "total_volume": round(total_volume, 2),
+        "total_positions": len(positions),
+        "by_symbol": by_symbol,
+        "by_asset_class": by_asset_class
+    }
+
+def get_cumulative_equity_curve(days: int = 30, account_id: str = "all") -> List[Dict]:
+    """Compute cumulative PnL curve for high-precision growth visualization."""
+    daily = get_daily_pnl_history(days, account_id)
+    cumulative = 0.0
+    curve = []
+    for d in daily:
+        cumulative += float(d.get("pnl", 0.0) or 0.0)
+        curve.append({
+            "date": d["date"],
+            "pnl": d["pnl"],
+            "cum_pnl": round(cumulative, 2),
+            "trades": d.get("trades", 0)
+        })
+    return curve
 TRADE_MODE_FILE = PROJECT_ROOT / "webui_data" / "trade_mode.json"
 DEFAULT_TRADE_MODE = "demo"
 
@@ -353,9 +480,11 @@ async def dashboard_page(request: Request):
             "accounts": accounts,
             "current_mode": mode,
             "leaderboard": leaderboard,
+            "market_sessions": get_market_sessions_info(),
+            "exposure": get_asset_exposure(filter_acc),
+            "latest_decisions": get_latest_ai_decisions(3),
         }
     )
-    response.set_cookie("agentfx_trade_mode", mode, max_age=30*86400)
     return response
 
 @router.get("/api/dashboard/summary")
@@ -387,6 +516,26 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 async def api_dashboard_leaderboard(account_id: str = "all"):
     """API endpoint for bot performance leaderboard and quant tier ranking."""
     return compute_bot_leaderboard(account_id)
+@router.get("/api/dashboard/sessions")
+async def api_dashboard_sessions():
+    """API endpoint for trading sessions, killzones, and market status."""
+    return get_market_sessions_info()
+
+@router.get("/api/dashboard/exposure")
+async def api_dashboard_exposure(account_id: str = "all"):
+    """API endpoint for active asset volume exposure distribution."""
+    return get_asset_exposure(account_id)
+
+@router.get("/api/dashboard/cumulative-pnl")
+async def api_dashboard_cumulative_pnl(days: int = 30, account_id: str = "all"):
+    """API endpoint for cumulative equity curve."""
+    return get_cumulative_equity_curve(days, account_id)
+
+@router.get("/api/dashboard/latest-decisions")
+async def api_dashboard_latest_decisions(limit: int = 5):
+    """API endpoint for latest AI decisions with structured reasoning."""
+    return get_latest_ai_decisions(limit)
+
 
 @router.get("/api/dashboard/logs")
 async def api_dashboard_logs(
@@ -618,6 +767,14 @@ async def broadcast_event(event_type: str, message: str, bot_id: str = "", accou
         "message": message,
         "bot_id": bot_id,
         "account_id": account_id,
+        "timestamp": datetime.now().isoformat()
+    })
+
+async def broadcast_decision(decision: dict):
+    """Broadcast AI decision to connected clients."""
+    await manager.broadcast({
+        "type": "ai_decision",
+        "decision": decision,
         "timestamp": datetime.now().isoformat()
     })
 
