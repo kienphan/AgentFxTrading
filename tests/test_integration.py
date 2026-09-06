@@ -465,22 +465,22 @@ def test_llm_timeout_fallback_position_management():
     assert fb1.action == "HOLD"
     assert "[SAFETY FALLBACK]" in fb1.reason
 
-    # 2. Position in profit -> ADJUST SL to Break-Even
+    # 2. Position in verified profit -> ADJUST SL to Break-Even
     profit_snap = MarketSnapshot(
         bot_id="cbot-test",
         symbol="ETHUSD",
         timeframe="Minute15",
-        ask=2450.0,
-        bid=2448.0,
+        ask=2440.0,
+        bid=2440.0,
         request_id="req2",
         position=PositionInfo(
             type="Sell",
             volume=0.4,
             entry_price=2460.0,
-            current_price=2450.0,
-            pnl=4.0,
+            current_price=2440.0,
+            pnl=8.0,
             sl=2475.0,
-            tp=2440.0,
+            tp=2420.0,
             duration_minutes=30
         )
     )

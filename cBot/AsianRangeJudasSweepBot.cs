@@ -2920,18 +2920,28 @@ Reply strictly with JSON object.";
                             double currentBid = Symbol.Bid;
                             double minStopBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
 
+                            // Anti-Premature Break-Even Threshold (pips)
+                            // BTCUSD: min 15,000p ($150), ETHUSD: min 1,500p ($15), Gold: min 500p ($5), Forex: min 20p
+                            double minBeProfitPips = 20.0;
+                            string symUpper = SymbolName.ToUpperInvariant();
+                            if (symUpper.Contains("BTC")) minBeProfitPips = 15000.0;
+                            else if (symUpper.Contains("ETH")) minBeProfitPips = 1500.0;
+                            else if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 500.0;
+
+                            double currentProfitPips = pos.TradeType == TradeType.Buy 
+                                ? (currentBid - pos.EntryPrice) / Symbol.PipSize 
+                                : (pos.EntryPrice - currentAsk) / Symbol.PipSize;
+
                             // ── 1. SELL Position Intelligent TP/SL Analysis ──
                             if (pos.TradeType == TradeType.Sell)
                             {
-                                // A. Smart Auto-Mapping: If targetTP is between Entry and Market (currentAsk < targetTP < pos.EntryPrice)
-                                // Geometrically on a SELL order, a price between Entry and Market is a POSITIVE TRAILING STOP LOSS!
-                                if (targetTP.HasValue && targetTP.Value > (currentAsk + minStopBuffer) && targetTP.Value < pos.EntryPrice)
+                                // A. Smart Auto-Mapping: Only map if position has verified profit (>= minBeProfitPips)
+                                if (targetTP.HasValue && targetTP.Value > (currentAsk + minStopBuffer) && targetTP.Value < pos.EntryPrice && currentProfitPips >= minBeProfitPips)
                                 {
                                     Print($"[AI Smart Auto-Mapping] Detected targetTP {targetTP.Value:F2} is between Entry ({pos.EntryPrice:F2}) and Market ({currentAsk:F2}) on SELL #{pos.Id}. Re-mapping to Positive Trailing SL to lock profit!");
                                     targetSL = targetTP.Value;
                                     targetTP = pos.TakeProfit; // Preserve original TP target
                                 }
-
                                 // B. Genuine Take Profit Reached: Target TP is at or above current market price
                                 if (targetTP.HasValue && targetTP.Value >= (currentBid - minStopBuffer))
                                 {
@@ -2972,9 +2982,8 @@ Reply strictly with JSON object.";
                             // ── 2. BUY Position Intelligent TP/SL Analysis ──
                             else if (pos.TradeType == TradeType.Buy)
                             {
-                                // A. Smart Auto-Mapping: If targetTP is between Entry and Market (pos.EntryPrice < targetTP < currentBid - minStopBuffer)
-                                // Geometrically on a BUY order, a price between Entry and Market is a POSITIVE TRAILING STOP LOSS!
-                                if (targetTP.HasValue && targetTP.Value < (currentBid - minStopBuffer) && targetTP.Value > pos.EntryPrice)
+                                // A. Smart Auto-Mapping: Only map if position has verified profit (>= minBeProfitPips)
+                                if (targetTP.HasValue && targetTP.Value < (currentBid - minStopBuffer) && targetTP.Value > pos.EntryPrice && currentProfitPips >= minBeProfitPips)
                                 {
                                     Print($"[AI Smart Auto-Mapping] Detected targetTP {targetTP.Value:F2} is between Entry ({pos.EntryPrice:F2}) and Market ({currentBid:F2}) on BUY #{pos.Id}. Re-mapping to Positive Trailing SL to lock profit!");
                                     targetSL = targetTP.Value;
@@ -3022,6 +3031,14 @@ Reply strictly with JSON object.";
                             // ── 3. Modify Position with Boundary Validation ──
                             if (targetSL.HasValue || targetTP.HasValue)
                             {
+                                // Guardrail: Anti-Premature Break-Even
+                                // If targetSL is near entry price (within 50 pips), reject if profit < minBeProfitPips
+                                if (targetSL.HasValue && Math.Abs(targetSL.Value - pos.EntryPrice) <= (Symbol.PipSize * 50) && currentProfitPips < minBeProfitPips)
+                                {
+                                    Print($"[AI Anti-Premature BE Guard] Blocked premature Break-Even SL ({targetSL.Value:F2}) for {SymbolName} #{pos.Id}. Current profit ({currentProfitPips:F1}p) < required threshold ({minBeProfitPips:F0}p). Keeping current SL ({pos.StopLoss}).");
+                                    targetSL = pos.StopLoss;
+                                }
+
                                 double? finalSL = targetSL ?? pos.StopLoss;
                                 double? finalTP = targetTP ?? pos.TakeProfit;
 

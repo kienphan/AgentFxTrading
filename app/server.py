@@ -999,11 +999,22 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
 
 === 6. POSITION MANAGEMENT EVALUATION RULES ===
 1. Trend & Structure Health: Check if current structure still favors the open position.
+   - Do NOT panic on minor 1-2 bar pullbacks or wicks on M15 if Higher Timeframe (H1) trend remains aligned. Let the position breathe towards TP!
 2. Action Decisions:
-   - HOLD: Position healthy and progressing towards TP.
-   - ADJUST: Move SL to Break-Even (when in >= 1:1 RR profit) or Trailing Stop behind new Order Block/swing.
-     ⚠️ MANDATORY FOR ADJUST: You MUST specify the exact absolute price level in "new_sl_price" (e.g. 2455.50 for ETHUSD, 2895.50 for XAUUSD) and/or "new_tp_price". NEVER leave new_sl_price as 0.0 when ADJUSTing!
-   - CLOSE_ALL: Emergency exit if major opposing CHoCH reversal occurs against the position.
+   - HOLD: Position healthy and progressing towards TP. (Default choice during normal fluctuations).
+   - ADJUST: Move SL to Break-Even OR Trailing Stop behind a verified structural swing/Order Block.
+     ⚠️ STRICT ANTI-PREMATURE BREAK-EVEN RULES:
+       * NEVER move SL to Break-Even on minor market noise! Pullbacks of $50-$100 on BTC or $3-$8 on ETH are NORMAL noise on M15.
+       * Minimum profit required BEFORE moving SL to Break-Even:
+         - BTCUSD: Position MUST be in profit by at least +$150.00 to +$200.00 price gain (15,000 - 20,000 pips).
+         - ETHUSD: Position MUST be in profit by at least +$15.00 to +$20.00 price gain (1,500 - 2,000 pips).
+         - XAUUSD: Position MUST be in profit by at least +$5.00 to +$8.00 price gain (500 - 800 pips).
+         - Forex: Position MUST be in profit by at least +20 to +30 pips.
+       * SPREAD BUFFER ON BREAK-EVEN: When moving SL to protect an order, DO NOT set SL directly at entry price where normal spread fluctuations sweep it!
+         - For SELL: Set new_sl_price with breathing room above entry or trailing swing.
+         - For BUY: Set new_sl_price with breathing room below entry or trailing swing.
+     ⚠️ MANDATORY OUTPUT: You MUST specify the exact absolute price level in "new_sl_price" (e.g. 2455.50 for ETHUSD, 79600.00 for BTCUSD, 2895.50 for XAUUSD) and/or "new_tp_price". NEVER leave new_sl_price as 0.0 when ADJUSTing!
+   - CLOSE_ALL: Emergency exit ONLY if a genuine major opposing structural reversal (e.g. decisive H1 CHoCH body close against position) occurs.
    - BUY / SELL: Scale-in ONLY if trend is extremely strong with fresh unmitigated Order Block.
 
 === 7. ASSET-SPECIFIC PIP & PRICE RULES ===
@@ -1044,25 +1055,40 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
     cur_sl = pos.sl or pos.sl_price or 0.0
     pnl = pos.resolved_pnl or pos.pnl or 0.0
 
-    # 1. Position in profit -> Move SL to Break-Even if not already secured
-    if pnl > 0 and entry > 0:
-        if side == "SELL" and (cur_sl == 0 or cur_sl > entry):
+    # 1. Position in profit -> Move SL to Break-Even only if profit is significant (not minor noise)
+    sym_up = (sym or "").upper()
+    if "BTC" in sym_up:
+        min_be_profit_price = 150.0
+    elif "ETH" in sym_up:
+        min_be_profit_price = 15.0
+    elif "XAU" in sym_up or "GOLD" in sym_up:
+        min_be_profit_price = 5.0
+    elif "JPY" in sym_up:
+        min_be_profit_price = 0.20  # ~20 pips
+    else:
+        min_be_profit_price = 0.0020  # ~20 pips for standard forex
+
+    price_gain = (entry - ask) if side == "SELL" else (bid - entry)
+    if price_gain >= min_be_profit_price and entry > 0:
+        spread = abs(ask - bid)
+        safe_be_sl = round(entry + spread * 0.5, 2) if side == "SELL" else round(entry - spread * 0.5, 2)
+        if side == "SELL" and (cur_sl == 0 or cur_sl > safe_be_sl):
             return AgentDecision(
                 action="ADJUST",
-                new_sl_price=entry,
+                new_sl_price=safe_be_sl,
                 confidence=75.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in profit (${pnl:.2f}) -> Moving SL to Break-Even ({entry}).",
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
                 timeframe=snapshot.timeframe
             )
-        elif side == "BUY" and (cur_sl == 0 or cur_sl < entry):
+        elif side == "BUY" and (cur_sl == 0 or cur_sl < safe_be_sl):
             return AgentDecision(
                 action="ADJUST",
-                new_sl_price=entry,
+                new_sl_price=safe_be_sl,
                 confidence=75.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in profit (${pnl:.2f}) -> Moving SL to Break-Even ({entry}).",
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
