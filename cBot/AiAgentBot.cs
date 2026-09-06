@@ -1741,6 +1741,24 @@ namespace cAlgo.Robots
 
                     if (targetSL.HasValue)
                     {
+                        // Anti-Premature Break-Even Guardrail for Forex, Metals, Indices
+                        double minBeProfitPips = 20.0;
+                        string symUpper = SymbolName.ToUpperInvariant();
+                        if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 500.0;
+                        else if (symUpper.Contains("US30") || symUpper.Contains("USTEC") || symUpper.Contains("DE40") || symUpper.Contains("NAS100")) minBeProfitPips = 50.0;
+                        else if (symUpper.Contains("BTC")) minBeProfitPips = 15000.0;
+                        else if (symUpper.Contains("ETH")) minBeProfitPips = 1500.0;
+
+                        double currentProfitPips = pos.TradeType == TradeType.Buy 
+                            ? (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize 
+                            : (pos.EntryPrice - Symbol.Ask) / Symbol.PipSize;
+
+                        if (Math.Abs(targetSL.Value - pos.EntryPrice) <= (Symbol.PipSize * 30) && currentProfitPips < minBeProfitPips)
+                        {
+                            if (ShowLogs) Print($"[Anti-Premature BE Guard] Blocked premature Break-Even SL ({targetSL.Value}) for {SymbolName} #{pos.Id}. Profit ({currentProfitPips:F1}p) < threshold ({minBeProfitPips:F0}p). Keeping current SL ({pos.StopLoss}).");
+                            continue;
+                        }
+
                         double minBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
                         bool valid = pos.TradeType == TradeType.Buy 
                             ? targetSL.Value < (Symbol.Bid - minBuffer) 
