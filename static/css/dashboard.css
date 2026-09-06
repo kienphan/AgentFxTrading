@@ -510,3 +510,19 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .text-cyan { color: #38bdf8; stroke: #38bdf8; }
 .text-green { color: var(--profit); stroke: var(--profit); }
 .text-blue { color: var(--accent-bright); stroke: var(--accent-bright); }
+
+/* --- Realtime Price Flash Animations --- */
+@keyframes flashUp {
+    0% { background-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
+    100% { background-color: transparent; }
+}
+@keyframes flashDown {
+    0% { background-color: rgba(239, 68, 68, 0.4); color: #f87171; }
+    100% { background-color: transparent; }
+}
+.price-flash-up {
+    animation: flashUp 0.8s ease-out;
+}
+.price-flash-down {
+    animation: flashDown 0.8s ease-out;
+}

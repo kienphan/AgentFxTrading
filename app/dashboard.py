@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import sqlite3
 import json
+import asyncio
 from datetime import datetime, date
 from typing import Dict, List, Optional
 from app.accounts import get_account_registry
@@ -460,26 +461,82 @@ async def api_dashboard_logs(
         logger.error(f"Error reading log file {log_file}: {e}")
         return {"lines": [f"Error reading log: {e}"], "date": today, "available_dates": available_dates}
 
-# WebSocket for real-time updates
+# WebSocket for real-time updates and log streaming
 class ConnectionManager:
-    """Manage WebSocket connections."""
+    """Manage WebSocket connections with channel filtering."""
     
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.connection_meta: Dict[WebSocket, Dict] = {}
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
     
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.connection_meta[websocket] = {"account_id": "all", "mode": "all"}
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
     
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        self.connection_meta.pop(websocket, None)
+
+    def update_meta(self, websocket: WebSocket, account_id: str, mode: str = "all"):
+        if websocket in self.connection_meta:
+            self.connection_meta[websocket]["account_id"] = account_id
+            self.connection_meta[websocket]["mode"] = mode
     
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
+        """Broadcast message to all connected clients."""
+        dead_connections = []
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception:
+                dead_connections.append(connection)
+        for dc in dead_connections:
+            self.disconnect(dc)
+
+    async def broadcast_log(self, raw_line: str):
+        """Broadcast formatted log line to all connected clients."""
+        if not self.active_connections:
+            return
+        await self.broadcast({
+            "type": "log",
+            "line": raw_line,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    def broadcast_log_threadsafe(self, raw_line: str):
+        """Thread-safe log broadcaster called by logging handlers."""
+        if not self.active_connections:
+            return
+        try:
+            loop = self._loop
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.broadcast_log(raw_line), loop)
+        except Exception:
+            pass
+
+
+class WebSocketLogHandler(logging.Handler):
+    """Custom logging handler that streams logs to active WebSocket connections."""
+    def __init__(self, manager: ConnectionManager):
+        super().__init__()
+        self.manager = manager
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            self.manager.broadcast_log_threadsafe(msg)
+        except Exception:
+            self.handleError(record)
 
 
 manager = ConnectionManager()
@@ -487,43 +544,49 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/dashboard")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time dashboard updates."""
+    """WebSocket endpoint for real-time dashboard updates, ticks, and logs."""
     await manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive and send updates every 5 seconds
             data = await websocket.receive_text()
-            
             account_id = "all"
+            mode = "all"
             try:
                 if data.startswith("{"):
                     msg = json.loads(data)
-                    if msg.get("type") == "ping":
-                        account_id = msg.get("account_id", "all")
-                elif data == "ping":
-                    account_id = "all"
-                else:
-                    continue
-            except:
-                if data == "ping":
-                    account_id = "all"
-                else:
-                    continue
+                    msg_type = msg.get("type")
+                    account_id = msg.get("account_id", "all")
+                    mode = msg.get("mode", "all")
                     
-            summary = get_portfolio_summary(account_id)
-            positions = get_active_positions(account_id)
-            await websocket.send_json({
-                "type": "update",
-                "account_id": account_id,
-                "summary": summary,
-                "positions": positions
-            })
+                    manager.update_meta(websocket, account_id, mode)
+                    
+                    if msg_type in ("ping", "subscribe"):
+                        summary = get_portfolio_summary(account_id)
+                        positions = get_active_positions(account_id)
+                        await websocket.send_json({
+                            "type": "update",
+                            "account_id": account_id,
+                            "summary": summary,
+                            "positions": positions
+                        })
+                elif data == "ping":
+                    summary = get_portfolio_summary("all")
+                    positions = get_active_positions("all")
+                    await websocket.send_json({
+                        "type": "update",
+                        "account_id": "all",
+                        "summary": summary,
+                        "positions": positions
+                    })
+            except Exception as parse_err:
+                logger.debug(f"WS message error: {parse_err}")
+                continue
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 
 async def broadcast_update():
-    """Broadcast dashboard update to all connected clients."""
+    """Broadcast dashboard summary and positions to all connected clients."""
     for target in ["demo", "live", "all"]:
         summary = get_portfolio_summary(target)
         positions = get_active_positions(target)
@@ -534,6 +597,29 @@ async def broadcast_update():
             "positions": positions
         })
 
+
+async def broadcast_tick(symbol: str, bid: float, ask: float, account_id: Optional[str] = None):
+    """Broadcast live tick price update."""
+    await manager.broadcast({
+        "type": "tick",
+        "symbol": symbol,
+        "bid": bid,
+        "ask": ask,
+        "account_id": account_id,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+async def broadcast_event(event_type: str, message: str, bot_id: str = "", account_id: str = ""):
+    """Broadcast cBot and system trading events."""
+    await manager.broadcast({
+        "type": "event",
+        "event_type": event_type,
+        "message": message,
+        "bot_id": bot_id,
+        "account_id": account_id,
+        "timestamp": datetime.now().isoformat()
+    })
 
 # --- Docker Management Routes ---
 from pydantic import BaseModel

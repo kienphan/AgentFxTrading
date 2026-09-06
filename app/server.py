@@ -45,6 +45,7 @@ def setup_agent_logging(level=logging.INFO):
     root_logger.handlers.clear()
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
+    return file_handler, console_handler
 
 setup_agent_logging(logging.INFO)
 logger = logging.getLogger("AgentFxTrading")
@@ -63,16 +64,33 @@ def sanitize_bot_id(bot_id: Optional[str]) -> str:
     return cleaned.strip("\"'“”‘’`") or "default"
 from app.llm_client import create_llm_client, JSONResponseParser
 from app.portfolio import init_portfolio, get_portfolio_manager
-from app.dashboard import router as dashboard_router, broadcast_update
+from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, manager as ws_manager, WebSocketLogHandler
 from app.accounts import init_account_registry, get_account_registry
-app = FastAPI(title="TMS+ORB Agent Server")
+
+# Attach WebSocket live log handler to root logger
+_ws_handler = WebSocketLogHandler(ws_manager)
+_ws_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
+_ws_handler.setLevel(logging.INFO)
+logging.getLogger().addHandler(_ws_handler)
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        loop = asyncio.get_running_loop()
+        ws_manager.set_event_loop(loop)
+    except Exception as e:
+        logger.warning(f"Failed to set event loop for ws_manager: {e}")
+    yield
+
+app = FastAPI(title="TMS+ORB Agent Server", lifespan=lifespan)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 
 # Mount dashboard router
 app.include_router(dashboard_router)
-
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     favicon_path = PROJECT_ROOT / "static" / "favicon.png"
@@ -1313,6 +1331,7 @@ async def handle_telemetry_tick(request: dict):
         if symbol and (bid > 0 or ask > 0):
             portfolio_manager.update_market_price(symbol, bid, ask, bot_id=bot_id)
         try:
+            await broadcast_tick(symbol=symbol, bid=bid, ask=ask, account_id=account_id)
             await broadcast_update()
         except Exception:
             pass
@@ -1332,6 +1351,10 @@ async def handle_cbot_event(request: dict):
         message = request.get("message", "")
         account_number = str(request.get("account_number", "0"))
         logger.info(f"[CBOT EVENT] {account_number}/{bot_id} | Type: {event_type} | Message: {message}")
+        try:
+            await broadcast_event(event_type=event_type, message=message, bot_id=bot_id, account_id=account_number)
+        except Exception:
+            pass
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Error handling cbot event: {e}")

@@ -719,6 +719,17 @@
         let selectedAccountId = (currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo';
         const accountSelector = document.getElementById('account-selector');
 
+        async function fetchTradeHistory() {
+            try {
+                const [hR, cR] = await Promise.all([
+                    fetch(`/api/dashboard/history?account_id=${selectedAccountId}`),
+                    fetch(`/api/dashboard/pnl-history?account_id=${selectedAccountId}`)
+                ]);
+                updateTradeHistory(await hR.json());
+                updatePnlChart(await cR.json());
+            } catch(e) { console.error('Error fetching trade history:', e); }
+        }
+
         async function refreshDashboardData() {
             try {
                 const [sR, pR, hR, cR] = await Promise.all([
@@ -749,6 +760,9 @@
         // Attach account selector change listener
         accountSelector.addEventListener('change', async (e) => {
             selectedAccountId = e.target.value;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({type: 'subscribe', account_id: selectedAccountId, mode: currentMode}));
+            }
             refreshDashboardData();
             fetchLeaderboard();
         });
@@ -766,21 +780,92 @@
             ws=new WebSocket(`${p}//${window.location.host}/ws/dashboard`);
             ws.onopen=()=>{
                 setConn(true);
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({type:'subscribe',account_id:selectedAccountId,mode:currentMode}));
+                }
+                if (pingInterval) clearInterval(pingInterval);
                 pingInterval=setInterval(()=>{
                     if(ws.readyState===WebSocket.OPEN)
-                        ws.send(JSON.stringify({type:'ping',account_id:selectedAccountId}))
-                },5000);
+                        ws.send(JSON.stringify({type:'ping',account_id:selectedAccountId,mode:currentMode}))
+                },15000);
             };
             ws.onmessage=(e)=>{
-                const d=JSON.parse(e.data);
-                if(d.type==='update') {
-                    if (!d.account_id || d.account_id === selectedAccountId || d.account_id === currentMode) {
-                        updateDashboard(d.summary, d.positions);
+                try {
+                    const d=JSON.parse(e.data);
+                    if(d.type==='update') {
+                        if (!d.account_id || d.account_id === selectedAccountId || d.account_id === currentMode || selectedAccountId === 'all') {
+                            updateDashboard(d.summary, d.positions);
+                        }
+                    } else if(d.type==='log') {
+                        handleLiveLogLine(d.line);
+                    } else if(d.type==='tick') {
+                        handleLiveTick(d);
+                    } else if(d.type==='event') {
+                        handleLiveEvent(d);
                     }
+                } catch(err) {
+                    console.error('Error handling WS message:', err);
                 }
             };
-            ws.onclose=()=>{setConn(false);clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};
+            ws.onclose=()=>{setConn(false);if(pingInterval)clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};
             ws.onerror=(e)=>console.error('WS error:',e);
+        }
+
+        function handleLiveTick(tick) {
+            if (!tick || !tick.symbol) return;
+            // Update matching row in positions table
+            const rows = document.querySelectorAll('#positions-table tr');
+            rows.forEach(tr => {
+                const symCell = tr.querySelector('.td-mono.font-bold');
+                if (symCell && symCell.textContent.trim().toUpperCase() === tick.symbol.toUpperCase()) {
+                    const curPriceCell = tr.querySelector('.td-current-price');
+                    if (curPriceCell) {
+                        const sideBadge = tr.querySelector('.side-chip');
+                        const isBuy = sideBadge && sideBadge.textContent.includes('BUY');
+                        const newPrice = isBuy ? (tick.bid || tick.ask) : (tick.ask || tick.bid);
+                        if (newPrice) {
+                            const oldPrice = parseFloat(curPriceCell.textContent) || newPrice;
+                            curPriceCell.textContent = newPrice;
+                            curPriceCell.classList.remove('price-flash-up', 'price-flash-down');
+                            void curPriceCell.offsetWidth; // trigger reflow
+                            curPriceCell.classList.add(newPrice >= oldPrice ? 'price-flash-up' : 'price-flash-down');
+                        }
+                    }
+                }
+            });
+        }
+
+        function handleLiveEvent(evt) {
+            // Auto refresh trade history when positions open/close
+            if (evt.event_type === 'GUARDRAIL' || evt.message.includes('CLOSE') || evt.message.includes('OPEN')) {
+                fetchTradeHistory();
+            }
+        }
+
+        function handleLiveLogLine(line) {
+            if (!line) return;
+            // Only append if viewing current date
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (logDateSelect.value && logDateSelect.value !== todayStr && logDateSelect.value !== currentLogDate) {
+                return;
+            }
+            rawLogLines.push(line);
+            if (rawLogLines.length > 300) rawLogLines.shift();
+            
+            const filterText = (logFilterInput.value || '').toLowerCase();
+            if (!filterText || line.toLowerCase().includes(filterText)) {
+                // Remove empty state message if present
+                const emptyState = logBox.querySelector('.td-dim');
+                if (emptyState && logBox.children.length === 1) {
+                    logBox.innerHTML = '';
+                }
+                const lineNode = document.createElement('div');
+                lineNode.innerHTML = colorizeLogLine(line);
+                logBox.appendChild(lineNode.firstElementChild || lineNode);
+                if (logAutoscroll.checked) {
+                    logBox.scrollTop = logBox.scrollHeight;
+                }
+            }
         }
         function updateDashboard(summary,positions){
             document.getElementById('open-positions').textContent=summary.open_positions;
@@ -932,14 +1017,14 @@
         logClearBtn.addEventListener('click', () => { logBox.innerHTML = ''; rawLogLines = []; });
         logDateSelect.addEventListener('change', (e) => fetchAgentLogs(e.target.value));
 
-        // Initial fetch + 3s polling for live logs
+        // Initial fetch for historical logs on load
         fetchAgentLogs();
+        // Fallback polling only when WebSocket is disconnected (every 10s)
         setInterval(() => {
-            if (!document.hidden && logDateSelect.value === currentLogDate) {
+            if ((!ws || ws.readyState !== WebSocket.OPEN) && !document.hidden && logDateSelect.value === currentLogDate) {
                 fetchAgentLogs(currentLogDate);
             }
-        }, 3000);
-
+        }, 10000);
         // --- Leaderboard Integration ---
         async function fetchLeaderboard() {
             try {
