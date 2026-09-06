@@ -23,6 +23,28 @@ class LLMClient(ABC):
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Send chat completion request and return response text."""
         pass
+def _clean_env(key: str, default: str = "") -> str:
+    val = os.getenv(key)
+    if val is None or val == "":
+        return default
+    val = val.split(" #")[0].split(" //")[0].strip()
+    return val.strip("\"'“”`") or default
+
+
+def _clean_env_float(key: str, default: float) -> float:
+    raw = _clean_env(key, str(default))
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return default
+
+
+def _clean_env_int(key: str, default: int) -> int:
+    raw = _clean_env(key, str(default))
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return default
 
 
 class OpenAICompatibleClient(LLMClient):
@@ -33,21 +55,41 @@ class OpenAICompatibleClient(LLMClient):
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
+        timeout: Optional[float] = None,
+        connect_timeout: Optional[float] = None,
+        max_retries: Optional[int] = None,
         **kwargs
     ):
-        from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=api_key or "sk-placeholder", base_url=base_url)
+        from openai import AsyncOpenAI, Timeout
+
+        timeout_val = timeout if timeout is not None else _clean_env_float("LLM_TIMEOUT", 90.0)
+        connect_timeout_val = connect_timeout if connect_timeout is not None else _clean_env_float("LLM_CONNECT_TIMEOUT", 30.0)
+        retries_val = max_retries if max_retries is not None else _clean_env_int("LLM_MAX_RETRIES", 3)
+
+        client_timeout = Timeout(timeout=timeout_val, connect=connect_timeout_val)
+        self.client = AsyncOpenAI(
+            api_key=api_key or "sk-placeholder",
+            base_url=base_url,
+            timeout=client_timeout,
+            max_retries=retries_val,
+        )
         self.model = model
+        self.timeout = client_timeout
+        self.max_retries = retries_val
         self.default_kwargs = kwargs
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         merged = {**self.default_kwargs, **kwargs}
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            **merged
-        )
-        return response.choices[0].message.content
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                **merged
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.warning(f"LLM chat error ({self.model} @ {getattr(self.client, 'base_url', '')}): {e}")
+            raise
 
 
 class AnthropicClient(LLMClient):
@@ -58,12 +100,27 @@ class AnthropicClient(LLMClient):
         api_key: str,
         model: str = "claude-3-5-sonnet-20241022",
         max_tokens: int = 4096,
+        timeout: Optional[float] = None,
+        connect_timeout: Optional[float] = None,
+        max_retries: Optional[int] = None,
         **kwargs
     ):
-        from anthropic import AsyncAnthropic
-        self.client = AsyncAnthropic(api_key=api_key or "sk-placeholder")
+        from anthropic import AsyncAnthropic, Timeout
+
+        timeout_val = timeout if timeout is not None else _clean_env_float("LLM_TIMEOUT", 90.0)
+        connect_timeout_val = connect_timeout if connect_timeout is not None else _clean_env_float("LLM_CONNECT_TIMEOUT", 30.0)
+        retries_val = max_retries if max_retries is not None else _clean_env_int("LLM_MAX_RETRIES", 3)
+
+        client_timeout = Timeout(timeout=timeout_val, connect=connect_timeout_val)
+        self.client = AsyncAnthropic(
+            api_key=api_key or "sk-placeholder",
+            timeout=client_timeout,
+            max_retries=retries_val,
+        )
         self.model = model
         self.max_tokens = max_tokens
+        self.timeout = client_timeout
+        self.max_retries = retries_val
         self.default_kwargs = kwargs
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
@@ -78,14 +135,19 @@ class AnthropicClient(LLMClient):
 
         merged = {**self.default_kwargs, **kwargs}
 
-        response = await self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=system_msg if system_msg else None,
-            messages=user_msgs,
-            **merged
-        )
-        return response.content[0].text
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system_msg if system_msg else None,
+                messages=user_msgs,
+                **merged
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.warning(f"Anthropic chat error ({self.model}): {e}")
+            raise
+
 
 class GeminiClient(LLMClient):
     """Client for Google Gemini API."""
@@ -94,11 +156,14 @@ class GeminiClient(LLMClient):
         self,
         api_key: str,
         model: str = "gemini-1.5-flash",
+        timeout: Optional[float] = None,
         **kwargs
     ):
         import google.generativeai as genai
         if api_key:
             genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(model)
+        self.timeout_val = timeout if timeout is not None else _clean_env_float("LLM_TIMEOUT", 90.0)
         self.default_kwargs = kwargs
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
@@ -121,16 +186,15 @@ class GeminiClient(LLMClient):
             prompt = user_content[-1]
         
         merged = {**self.default_kwargs, **kwargs}
-        response = await self.model.generate_content_async(prompt, **merged)
-        return response.text
-
-def _clean_env(key: str, default: str = "") -> str:
-    val = os.getenv(key)
-    if val is None or val == "":
-        return default
-    val = val.split(" #")[0].split(" //")[0].strip()
-    return val.strip("\"'“”`") or default
-
+        request_options = merged.pop("request_options", {})
+        if "timeout" not in request_options and self.timeout_val is not None:
+            request_options["timeout"] = self.timeout_val
+        try:
+            response = await self.model.generate_content_async(prompt, request_options=request_options, **merged)
+            return response.text
+        except Exception as e:
+            logger.warning(f"Gemini chat error: {e}")
+            raise
 
 def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     """
@@ -178,7 +242,7 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
         return AnthropicClient(
             api_key=_clean_env("ANTHROPIC_API_KEY", ""),
             model=_clean_env("LLM_MODEL", "claude-3-5-sonnet-20241022"),
-            max_tokens=int(_clean_env("LLM_MAX_TOKENS", "4096")),
+            max_tokens=_clean_env_int("LLM_MAX_TOKENS", 4096),
             **kwargs
         )
 

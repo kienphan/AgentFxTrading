@@ -385,6 +385,7 @@ namespace cAlgo.Robots
             }
 
             _httpClient = new HttpClient();
+            _httpClient.Timeout = TimeSpan.FromSeconds(180);
             _macroBars = MarketData.GetBars(TmsTimeFrame);
 
             _haOpen = CreateDataSeries();
