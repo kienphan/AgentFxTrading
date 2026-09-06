@@ -15,10 +15,24 @@ if str(PROJECT_ROOT) not in sys.path:
 load_dotenv(PROJECT_ROOT / ".env")
 
 import datetime
+import asyncio
 import logging.handlers
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
 
+class GMT7Formatter(logging.Formatter):
+    """Formatter that outputs timestamps in GMT+7 (Asia/Bangkok / Asia/Ho_Chi_Minh)."""
+    def converter(self, timestamp):
+        dt = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone(datetime.timedelta(hours=7))).timetuple()
+
+    def formatTime(self, record, datefmt=None):
+        ct = self.converter(record.created)
+        if datefmt:
+            s = datetime.datetime(*ct[:6]).strftime(datefmt)
+        else:
+            s = datetime.datetime(*ct[:6]).strftime("%Y-%m-%d %H:%M:%S")
+        return s
 def setup_agent_logging(level=logging.INFO):
     logs_dir = PROJECT_ROOT / "logs"
     logs_dir.mkdir(exist_ok=True)
@@ -32,12 +46,12 @@ def setup_agent_logging(level=logging.INFO):
         backupCount=14,
         encoding="utf-8"
     )
-    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+    file_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
     file_handler.setLevel(level)
 
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
+    console_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
     console_handler.setLevel(level)
 
     root_logger = logging.getLogger()
@@ -69,7 +83,7 @@ from app.accounts import init_account_registry, get_account_registry
 
 # Attach WebSocket live log handler to root logger
 _ws_handler = WebSocketLogHandler(ws_manager)
-_ws_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
+_ws_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
 _ws_handler.setLevel(logging.INFO)
 logging.getLogger().addHandler(_ws_handler)
 

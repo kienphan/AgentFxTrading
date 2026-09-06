@@ -943,9 +943,8 @@
             let formatted = line
                 .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            // Highlight timestamps
-            formatted = formatted.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/, '<span class="log-time">$1</span>');
-            
+            // Highlight timestamps (YYYY-MM-DD HH:mm:ss or HH:mm:ss)
+            formatted = formatted.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}|\d{2}:\d{2}:\d{2})/, '<span class="log-time">$1</span>');
             // Highlight tags
             if (formatted.includes('[LLM DECISION]')) {
                 formatted = formatted.replace(/\[LLM DECISION\]/, '<span class="log-tag-llm">[LLM DECISION]</span>');
