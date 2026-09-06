@@ -446,96 +446,103 @@ namespace cAlgo.Robots
 
         protected override void OnBarClosed()
         {
-            if (_isExpired) return;
-
-            CheckNewsEvents();
-
-            // Track Asian session range & golden killzones
-            TrackAsianSession(Server.Time);
-            bool inKillzone = IsGoldenKillzone(Server.Time, out _activeKillzone);
-
-            // Evaluate Judas Sweep signals (respecting reverseCondition)
-            CheckJudasSweep(out bool sweepBuy, out bool sweepSell, out string sweepSignal);
-            bool rawBuy  = !reverseCondition ? sweepBuy  : sweepSell;
-            bool rawSell = !reverseCondition ? sweepSell : sweepBuy;
-
-            // ── Update pre-filter gate state ───────────────────────────────────
-            if (rawBuy && !rawSell)
+            try
             {
-                _allowedAiDirection = "BUY";
-                _traditionalSignal  = sweepSignal;
-                _lastCrossBarIndex  = Bars.Count - 1;
-                _barsSinceCross     = 0;
-            }
-            else if (rawSell && !rawBuy)
-            {
-                _allowedAiDirection = "SELL";
-                _traditionalSignal  = sweepSignal;
-                _lastCrossBarIndex  = Bars.Count - 1;
-                _barsSinceCross     = 0;
-            }
-            else if (_lastCrossBarIndex >= 0)
-            {
-                _barsSinceCross = Bars.Count - 1 - _lastCrossBarIndex;
-                if (_barsSinceCross > 3)
+                if (_isExpired) return;
+
+                CheckNewsEvents();
+
+                // Track Asian session range & golden killzones
+                TrackAsianSession(Server.Time);
+                bool inKillzone = IsGoldenKillzone(Server.Time, out _activeKillzone);
+
+                // Evaluate Judas Sweep signals (respecting reverseCondition)
+                CheckJudasSweep(out bool sweepBuy, out bool sweepSell, out string sweepSignal);
+                bool rawBuy  = !reverseCondition ? sweepBuy  : sweepSell;
+                bool rawSell = !reverseCondition ? sweepSell : sweepBuy;
+
+                // ── Update pre-filter gate state ───────────────────────────────────
+                if (rawBuy && !rawSell)
+                {
+                    _allowedAiDirection = "BUY";
+                    _traditionalSignal  = sweepSignal;
+                    _lastCrossBarIndex  = Bars.Count - 1;
+                    _barsSinceCross     = 0;
+                }
+                else if (rawSell && !rawBuy)
+                {
+                    _allowedAiDirection = "SELL";
+                    _traditionalSignal  = sweepSignal;
+                    _lastCrossBarIndex  = Bars.Count - 1;
+                    _barsSinceCross     = 0;
+                }
+                else if (_lastCrossBarIndex >= 0)
+                {
+                    _barsSinceCross = Bars.Count - 1 - _lastCrossBarIndex;
+                    if (_barsSinceCross > 3)
+                    {
+                        _allowedAiDirection = "NONE";
+                        _traditionalSignal  = "NONE";
+                    }
+                }
+                else
                 {
                     _allowedAiDirection = "NONE";
                     _traditionalSignal  = "NONE";
                 }
-            }
-            else
-            {
-                _allowedAiDirection = "NONE";
-                _traditionalSignal  = "NONE";
-            }
-            // ───────────────────────────────────────────────────────────────────
+                // ───────────────────────────────────────────────────────────────────
 
-            if (UseAiGateMode && _calculateOnBarClosed && enableIndicatorCloseInAiMode)
-            {
-                // GATE MODE: Traditional logic handles CLOSE signals only.
-                // AI Agent is the sole authority for new ENTRY decisions.
-                bool rawCloseBuy  = !reverseCondition ? closeBuyCondition()  : closeSellCondition();
-                bool rawCloseSell = !reverseCondition ? closeSellCondition() : closeBuyCondition();
-
-                if (rawCloseBuy && buyPositions(label).Length > 0)
+                if (UseAiGateMode && _calculateOnBarClosed && enableIndicatorCloseInAiMode)
                 {
-                    ClosePositions(label, TradeType.Buy);
-                    _waitingForCloseSignalBuy = false;
+                    // GATE MODE: Traditional logic handles CLOSE signals only.
+                    // AI Agent is the sole authority for new ENTRY decisions.
+                    bool rawCloseBuy  = !reverseCondition ? closeBuyCondition()  : closeSellCondition();
+                    bool rawCloseSell = !reverseCondition ? closeSellCondition() : closeBuyCondition();
+
+                    if (rawCloseBuy && buyPositions(label).Length > 0)
+                    {
+                        ClosePositions(label, TradeType.Buy);
+                        _waitingForCloseSignalBuy = false;
+                    }
+                    if (rawCloseSell && sellPositions(label).Length > 0)
+                    {
+                        ClosePositions(label, TradeType.Sell);
+                        _waitingForCloseSignalSell = false;
+                    }
                 }
-                if (rawCloseSell && sellPositions(label).Length > 0)
+                else if (!UseAiGateMode && _calculateOnBarClosed)
                 {
-                    ClosePositions(label, TradeType.Sell);
-                    _waitingForCloseSignalSell = false;
+                    // LEGACY MODE: Traditional logic handles everything directly (backward compatible)
+                    _buyCondition       = rawBuy;
+                    _sellCondition      = rawSell;
+                    _closeBuyCondition  = !reverseCondition ? closeBuyCondition()  : closeSellCondition();
+                    _closeSellCondition = !reverseCondition ? closeSellCondition() : closeBuyCondition();
+                    createOrder();
+                    resetConditions();
+                }
+
+                ProcessBreakEvenLogic();
+                ProcessDCALogic();
+                UpdateUIPanel();
+
+                if (_httpClient != null)
+                {
+                    bool hasOpenPos   = Positions.FindAll(label, SymbolName).Length > 0;
+                    // Gate Mode: call AI only when sweep signal is fresh (<=3 bars) AND direction is BUY or SELL, OR when managing open positions
+                    bool gateOpen     = UseAiGateMode && _barsSinceCross <= 3 && (_allowedAiDirection == "BUY" || _allowedAiDirection == "SELL");
+                    bool shouldCallAi = !UseAiGateMode || gateOpen || (UseAiGateMode && hasOpenPos);
+
+                    if (shouldCallAi)
+                    {
+                        // Pass gate direction; use MANAGE_ONLY when only managing existing positions
+                        string contextDir = (UseAiGateMode && hasOpenPos && !gateOpen) ? "MANAGE_ONLY" : _allowedAiDirection;
+                        _ = SendStateToAgentAsync(contextDir);
+                    }
                 }
             }
-            else if (!UseAiGateMode && _calculateOnBarClosed)
+            catch (Exception ex)
             {
-                // LEGACY MODE: Traditional logic handles everything directly (backward compatible)
-                _buyCondition       = rawBuy;
-                _sellCondition      = rawSell;
-                _closeBuyCondition  = !reverseCondition ? closeBuyCondition()  : closeSellCondition();
-                _closeSellCondition = !reverseCondition ? closeSellCondition() : closeBuyCondition();
-                createOrder();
-                resetConditions();
-            }
-
-            ProcessBreakEvenLogic();
-            ProcessDCALogic();
-            UpdateUIPanel();
-
-            if (_httpClient != null)
-            {
-                bool hasOpenPos   = Positions.FindAll(label, SymbolName).Length > 0;
-                // Gate Mode: call AI only when sweep signal is fresh (<=3 bars) AND direction is BUY or SELL, OR when managing open positions
-                bool gateOpen     = UseAiGateMode && _barsSinceCross <= 3 && (_allowedAiDirection == "BUY" || _allowedAiDirection == "SELL");
-                bool shouldCallAi = !UseAiGateMode || gateOpen || (UseAiGateMode && hasOpenPos);
-
-                if (shouldCallAi)
-                {
-                    // Pass gate direction; use MANAGE_ONLY when only managing existing positions
-                    string contextDir = (UseAiGateMode && hasOpenPos && !gateOpen) ? "MANAGE_ONLY" : _allowedAiDirection;
-                    _ = SendStateToAgentAsync(contextDir);
-                }
+                Print($"[CRITICAL ERROR in OnBarClosed] {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -2339,7 +2346,7 @@ Reply strictly with JSON object.";
             try
             {
                 // Check Safety Guard Cooldown
-                if (Server.Time < _aiCooldownUntil)
+                if (DateTime.UtcNow < _aiCooldownUntil)
                 {
                     Print($"[AI Agent Safety Guard] Cooldown active until {_aiCooldownUntil:HH:mm:ss} UTC. Direct AI query skipped.");
                     return;
@@ -2888,7 +2895,7 @@ Reply strictly with JSON object.";
                             {
                                 targetSL = Math.Round(decision.new_sl_price, Symbol.Digits);
                             }
-                            else if (decision.sl_pips > 0 && !pos.StopLoss.HasValue)
+                            else if (decision.sl_pips > 0)
                             {
                                 double slPrice = pos.TradeType == TradeType.Buy 
                                     ? pos.EntryPrice - decision.sl_pips * Symbol.PipSize 
@@ -2901,7 +2908,7 @@ Reply strictly with JSON object.";
                             {
                                 targetTP = Math.Round(decision.new_tp_price, Symbol.Digits);
                             }
-                            else if (decision.tp_pips > 0 && !pos.TakeProfit.HasValue)
+                            else if (decision.tp_pips > 0)
                             {
                                 double tpPrice = pos.TradeType == TradeType.Buy 
                                     ? pos.EntryPrice + decision.tp_pips * Symbol.PipSize 
@@ -2911,7 +2918,7 @@ Reply strictly with JSON object.";
 
                             double currentAsk = Symbol.Ask;
                             double currentBid = Symbol.Bid;
-                            double minStopBuffer = Math.Max(Symbol.Spread * 3, Symbol.PipSize * 20);
+                            double minStopBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
 
                             // ── 1. SELL Position Intelligent TP/SL Analysis ──
                             if (pos.TradeType == TradeType.Sell)
@@ -2948,9 +2955,17 @@ Reply strictly with JSON object.";
                                     }
                                     else
                                     {
-                                        // Case 2: Trade is in drawdown -> Retain original SL to prevent premature stop-out and broker rejection
-                                        Print($"[AI Smart SL Notice] SELL #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Ask: {currentAsk:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
-                                        targetSL = pos.StopLoss;
+                                        // Case 2: Trade is in drawdown
+                                        if (pos.StopLoss.HasValue && targetSL.Value < pos.StopLoss.Value && targetSL.Value > currentAsk)
+                                        {
+                                            targetSL = Math.Round(currentAsk + minStopBuffer, Symbol.Digits);
+                                            Print($"[AI Smart SL Notice] SELL #{pos.Id} in drawdown: tightening SL to minimum safe distance {targetSL.Value:F2} above market Ask.");
+                                        }
+                                        else
+                                        {
+                                            Print($"[AI Smart SL Notice] SELL #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Ask: {currentAsk:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
+                                            targetSL = pos.StopLoss;
+                                        }
                                     }
                                 }
                             }
@@ -2989,9 +3004,17 @@ Reply strictly with JSON object.";
                                     }
                                     else
                                     {
-                                        // Case 2: Trade is in drawdown -> Retain original SL to prevent premature stop-out and broker rejection
-                                        Print($"[AI Smart SL Notice] BUY #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Bid: {currentBid:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
-                                        targetSL = pos.StopLoss;
+                                        // Case 2: Trade is in drawdown
+                                        if (pos.StopLoss.HasValue && targetSL.Value > pos.StopLoss.Value && targetSL.Value < currentBid)
+                                        {
+                                            targetSL = Math.Round(currentBid - minStopBuffer, Symbol.Digits);
+                                            Print($"[AI Smart SL Notice] BUY #{pos.Id} in drawdown: tightening SL to minimum safe distance {targetSL.Value:F2} below market Bid.");
+                                        }
+                                        else
+                                        {
+                                            Print($"[AI Smart SL Notice] BUY #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Bid: {currentBid:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
+                                            targetSL = pos.StopLoss;
+                                        }
                                     }
                                 }
                             }

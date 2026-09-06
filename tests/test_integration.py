@@ -449,6 +449,74 @@ def test_judas_gate_forex_asian_range_19p():
     if decision is not None:
         assert "Asian Range width abnormal" not in decision.reason
 
+def test_llm_timeout_fallback_position_management():
+    from app.server import generate_fallback_decision, MarketSnapshot, PositionInfo, StrategyData
+
+    # 1. Flat position -> HOLD
+    flat_snap = MarketSnapshot(
+        bot_id="cbot-test",
+        symbol="ETHUSD",
+        timeframe="Minute15",
+        ask=2450.0,
+        bid=2448.0,
+        request_id="req1"
+    )
+    fb1 = generate_fallback_decision(flat_snap, "Request timed out.")
+    assert fb1.action == "HOLD"
+    assert "[SAFETY FALLBACK]" in fb1.reason
+
+    # 2. Position in profit -> ADJUST SL to Break-Even
+    profit_snap = MarketSnapshot(
+        bot_id="cbot-test",
+        symbol="ETHUSD",
+        timeframe="Minute15",
+        ask=2450.0,
+        bid=2448.0,
+        request_id="req2",
+        position=PositionInfo(
+            type="Sell",
+            volume=0.4,
+            entry_price=2460.0,
+            current_price=2450.0,
+            pnl=4.0,
+            sl=2475.0,
+            tp=2440.0,
+            duration_minutes=30
+        )
+    )
+    fb2 = generate_fallback_decision(profit_snap, "Request timed out.")
+    assert fb2.action == "ADJUST"
+    assert fb2.new_sl_price == 2460.0
+    assert "Moving SL to Break-Even" in fb2.reason
+
+    # 3. Position in drawdown -> Tighten SL behind recent swing high
+    drawdown_snap = MarketSnapshot(
+        bot_id="cbot-test",
+        symbol="ETHUSD",
+        timeframe="Minute15",
+        ask=2458.0,
+        bid=2456.0,
+        request_id="req3",
+        strategy=StrategyData(
+            recent_high=2462.0,
+            recent_low=2445.0
+        ),
+        position=PositionInfo(
+            type="Sell",
+            volume=0.4,
+            entry_price=2454.0,
+            current_price=2458.0,
+            pnl=-1.6,
+            sl=2470.0,
+            tp=2440.0,
+            duration_minutes=60
+        )
+    )
+    fb3 = generate_fallback_decision(drawdown_snap, "Request timed out.")
+    assert fb3.action == "ADJUST"
+    assert fb3.new_sl_price == 2462.0
+    assert "Tightening SELL SL to recent swing high" in fb3.reason
+
 def cleanup_test_data():
     import sqlite3
     try:
@@ -483,6 +551,8 @@ if __name__ == "__main__":
         print("✓ test_cbot_event_telemetry PASSED")
         test_judas_gate_forex_asian_range_19p()
         print("✓ test_judas_gate_forex_asian_range_19p PASSED")
+        test_llm_timeout_fallback_position_management()
+        print("✓ test_llm_timeout_fallback_position_management PASSED")
         print("\n>>> ALL TESTS PASSED SUCCESSFULLY! <<<")
     finally:
         cleanup_test_data()

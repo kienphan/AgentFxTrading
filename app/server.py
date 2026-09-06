@@ -828,7 +828,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     return None
 
 def build_judas_sweep_system_prompt(snapshot: MarketSnapshot) -> str:
-    return "You are an elite Algorithmic Trading AI Co-Pilot for cTrader. Analyze the real-time market snapshot and output strictly valid JSON format with keys: \"action\" (\"BUY\"|\"SELL\"|\"HOLD\"|\"ADJUST\"|\"CLOSE_ALL\"), \"volume_lots\" (number), \"sl_pips\" (number), \"tp_pips\" (number), \"new_sl_price\" (number), \"new_tp_price\" (number), \"confidence\" (number between 0 and 100), \"reason\" (concise technical rationale). Output NO markdown explanations outside the JSON object."
+    return "You are an elite Algorithmic Trading AI Co-Pilot for cTrader. Analyze the real-time market snapshot and output strictly valid JSON format with keys: \"action\" (\"BUY\"|\"SELL\"|\"HOLD\"|\"ADJUST\"|\"CLOSE_ALL\"), \"volume_lots\" (number), \"sl_pips\" (number), \"tp_pips\" (number), \"new_sl_price\" (number), \"new_tp_price\" (number), \"confidence\" (number between 0 and 100), \"reason\" (concise technical rationale). MANDATORY FOR ADJUST: If action is \"ADJUST\", you MUST provide the exact target price in \"new_sl_price\" (e.g. 2455.50), NEVER 0.0. Output NO markdown explanations outside the JSON object."
 
 def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
     strat = snapshot.strategy or StrategyData()
@@ -1001,11 +1001,113 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
 1. Trend & Structure Health: Check if current structure still favors the open position.
 2. Action Decisions:
    - HOLD: Position healthy and progressing towards TP.
-   - ADJUST: Move SL to Break-Even (when in >= 1:1 RR profit) or Trailing Stop behind new Order Block. Specify new_sl_price and/or new_tp_price (or sl_pips/tp_pips).
+   - ADJUST: Move SL to Break-Even (when in >= 1:1 RR profit) or Trailing Stop behind new Order Block/swing.
+     ⚠️ MANDATORY FOR ADJUST: You MUST specify the exact absolute price level in "new_sl_price" (e.g. 2455.50 for ETHUSD, 2895.50 for XAUUSD) and/or "new_tp_price". NEVER leave new_sl_price as 0.0 when ADJUSTing!
    - CLOSE_ALL: Emergency exit if major opposing CHoCH reversal occurs against the position.
    - BUY / SELL: Scale-in ONLY if trend is extremely strong with fresh unmitigated Order Block.
 
+=== 7. ASSET-SPECIFIC PIP & PRICE RULES ===
+- Crypto (ETHUSD, BTCUSD): 1 pip = 0.01 ($0.01 move). Always calculate and output exact absolute price in "new_sl_price" and "new_tp_price".
+- Gold (XAUUSD): 1 pip = 0.01 ($1.00 move = 100 pips). Always output exact absolute price in "new_sl_price".
+- Forex (EURUSD, GBPUSD): 1 pip = 0.0001 (EURJPY, GBPJPY: 1 pip = 0.01).
+
 Reply strictly with JSON object."""
+
+def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> AgentDecision:
+    """
+    Deterministic rule-based fallback when LLM fails (timeout/error).
+    Protects open positions instead of passively returning an empty HOLD.
+    """
+    pos = snapshot.position
+    strat = snapshot.strategy or StrategyData()
+    sym = snapshot.symbol
+    bid = snapshot.bid
+    ask = snapshot.ask
+
+    # Flat position -> safe to HOLD
+    if not pos:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            confidence=50.0,
+            reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Flat position held.",
+            request_id=snapshot.request_id,
+            bot_id=snapshot.bot_id,
+            symbol=snapshot.symbol,
+            timeframe=snapshot.timeframe
+        )
+
+    side = (pos.resolved_side or pos.type or "").upper()
+    entry = pos.entry_price or 0.0
+    cur_sl = pos.sl or pos.sl_price or 0.0
+    pnl = pos.resolved_pnl or pos.pnl or 0.0
+
+    # 1. Position in profit -> Move SL to Break-Even if not already secured
+    if pnl > 0 and entry > 0:
+        if side == "SELL" and (cur_sl == 0 or cur_sl > entry):
+            return AgentDecision(
+                action="ADJUST",
+                new_sl_price=entry,
+                confidence=75.0,
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in profit (${pnl:.2f}) -> Moving SL to Break-Even ({entry}).",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+        elif side == "BUY" and (cur_sl == 0 or cur_sl < entry):
+            return AgentDecision(
+                action="ADJUST",
+                new_sl_price=entry,
+                confidence=75.0,
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in profit (${pnl:.2f}) -> Moving SL to Break-Even ({entry}).",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+    # 2. Position in drawdown: check recent swing high/low to tighten SL safely
+    if side == "SELL" and strat.recent_high > 0 and ask > 0:
+        if strat.recent_high > ask and (cur_sl == 0 or strat.recent_high < cur_sl):
+            return AgentDecision(
+                action="ADJUST",
+                new_sl_price=strat.recent_high,
+                confidence=70.0,
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Tightening SELL SL to recent swing high ({strat.recent_high}) to cap risk.",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+    elif side == "BUY" and strat.recent_low > 0 and bid > 0:
+        if strat.recent_low < bid and (cur_sl == 0 or strat.recent_low > cur_sl):
+            return AgentDecision(
+                action="ADJUST",
+                new_sl_price=strat.recent_low,
+                confidence=70.0,
+                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Tightening BUY SL to recent swing low ({strat.recent_low}) to cap risk.",
+                request_id=snapshot.request_id,
+                bot_id=snapshot.bot_id,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe
+            )
+
+    # 3. Default fallback: keep position with current protective SL
+    return AgentDecision(
+        action="HOLD",
+        volume_lots=0.01,
+        sl_pips=0.0,
+        tp_pips=0.0,
+        confidence=50.0,
+        reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Retaining protective SL ({cur_sl}).",
+        request_id=snapshot.request_id,
+        bot_id=snapshot.bot_id,
+        symbol=snapshot.symbol,
+        timeframe=snapshot.timeframe
+    )
 
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
@@ -1145,17 +1247,12 @@ async def trade_decision(snapshot: MarketSnapshot):
         return AgentDecision(**decision_dict)
     except Exception as e:
         logger.error(f"[{account_id}/{snapshot.bot_id}] LLM Error: {e}")
-        return AgentDecision(
-            action="HOLD",
-            volume_lots=0.01,
-            sl_pips=0,
-            tp_pips=0,
-            reason=f"Error: {e}",
-            request_id=snapshot.request_id,
-            bot_id=snapshot.bot_id,
-            symbol=snapshot.symbol,
-            timeframe=snapshot.timeframe
+        fallback = generate_fallback_decision(snapshot, str(e))
+        logger.info(
+            f"[FALLBACK DECISION] {account_id}/{snapshot.bot_id} -> Action: {fallback.action} | "
+            f"new_sl_price: {fallback.new_sl_price} | Conf: {fallback.confidence:.1f}% | Reason: {fallback.reason}"
         )
+        return fallback
 
 @app.post("/api/tick")
 @app.post("/api/telemetry_tick")

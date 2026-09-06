@@ -309,6 +309,8 @@ namespace cAlgo.Robots
             public double sl_pips { get; set; }
             public double tp_pips { get; set; }
             public double new_sl_pips { get; set; }  // for ADJUST action
+            public double new_sl_price { get; set; }
+            public double new_tp_price { get; set; }
             public string reason { get; set; }
         }
 
@@ -425,72 +427,79 @@ namespace cAlgo.Robots
 
         protected override void OnBarClosed()
         {
-            int index = Bars.Count - 1;
-            if (index <= _lastProcessedIndex) return;
-
-            for (int i = _lastProcessedIndex + 1; i <= index; i++)
+            try
             {
-                UpdateHeikinAshi(i);
-                UpdateTdi(i);
-                UpdateStoch(i);
-                UpdateOrb(i);
-            }
-            _lastProcessedIndex = index;
+                int index = Bars.Count - 1;
+                if (index <= _lastProcessedIndex) return;
 
-            if (index < 2) return;
-
-            UpdateLossStreak();
-            var session = GetSessionInfo();
-            // Cost Gate: Nếu không có vị thế mở và ngoài phiên (hoặc phiên sắp kết thúc), không cần gửi request
-            if (GetBotPositions().Length == 0 && (!session.is_trading_time || session.phase == "closed" || session.phase == "ending"))
-            {
-                return;
-            }
-
-            var macroTms = GetMacroTmsSignals();
-            var chartTms = GetTmsSignals(index);
-            
-            CheckPostTpGateRelease(macroTms, chartTms);
-
-            // Pre-fill Gate state into Macro TMS to pass to AI Server
-            macroTms.post_tp_gate_active = _postTpGateActive;
-            macroTms.post_tp_gate_side = _postTpGateSide;
-
-            double currentAtrVal = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 ? _atr.Result.LastValue : 10 * Symbol.PipSize;
-            double atrInPipsVal = currentAtrVal / Symbol.PipSize;
-
-            var snapshot = new MarketSnapshot
-            {
-                bot_id = BotId,
-                symbol = SymbolName,
-                timeframe = TimeFrame.Name,
-                tms_timeframe = TmsTimeFrame.Name,
-                ask = Symbol.Ask,
-                bid = Symbol.Bid,
-                atr_pips = Math.Round(atrInPipsVal, 1),
-                day_pnl = Math.Round(_dayPnl, 2),
-                trades_today = _tradesToday,
-                account_number = Account.Number.ToString(),
-                account_type = Account.IsLive ? "live" : "demo",
-                account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
-                account_balance = Account.Balance,
-                account_equity = Account.Equity,
-                bars = new List<BarData>
+                for (int i = _lastProcessedIndex + 1; i <= index; i++)
                 {
-                    GetBarData(index),
-                    GetBarData(index - 1),
-                    GetBarData(index - 2)
-                },
-                tms = macroTms,
-                chart_tms = chartTms,
-                orb = GetOrbData(index),
-                market = GetMarketRegime(index),
-                position = GetPositionInfo(index),
-                session = GetSessionInfo()
-            };
+                    UpdateHeikinAshi(i);
+                    UpdateTdi(i);
+                    UpdateStoch(i);
+                    UpdateOrb(i);
+                }
+                _lastProcessedIndex = index;
 
-            string jsonPayload = JsonSerializer.Serialize(snapshot);
-            _ = AskAgentAsync(jsonPayload);
+                if (index < 2) return;
+
+                UpdateLossStreak();
+                var session = GetSessionInfo();
+                // Cost Gate: Nếu không có vị thế mở và ngoài phiên (hoặc phiên sắp kết thúc), không cần gửi request
+                if (GetBotPositions().Length == 0 && (!session.is_trading_time || session.phase == "closed" || session.phase == "ending"))
+                {
+                    return;
+                }
+
+                var macroTms = GetMacroTmsSignals();
+                var chartTms = GetTmsSignals(index);
+                
+                CheckPostTpGateRelease(macroTms, chartTms);
+
+                // Pre-fill Gate state into Macro TMS to pass to AI Server
+                macroTms.post_tp_gate_active = _postTpGateActive;
+                macroTms.post_tp_gate_side = _postTpGateSide;
+
+                double currentAtrVal = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 ? _atr.Result.LastValue : 10 * Symbol.PipSize;
+                double atrInPipsVal = currentAtrVal / Symbol.PipSize;
+
+                var snapshot = new MarketSnapshot
+                {
+                    bot_id = BotId,
+                    symbol = SymbolName,
+                    timeframe = TimeFrame.Name,
+                    tms_timeframe = TmsTimeFrame.Name,
+                    ask = Symbol.Ask,
+                    bid = Symbol.Bid,
+                    atr_pips = Math.Round(atrInPipsVal, 1),
+                    day_pnl = Math.Round(_dayPnl, 2),
+                    trades_today = _tradesToday,
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity,
+                    bars = new List<BarData>
+                    {
+                        GetBarData(index),
+                        GetBarData(index - 1),
+                        GetBarData(index - 2)
+                    },
+                    tms = macroTms,
+                    chart_tms = chartTms,
+                    orb = GetOrbData(index),
+                    market = GetMarketRegime(index),
+                    position = GetPositionInfo(index),
+                    session = GetSessionInfo()
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(snapshot);
+                _ = AskAgentAsync(jsonPayload);
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[Error in OnBarClosed] {ex.Message}");
+            }
         }
 
         private BarData GetBarData(int idx)
@@ -1707,6 +1716,43 @@ namespace cAlgo.Robots
             if (decision.action == "CLOSE_ALL")
             {
                 foreach (var pos in GetBotPositions()) pos.Close();
+                return;
+            }
+
+            // ADJUST: Move SL / TP
+            if (decision.action == "ADJUST")
+            {
+                var positions = GetBotPositions();
+                foreach (var pos in positions)
+                {
+                    double? targetSL = null;
+                    if (decision.new_sl_price > 0)
+                    {
+                        targetSL = Math.Round(decision.new_sl_price, Symbol.Digits);
+                    }
+                    else if (decision.new_sl_pips > 0 || decision.sl_pips > 0)
+                    {
+                        double pips = decision.new_sl_pips > 0 ? decision.new_sl_pips : decision.sl_pips;
+                        double slPrice = pos.TradeType == TradeType.Buy
+                            ? pos.EntryPrice - pips * Symbol.PipSize
+                            : pos.EntryPrice + pips * Symbol.PipSize;
+                        targetSL = Math.Round(slPrice, Symbol.Digits);
+                    }
+
+                    if (targetSL.HasValue)
+                    {
+                        double minBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
+                        bool valid = pos.TradeType == TradeType.Buy 
+                            ? targetSL.Value < (Symbol.Bid - minBuffer) 
+                            : targetSL.Value > (Symbol.Ask + minBuffer);
+
+                        if (valid)
+                        {
+                            pos.ModifyStopLossPrice(targetSL.Value);
+                            if (ShowLogs) Print($"[ADJUST] Pos#{pos.Id} SL updated -> {targetSL.Value}. Reason: {decision.reason}");
+                        }
+                    }
+                }
                 return;
             }
 
