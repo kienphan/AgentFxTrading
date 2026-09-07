@@ -16,6 +16,14 @@
 
 [Instalação](#-instalação-rápida) • [Recursos](#-recursos) • [Estratégia](#-estratégia-de-negociação) • [API Docs](#-documentação-da-api) • [Apoio & Corretora](#-apoio--corretora-recomendada) • [Contribuir](#-contribuindo)
 
+<br/>
+
+<a href="#-painel-de-controle-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*Monitor de trading com IA multi-contas em tempo real com killzones de sessão, KPIs de conta, posições ativas e telemetria de ordens.*
+
 </div>
 
 ---
@@ -116,6 +124,19 @@ graph LR
 ## 📊 Painel de Controle (Dashboard)
 
 Monitore e gerencie o sistema de negociação em tempo real através da interface web moderna:
+
+### 🖥️ Demonstração do Painel (Dashboard Showcase)
+
+| 📈 Visão Geral em Tempo Real e Sessões | 🧠 Feed de Estratégia e Decisão de IA |
+| :---: | :---: |
+| [![Visão Geral do Dashboard](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Feed de Decisão de IA](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *Métricas KPI em tempo real, posições ativas, histórico de ordens e killzones* | *Raciocínio multi-tempo gráfico, pontuações de confiança do LLM e orientação SL/TP* |
+
+| 🏆 Classificação Quantitativa (Leaderboard) | 📰 Avaliação de Notícias ForexFactory & IA |
+| :---: | :---: |
+| [![Classificação Quantitativa](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![Avaliação de Notícias](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *Pontuação quantitativa composta, taxas de acerto e insígnias Tier S/A/B/C* | *Calendário econômico de alto impacto, volatilidade e análise macroeconômica* |
+
 ```
 http://127.0.0.1:8000/dashboard
 ```

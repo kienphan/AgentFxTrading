@@ -16,6 +16,14 @@
 
 [安装](#-快速开始) • [功能](#-功能特性) • [策略](#-交易策略) • [API文档](#-api文档) • [支持与推荐经纪商](#-支持与推荐经纪商) • [贡献](#-贡献)
 
+<br/>
+
+<a href="#-仪表板-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*实时多账户AI交易监控平台，支持交易时区/Killzones、账户KPI、活动持仓及实时交易记录。*
+
 </div>
 
 ---
@@ -106,6 +114,19 @@ graph LR
 ## 📊 仪表板 (Dashboard)
 
 通过现代化Web仪表板实时监控和管理自动化交易系统：
+
+### 🖥️ 仪表板界面预览 (Dashboard Showcase)
+
+| 📈 实时总览与交易时区 (Overview) | 🧠 AI策略与推理决策流 (AI Thinking) |
+| :---: | :---: |
+| [![实时总览](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![AI策略决策流](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *实时KPI指标、活动持仓、近期成交与Killzone交易时区* | *多周期趋势对齐、LLM置信度评分与SL/TP出场指导* |
+
+| 🏆 量化绩效排行榜 (Quant Leaderboard) | 📰 ForexFactory红标要闻与宏观AI评估 |
+| :---: | :---: |
+| [![量化排行榜](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![新闻评估](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *综合量化评分、胜率统计与Tier S/A/B/C等级勋章* | *高影响财经日历、币种波动影响与宏观剧烈度评估* |
+
 ```
 http://127.0.0.1:8000/dashboard
 ```

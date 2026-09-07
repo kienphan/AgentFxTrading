@@ -16,6 +16,14 @@
 
 [Installation](#-quick-start) • [Features](#-features) • [Strategy](#-trading-strategy) • [API Docs](#-api-documentation) • [Support](#-support--broker) • [Contributing](#-contributing)
 
+<br/>
+
+<a href="#-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*Real-time multi-account AI trading monitor with live session killzones, account KPIs, active positions, and trade telemetry.*
+
 </div>
 
 ---
@@ -116,6 +124,18 @@ graph LR
 ## 📊 Dashboard
 
 Monitor your trading system in real-time through the web dashboard.
+
+### 🖥️ Dashboard Showcase
+
+| 📈 Live Overview & Market Sessions | 🧠 AI Strategy & Decision Feed |
+| :---: | :---: |
+| [![Overview Dashboard](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![AI Strategy Feed](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *Real-time KPI metrics, active positions, recent trades, and killzones* | *Multi-timeframe reasoning, LLM confidence scores, and SL/TP guidance* |
+
+| 🏆 Quant Performance Leaderboard | 📰 ForexFactory Red News & AI Assessment |
+| :---: | :---: |
+| [![Quant Leaderboard](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![News Assessment](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *Composite quantitative ranking, win rates, and Tier S/A/B/C badges* | *High-impact economic calendar, currency impact, and macro volatility* |
 
 ### Access Dashboard
 

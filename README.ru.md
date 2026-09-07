@@ -16,6 +16,14 @@
 
 [Установка](#-быстрый-старт) • [Возможности](#-возможности) • [Стратегия](#-торговая-стратегия) • [API Документация](#-api-документация) • [Поддержка и Брокер](#-поддержка-и-рекомендуемый-брокер) • [Вклад](#-вклад)
 
+<br/>
+
+<a href="#-панель-управления-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*Мониторинг торговли с ИИ для нескольких счетов в реальном времени с торговыми сессиями, Killzones, KPI счетов, открытыми позициями и историей сделок.*
+
 </div>
 
 ---
@@ -116,6 +124,19 @@ graph LR
 ## 📊 Панель Управления (Dashboard)
 
 Мониторинг и управление торговой системой в реальном времени через веб-интерфейс:
+
+### 🖥️ Обзор Панели Управления (Dashboard Showcase)
+
+| 📈 Обзор в Реальном Времени и Сессии | 🧠 Поток Стратегий и Решений ИИ |
+| :---: | :---: |
+| [![Обзор Панели](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Поток Решений ИИ](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *Метрики KPI в реальном времени, активные позиции, история сделок и Killzones* | *Анализ нескольких таймфреймов, оценка уверенности LLM и параметры SL/TP* |
+
+| 🏆 Количественный Рейтинг Ботов (Leaderboard) | 📰 Оценка Новостей ForexFactory и Макро-ИИ |
+| :---: | :---: |
+| [![Количественный Рейтинг](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![Оценка Новостей](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *Комплексный quant-скоринг, винрейт и значки уровней Tier S/A/B/C* | *Календарь важных экономических событий, влияние на валюты и волатильность* |
+
 ```
 http://127.0.0.1:8000/dashboard
 ```
