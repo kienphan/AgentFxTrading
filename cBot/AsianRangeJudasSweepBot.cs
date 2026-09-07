@@ -1748,6 +1748,38 @@ namespace cAlgo.Robots
             try
             {
                 _lastNewsFetchAttempt = DateTime.UtcNow;
+
+                // 1. Prioritize centralized dashboard news service to avoid ForexFactory IP rate-limiting
+                if (!string.IsNullOrWhiteSpace(DashboardServerUrl))
+                {
+                    try
+                    {
+                        string srvUrl = DashboardServerUrl.TrimEnd('/') + "/api/news/calendar?range=thisweek";
+#pragma warning disable SYSLIB0014
+                        var srvReq = (HttpWebRequest)WebRequest.Create(srvUrl);
+                        srvReq.UserAgent = "cBot-NewsClient/1.0";
+                        srvReq.Timeout = 5000;
+                        using (var srvRes = (HttpWebResponse)srvReq.GetResponse())
+                        using (var srvStream = srvRes.GetResponseStream())
+                        using (var srvReader = new StreamReader(srvStream))
+                        {
+                            string srvJson = srvReader.ReadToEnd();
+                            if (ParseServerNewsCalendarJson(srvJson))
+                            {
+                                _lastNewsFetchTime = DateTime.UtcNow;
+                                Print($"[News Filter] Synced {_newsEvents.Count} news events via Central Dashboard Server.");
+                                return;
+                            }
+                        }
+#pragma warning restore SYSLIB0014
+                    }
+                    catch (Exception srvEx)
+                    {
+                        Print($"[News Filter Notice] Central Dashboard Server sync bypassed ({srvEx.Message}). Trying direct ForexFactory...");
+                    }
+                }
+
+                // 2. Direct ForexFactory fetch fallback
                 string url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 #pragma warning disable SYSLIB0014
                 var req = (HttpWebRequest)WebRequest.Create(url);
@@ -1769,6 +1801,47 @@ namespace cAlgo.Robots
             {
                 Print($"[News Filter Error] JSON fetch failed: {ex.Message}. Attempting XML fallback.");
                 TryFetchXmlFallback();
+            }
+        }
+
+        private bool ParseServerNewsCalendarJson(string json)
+        {
+            try
+            {
+                using (var doc = JsonDocument.Parse(json))
+                {
+                    if (!doc.RootElement.TryGetProperty("clusters", out var clustersElem)) return false;
+                    _newsEvents.Clear();
+                    foreach (var cluster in clustersElem.EnumerateArray())
+                    {
+                        if (cluster.TryGetProperty("events", out var eventsElem))
+                        {
+                            foreach (var element in eventsElem.EnumerateArray())
+                            {
+                                string title = element.GetProperty("title").GetString();
+                                string country = element.GetProperty("country").GetString();
+                                string impact = element.GetProperty("impact").GetString();
+                                string dateStr = element.GetProperty("date_utc").GetString();
+
+                                if (DateTime.TryParse(dateStr, out DateTime newsDate))
+                                {
+                                    _newsEvents.Add(new NewsEvent
+                                    {
+                                        Title = title,
+                                        Country = country,
+                                        Impact = impact,
+                                        Date = newsDate.ToUniversalTime()
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return _newsEvents.Count > 0;
+                }
+            }
+            catch
+            {
+                return false;
             }
         }
 

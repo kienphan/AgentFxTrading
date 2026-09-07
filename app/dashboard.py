@@ -12,10 +12,11 @@ import sqlite3
 import json
 import asyncio
 from datetime import datetime, date, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from app.accounts import get_account_registry
 from app.leaderboard import compute_bot_leaderboard
 import logging
+from app import news_service
 
 logger = logging.getLogger(__name__)
 
@@ -492,6 +493,9 @@ async def dashboard_page(request: Request):
             "latest_decisions": get_latest_ai_decisions(3),
         }
     )
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 @router.get("/api/dashboard/summary")
@@ -905,3 +909,82 @@ async def api_stop_bot(name: str):
 async def api_remove_bot(name: str):
     result = docker_manager.remove_container(name)
     return result
+
+# ── News Service & Macro Assessment API Endpoints ─────────────────────────
+
+class NewsAssessRequest(BaseModel):
+    cluster_id: str
+    symbol: str = "XAUUSD"
+    range: str = "thisweek"
+    notes: str = ""
+    cluster_data: Optional[Dict[str, Any]] = None
+@router.get("/api/news/calendar")
+async def api_news_calendar(range: str = "thisweek", refresh: bool = False):
+    try:
+        events = await news_service.fetch_forexfactory_raw_events(range, force_refresh=refresh)
+        clusters = news_service.cluster_red_news(events)
+        for c in clusters:
+            latest = news_service.get_latest_assessment_for_cluster(c["id"])
+            if latest:
+                c["is_assessed"] = True
+                c["latest_assessment"] = latest
+        return {
+            "success": True,
+            "range": range,
+            "total_clusters": len(clusters),
+            "clusters": clusters,
+            "raw_events_count": len(events)
+        }
+    except Exception as ex:
+        logger.error(f"[News API] Error fetching calendar: {ex}")
+        return {"success": False, "error": str(ex), "clusters": []}
+
+@router.post("/api/news/assess")
+async def api_news_assess(req: NewsAssessRequest):
+    try:
+        result = await news_service.assess_news_cluster(
+            cluster_id=req.cluster_id,
+            symbol=req.symbol,
+            week_range=req.range,
+            user_notes=req.notes,
+            cluster_data=req.cluster_data
+        )
+        return {"success": True, "assessment": result}
+    except Exception as ex:
+        logger.error(f"[News API] Error assessing cluster {req.cluster_id}: {ex}")
+        return {"success": False, "error": str(ex)}
+
+@router.get("/api/news/assessments")
+async def api_news_assessments(limit: int = 50):
+    try:
+        items = news_service.get_recent_news_assessments(limit=limit)
+        return {"success": True, "assessments": items, "count": len(items)}
+    except Exception as ex:
+        logger.error(f"[News API] Error retrieving assessments: {ex}")
+        return {"success": False, "error": str(ex), "assessments": []}
+
+@router.get("/api/news/assessments/{assessment_id}")
+async def api_news_assessment_detail(assessment_id: int):
+    item = news_service.get_news_assessment_by_id(assessment_id)
+    if not item:
+        return {"success": False, "error": "Assessment not found"}
+    return {"success": True, "assessment": item}
+
+@router.get("/api/news/shield-status")
+async def api_news_shield_status(symbol: str = "XAUUSD", pause_before: int = 30, pause_after: int = 30):
+    try:
+        is_active, title, remaining_mins = await news_service.is_news_blackout_active(
+            symbol=symbol,
+            pause_before_mins=pause_before,
+            pause_after_mins=pause_after
+        )
+        return {
+            "success": True,
+            "symbol": symbol.upper(),
+            "is_blackout": is_active,
+            "event_title": title,
+            "remaining_minutes": remaining_mins
+        }
+    except Exception as ex:
+        return {"success": False, "error": str(ex), "is_blackout": False}
+

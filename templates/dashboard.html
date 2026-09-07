@@ -81,6 +81,10 @@
                 <span class="nav-icon"><i data-lucide="sparkles"></i></span>
                 <span class="nav-label">AI Thinking</span>
             </a>
+            <a href="#" class="nav-item" data-target="view-news" title="News Assessment">
+                <span class="nav-icon"><i data-lucide="newspaper"></i></span>
+                <span class="nav-label">News Assessment</span>
+            </a>
             <a href="#" class="nav-item" data-target="view-docker" title="Docker Bots">
                 <span class="nav-icon"><i data-lucide="bot"></i></span>
                 <span class="nav-label">Docker Bots</span>
@@ -588,6 +592,109 @@
                     </div>
                 </section>
             </div>
+
+            <!-- News Assessment View -->
+            <div id="view-news" class="view-section">
+                <div class="news-toolbar">
+                    <div class="news-toolbar-left">
+                        <span class="panel-title" style="font-size:0.9rem;"><i data-lucide="newspaper" class="text-red"></i> ForexFactory Red News &amp; AI Macro Assessment</span>
+                        <div style="display:flex; gap:4px; margin-left:12px;">
+                            <button class="news-filter-btn active" id="news-filter-thisweek" onclick="switchNewsRange('thisweek')">This Week</button>
+                            <button class="news-filter-btn" id="news-filter-nextweek" onclick="switchNewsRange('nextweek')">Next Week</button>
+                        </div>
+                    </div>
+                    <div class="news-toolbar-right">
+                        <span id="news-shield-status-chip" class="status-pill status-pill--online">
+                            <span class="status-dot"></span> Shield: Clear
+                        </span>
+                        <button class="news-filter-btn" onclick="fetchNewsCalendar(true)">
+                            <i data-lucide="refresh-cw" style="width:14px; height:14px; vertical-align:middle;"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Clusters Container -->
+                <div id="news-clusters-container" class="news-clusters-grid">
+                    <div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);">
+                        <p>Loading economic calendar...</p>
+                    </div>
+                </div>
+            </div>
+
+    <!-- News Assessment Modal -->
+    <div id="news-assessment-modal" class="news-modal-backdrop">
+        <div class="news-modal">
+            <div class="news-modal-header">
+                <div class="news-modal-title">
+                    <i data-lucide="brain" class="text-red"></i>
+                    <span id="modal-assessment-title">AI Macro Assessment</span>
+                </div>
+                <button class="news-modal-close" onclick="closeNewsModal()">&times;</button>
+            </div>
+            <div class="news-modal-body">
+                <!-- Metrics Strip -->
+                <div class="news-metrics-strip">
+                    <div class="news-metric-card">
+                        <span class="news-metric-label">Volatility Level</span>
+                        <span id="modal-volatility" class="volatility-pill volatility-pill--high">HIGH</span>
+                    </div>
+                    <div class="news-metric-card">
+                        <span class="news-metric-label">Expected Pips</span>
+                        <span id="modal-pips" class="news-metric-value">150 - 300 pips</span>
+                    </div>
+                    <div class="news-metric-card">
+                        <span class="news-metric-label">Expected Pattern</span>
+                        <span id="modal-pattern" class="news-metric-value">2_WAY_WHIPSAW</span>
+                    </div>
+                    <div class="news-metric-card">
+                        <span class="news-metric-label">Target Instrument</span>
+                        <span id="modal-symbol" class="news-metric-value">XAUUSD</span>
+                    </div>
+                </div>
+
+                <!-- Probability Bar -->
+                <div class="prob-bar-wrap">
+                    <div class="prob-labels">
+                        <span class="text-green" id="modal-prob-buy">BUY 65%</span>
+                        <span class="text-red" id="modal-prob-sell">SELL 35%</span>
+                    </div>
+                    <div class="prob-bar-outer">
+                        <div id="modal-prob-bar-inner" class="prob-bar-inner-buy" style="width: 65%;"></div>
+                    </div>
+                </div>
+
+                <!-- Bilingual Switch -->
+                <div class="bilingual-toggle-bar">
+                    <button class="bilingual-tab-btn active" id="modal-lang-vi" onclick="switchModalLanguage('vi')">🇻🇳 Tiếng Việt</button>
+                    <button class="bilingual-tab-btn" id="modal-lang-en" onclick="switchModalLanguage('en')">🇬🇧 English</button>
+                </div>
+
+                <!-- Scenarios -->
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div class="scenario-box">
+                        <strong style="color:var(--accent-bright);"><i data-lucide="trending-up" style="width:14px; height:14px; vertical-align:middle;"></i> Scenario A (Actual &gt; Forecast):</strong>
+                        <p id="modal-scenario-better" style="margin-top:4px;"></p>
+                    </div>
+                    <div class="scenario-box scenario-box--worse">
+                        <strong style="color:#f87171;"><i data-lucide="trending-down" style="width:14px; height:14px; vertical-align:middle;"></i> Scenario B (Actual &lt; Forecast):</strong>
+                        <p id="modal-scenario-worse" style="margin-top:4px;"></p>
+                    </div>
+                </div>
+
+                <!-- cBot Guidance -->
+                <div class="guidance-box">
+                    <strong style="color:#60a5fa;"><i data-lucide="shield-alert" style="width:14px; height:14px; vertical-align:middle;"></i> cBot &amp; Algorithmic Guidance:</strong>
+                    <p id="modal-guidance" style="margin-top:4px;"></p>
+                </div>
+
+                <!-- Detailed SMC Report -->
+                <div>
+                    <h4 style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Quantitative Order Flow Report</h4>
+                    <div id="modal-markdown" class="analysis-markdown-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
         </main>
     </div>
 
@@ -632,6 +739,8 @@
                         fetchLeaderboard();
                     } else if (targetId === 'view-decisions') {
                         fetchAiDecisions();
+                    } else if (targetId === 'view-news') {
+                        fetchNewsCalendar();
                     }
                 }
             });
@@ -1555,6 +1664,252 @@
                 fetchAiDecisions();
             }
         }, 8000);
+
+        // ── News Assessment System Frontend ─────────────────────────────────
+        let currentNewsRange = 'thisweek';
+        let activeAssessmentData = null;
+        let currentModalLang = 'vi';
+
+        function switchNewsRange(range) {
+            currentNewsRange = range;
+            document.getElementById('news-filter-thisweek').classList.toggle('active', range === 'thisweek');
+            document.getElementById('news-filter-nextweek').classList.toggle('active', range === 'nextweek');
+            fetchNewsCalendar();
+        }
+
+        async function updateNewsShieldStatus() {
+            try {
+                const res = await fetch('/api/news/shield-status?symbol=XAUUSD');
+                const data = await res.json();
+                const chip = document.getElementById('news-shield-status-chip');
+                if (chip && data.success) {
+                    if (data.is_blackout) {
+                        chip.className = 'status-pill status-pill--offline';
+                        chip.innerHTML = `<span class="status-dot"></span> 🚨 Shield Active: ${data.event_title} (${data.remaining_minutes}m left)`;
+                    } else {
+                        chip.className = 'status-pill status-pill--online';
+                        chip.innerHTML = `<span class="status-dot"></span> Shield: Clear (No Blackout)`;
+                    }
+                }
+            } catch(e) { }
+        }
+
+        async function fetchNewsCalendar(refresh = false) {
+            const container = document.getElementById('news-clusters-container');
+            if (!container) return;
+            if (refresh) {
+                container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);"><p>Refreshing ForexFactory events...</p></div>`;
+            }
+            updateNewsShieldStatus();
+            try {
+                const res = await fetch(`/api/news/calendar?range=${currentNewsRange}&refresh=${refresh}`);
+                const data = await res.json();
+                if (!data.success || !data.clusters || data.clusters.length === 0) {
+                    container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${currentNewsRange === 'thisweek' ? 'this week' : 'next week'}.</p></div>`;
+                    return;
+                }
+                renderNewsClusters(data.clusters);
+            } catch(e) {
+                console.error("Error fetching news calendar:", e);
+                container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--loss);"><p>Failed to load economic news calendar.</p></div>`;
+            }
+        }
+
+        let _cachedClusters = [];
+        function renderNewsClusters(clusters) {
+            _cachedClusters = clusters || [];
+            const container = document.getElementById('news-clusters-container');
+            let html = '';
+            clusters.forEach(c => {
+                let countdownText = '';
+                let countdownClass = 'news-countdown-badge';
+                if (c.is_past) {
+                    countdownText = 'Past Event';
+                    countdownClass += ' news-countdown-badge--past';
+                } else if (c.diff_minutes <= 0) {
+                    countdownText = '🔴 Live Now';
+                    countdownClass += ' news-countdown-badge--pulse';
+                } else if (c.diff_minutes < 60) {
+                    countdownText = `⏳ In ${c.diff_minutes}m`;
+                    countdownClass += ' news-countdown-badge--pulse';
+                } else {
+                    const h = Math.floor(c.diff_minutes / 60);
+                    const m = c.diff_minutes % 60;
+                    countdownText = `In ${h}h ${m}m`;
+                }
+
+                const currPills = (c.currencies || []).map(curr => {
+                    const cls = curr.toLowerCase() === 'usd' ? 'currency-pill--usd' : 
+                                curr.toLowerCase() === 'eur' ? 'currency-pill--eur' : 
+                                curr.toLowerCase() === 'gbp' ? 'currency-pill--gbp' : 
+                                curr.toLowerCase() === 'jpy' ? 'currency-pill--jpy' : '';
+                    return `<span class="currency-pill ${cls}">${curr}</span>`;
+                }).join('');
+
+                const eventsList = (c.events || []).map(ev => `
+                    <div class="news-event-row">
+                        <div class="news-event-title">${ev.title}</div>
+                        <div class="news-event-meta">
+                            <span>Forecast: <strong style="color:var(--text-primary);">${ev.forecast || '--'}</strong></span>
+                            <span>Previous: <strong style="color:var(--text-primary);">${ev.previous || '--'}</strong></span>
+                        </div>
+                    </div>
+                `).join('');
+
+                const assessmentBadge = c.is_assessed && c.latest_assessment ? `
+                    <span style="font-size:0.72rem; color:var(--accent-bright); font-weight:700;">
+                        ✓ Assessed: ${c.latest_assessment.volatility_level} (${c.latest_assessment.expected_pips_range})
+                    </span>
+                ` : '';
+
+                html += `
+                    <div class="news-cluster-card ${c.is_past ? 'news-cluster-card--past' : 'news-cluster-card--upcoming'}" id="card-${c.id}">
+                        <div class="news-cluster-header">
+                            <div class="news-time-wrap">
+                                <span class="news-time-gmt">${c.time_formatted_vn}</span>
+                                <span class="news-time-utc">${c.date_formatted_vn} (${c.time_formatted_utc})</span>
+                            </div>
+                            <span class="${countdownClass}">${countdownText}</span>
+                        </div>
+                        <div class="news-cluster-body">
+                            <div class="news-currencies-strip">${currPills}</div>
+                            <div class="news-events-list">${eventsList}</div>
+                        </div>
+                        <div class="news-cluster-footer">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <select class="news-symbol-select" id="symbol-${c.id}">
+                                    <option value="XAUUSD" selected>XAUUSD (Gold)</option>
+                                    <option value="EURUSD">EURUSD</option>
+                                    <option value="GBPUSD">GBPUSD</option>
+                                    <option value="BTCUSD">BTCUSD</option>
+                                    <option value="US30">US30</option>
+                                </select>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                ${c.is_assessed ? `<button class="news-view-btn" onclick='viewSavedAssessment("${c.id}")'>📖 View Report</button>` : ''}
+                                <button class="news-assess-btn" id="btn-assess-${c.id}" onclick="triggerAiAssessment('${c.id}')">
+                                    <i data-lucide="zap" style="width:13px; height:13px;"></i> Assess AI
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+            if (window.lucide) { lucide.createIcons(); }
+        }
+
+        async function triggerAiAssessment(clusterId) {
+            const symSelect = document.getElementById(`symbol-${clusterId}`);
+            const symbol = symSelect ? symSelect.value : 'XAUUSD';
+            const clusterObj = _cachedClusters.find(c => c.id === clusterId) || null;
+            const btn = document.getElementById(`btn-assess-${clusterId}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<i data-lucide="loader" style="animation:spin 1s linear infinite; width:13px; height:13px;"></i> Analyzing...`;
+                if (window.lucide) { lucide.createIcons(); }
+            }
+            try {
+                const res = await fetch('/api/news/assess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cluster_id: clusterId,
+                        symbol: symbol,
+                        range: currentNewsRange,
+                        cluster_data: clusterObj
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.assessment) {
+                    openNewsModal(data.assessment);
+                    fetchNewsCalendar();
+                } else {
+                    alert('AI Assessment failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch(e) {
+                alert('Network error during assessment: ' + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i data-lucide="zap" style="width:13px; height:13px;"></i> Assess AI`;
+                    if (window.lucide) { lucide.createIcons(); }
+                }
+            }
+        }
+
+        async function viewSavedAssessment(clusterId) {
+            try {
+                const res = await fetch('/api/news/assessments?limit=50');
+                const data = await res.json();
+                if (data.success && data.assessments) {
+                    const found = data.assessments.find(a => a.cluster_id === clusterId);
+                    if (found) {
+                        openNewsModal(found);
+                        return;
+                    }
+                }
+                alert("Could not load saved assessment report.");
+            } catch(e) {
+                alert("Error loading assessment: " + e.message);
+            }
+        }
+
+        function openNewsModal(assessment) {
+            activeAssessmentData = assessment;
+            const modal = document.getElementById('news-assessment-modal');
+            if (!modal) return;
+
+            document.getElementById('modal-assessment-title').innerText = `AI Macro Assessment: ${assessment.symbol} (${assessment.expected_pips_range})`;
+            document.getElementById('modal-symbol').innerText = assessment.symbol;
+            document.getElementById('modal-pips').innerText = assessment.expected_pips_range || '--';
+            document.getElementById('modal-pattern').innerText = assessment.trend_type || '2_WAY_WHIPSAW';
+
+            const volEl = document.getElementById('modal-volatility');
+            const vol = (assessment.volatility_level || 'HIGH').toUpperCase();
+            volEl.innerText = vol;
+            volEl.className = 'volatility-pill ' + (
+                vol === 'EXTREME' ? 'volatility-pill--extreme' :
+                vol === 'HIGH' ? 'volatility-pill--high' :
+                vol === 'MEDIUM' ? 'volatility-pill--medium' : 'volatility-pill--low'
+            );
+
+            const buyP = assessment.prob_buy || 50;
+            const sellP = assessment.prob_sell || 50;
+            document.getElementById('modal-prob-buy').innerText = `BUY ${buyP}%`;
+            document.getElementById('modal-prob-sell').innerText = `SELL ${sellP}%`;
+            document.getElementById('modal-prob-bar-inner').style.width = `${buyP}%`;
+
+            switchModalLanguage(currentModalLang);
+            modal.classList.add('active');
+            if (window.lucide) { lucide.createIcons(); }
+        }
+
+        function switchModalLanguage(lang) {
+            currentModalLang = lang;
+            document.getElementById('modal-lang-vi').classList.toggle('active', lang === 'vi');
+            document.getElementById('modal-lang-en').classList.toggle('active', lang === 'en');
+
+            if (!activeAssessmentData) return;
+            const isVi = lang === 'vi';
+            document.getElementById('modal-scenario-better').innerText = isVi ? (activeAssessmentData.scenario_better_vi || activeAssessmentData.scenario_better) : (activeAssessmentData.scenario_better_en || activeAssessmentData.scenario_better);
+            document.getElementById('modal-scenario-worse').innerText = isVi ? (activeAssessmentData.scenario_worse_vi || activeAssessmentData.scenario_worse) : (activeAssessmentData.scenario_worse_en || activeAssessmentData.scenario_worse);
+            document.getElementById('modal-guidance').innerText = isVi ? (activeAssessmentData.bot_guidance_vi || activeAssessmentData.bot_guidance) : (activeAssessmentData.bot_guidance_en || activeAssessmentData.bot_guidance);
+            document.getElementById('modal-markdown').innerText = isVi ? (activeAssessmentData.analysis_markdown_vi || activeAssessmentData.analysis_markdown) : (activeAssessmentData.analysis_markdown_en || activeAssessmentData.analysis_markdown);
+        }
+
+        function closeNewsModal() {
+            const modal = document.getElementById('news-assessment-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        // Close modal on backdrop click
+        window.addEventListener('click', (e) => {
+            const modal = document.getElementById('news-assessment-modal');
+            if (modal && e.target === modal) {
+                closeNewsModal();
+            }
+        });
         if (window.lucide) { lucide.createIcons(); }
     </script>
 </body></html>
