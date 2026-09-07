@@ -58,3 +58,8 @@ def test_ui_endpoints():
     assert "view-decisions" in html_real
     assert "view-decisions" in html_demo
     assert "ai-feed-list" in html_real
+    assert "view-news" in html_demo
+    # Ensure view-news is inside <main class="main-content"> before </main>
+    main_close_idx = html_demo.find("</main>")
+    news_view_idx = html_demo.find('id="view-news"')
+    assert news_view_idx != -1 and news_view_idx < main_close_idx

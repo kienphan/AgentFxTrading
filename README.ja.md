@@ -16,6 +16,14 @@
 
 [インストール](#-クイックスタート) • [機能](#-機能) • [戦略](#-取引戦略) • [APIドキュメント](#-apiドキュメント) • [サポート＆おすすめブローカー](#-サポートおすすめブローカー) • [貢献](#-貢献)
 
+<br/>
+
+<a href="#-ダッシュボード-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*リアルタイムのマルチアカウントAI取引監視プラットフォーム（市場セッション、Killzone、口座KPI、ポジション、取引履歴）。*
+
 </div>
 
 ---
@@ -116,6 +124,19 @@ graph LR
 ## 📊 ダッシュボード (Dashboard)
 
 モダンなWebダッシュボードを通じてリアルタイムに取引システムを監視・管理できます：
+
+### 🖥️ ダッシュボード画面プレビュー (Dashboard Showcase)
+
+| 📈 リアルタイム概要と取引セッション (Overview) | 🧠 AI戦略と意思決定フィード (AI Thinking) |
+| :---: | :---: |
+| [![概要ダッシュボード](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![AI戦略フィード](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *リアルタイムKPI指標、保有ポジション、取引履歴、Killzoneセッション* | *マルチタイムフレーム分析、LLM信頼度スコア、SL/TPガイダンス* |
+
+| 🏆 クオンツ・リーダーボード (Quant Leaderboard) | 📰 ForexFactory要人発言・マクロAI評価 |
+| :---: | :---: |
+| [![クオンツリーダーボード](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![ニュース評価](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *総合定量スコアリング、勝率分析、Tier S/A/B/Cバッジ* | *高影響度経済指標カレンダー、通貨ボラティリティ、マクロ分析* |
+
 ```
 http://127.0.0.1:8000/dashboard
 ```

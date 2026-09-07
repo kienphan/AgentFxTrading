@@ -16,6 +16,14 @@
 
 [Cài Đặt](#-hướng-dẫn-cài-đặt) • [Tính Năng](#-tính-năng) • [Chiến Lược](#-chiến-lược-giao-dịch) • [API Docs](#-api-documentation) • [Ủng Hộ](#-ủng-hộ--sàn-giao-dịch) • [Đóng Góp](#-đóng-góp)
 
+<br/>
+
+<a href="#-giao-diện-dashboard">
+  <img src="docs/screenshots/overview.png" alt="AgentFxTrading Web Dashboard Overview" width="95%" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
+</a>
+
+*Giao diện giám sát giao dịch AI đa tài khoản thời gian thực với killzone phiên giao dịch, KPI tài khoản, vị thế mở và nhật ký lệnh.*
+
 </div>
 
 ---
@@ -116,6 +124,18 @@ graph LR
 ## 📊 Giao Diện Dashboard
 
 Theo dõi và quản lý hệ thống giao dịch thời gian thực qua giao diện web dashboard hiện đại:
+
+### 🖥️ Hình Ảnh Giao Diện Dashboard
+
+| 📈 Giám Sát Tổng Quan & Phiên Giao Dịch | 🧠 Luồng Quyết Định & Suy Luận AI |
+| :---: | :---: |
+| [![Giám Sát Tổng Quan](docs/screenshots/overview.png)](docs/screenshots/overview.png) | [![Luồng Quyết Định AI](docs/screenshots/ai-thinking.png)](docs/screenshots/ai-thinking.png) |
+| *Chỉ số KPI thời gian thực, vị thế mở, lịch sử lệnh và killzones* | *Phân tích đa khung thời gian, độ tin cậy LLM và thông số SL/TP* |
+
+| 🏆 Bảng Xếp Hạng Hiệu Suất Bot (Quant) | 📰 Đánh Giá Tin Tức ForexFactory & AI Macro |
+| :---: | :---: |
+| [![Bảng Xếp Hạng Bot](docs/screenshots/leaderboard.png)](docs/screenshots/leaderboard.png) | [![Đánh Giá Tin Tức](docs/screenshots/news-assessment.png)](docs/screenshots/news-assessment.png) |
+| *Điểm định lượng tổng hợp, tỷ lệ thắng và huy hiệu Tier S/A/B/C* | *Lịch tin tức kinh tế mạnh, cảnh báo tác động tiền tệ và độ biến động* |
 
 | Chế độ | Đường dẫn URL | Mô tả |
 | :--- | :--- | :--- |
