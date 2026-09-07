@@ -269,18 +269,25 @@ def get_daily_pnl_history(days: int = 30, account_id: str = "all") -> List[Dict]
     return list(reversed(history))  # Reverse to chronological order
 
 
-# --- In-Memory Store for Latest AI Decisions ---
+# --- In-Memory Store for AI Decisions (Mini-Feed) ---
 _latest_decisions: List[Dict] = []
 
 def record_ai_decision(decision: Dict):
-    """Store the latest AI decision in memory (FIFO 20)."""
+    """Store the AI decision in memory (FIFO up to 50)."""
     global _latest_decisions
+    # Ensure timestamp exists
+    if "timestamp" not in decision or not decision["timestamp"]:
+        decision["timestamp"] = datetime.now(timezone.utc).isoformat()
     _latest_decisions.insert(0, decision)
-    if len(_latest_decisions) > 20:
-        _latest_decisions = _latest_decisions[:20]
+    if len(_latest_decisions) > 50:
+        _latest_decisions = _latest_decisions[:50]
 
-def get_latest_ai_decisions(limit: int = 5) -> List[Dict]:
-    """Get latest AI decisions."""
+def get_latest_ai_decisions(limit: int = 5, symbol: Optional[str] = None) -> List[Dict]:
+    """Get latest AI decisions, optionally filtered by symbol."""
+    if symbol and symbol.upper() != "ALL":
+        sym_clean = symbol.strip().upper()
+        filtered = [d for d in _latest_decisions if (d.get("symbol") or "").upper() == sym_clean]
+        return filtered[:limit]
     return _latest_decisions[:limit]
 
 def get_market_sessions_info() -> Dict:
@@ -532,9 +539,9 @@ async def api_dashboard_cumulative_pnl(days: int = 30, account_id: str = "all"):
     return get_cumulative_equity_curve(days, account_id)
 
 @router.get("/api/dashboard/latest-decisions")
-async def api_dashboard_latest_decisions(limit: int = 5):
-    """API endpoint for latest AI decisions with structured reasoning."""
-    return get_latest_ai_decisions(limit)
+async def api_dashboard_latest_decisions(limit: int = 20, symbol: Optional[str] = None):
+    """API endpoint for latest AI decisions with structured reasoning and symbol filter."""
+    return get_latest_ai_decisions(limit=limit, symbol=symbol)
 
 
 @router.get("/api/dashboard/logs")
@@ -733,6 +740,41 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+
+@router.websocket("/ws/cbot")
+async def cbot_websocket_endpoint(websocket: WebSocket):
+    """
+    Bidirectional low-latency WebSocket endpoint for cBots.
+    Handles fast tick telemetry streaming and real-time push orders/adjustments.
+    """
+    await websocket.accept()
+    bot_id = "unknown"
+    try:
+        while True:
+            text = await websocket.receive_text()
+            try:
+                payload = json.loads(text)
+                msg_type = payload.get("type", "tick")
+                bot_id = payload.get("bot_id", bot_id)
+                
+                if msg_type == "ping":
+                    await websocket.send_json({"type": "pong", "time": datetime.now().isoformat()})
+                elif msg_type == "tick":
+                    symbol = payload.get("symbol")
+                    bid = float(payload.get("bid", 0.0) or 0.0)
+                    ask = float(payload.get("ask", 0.0) or 0.0)
+                    account_id = payload.get("account_id")
+                    if symbol and (bid > 0 or ask > 0):
+                        pm = get_portfolio_manager()
+                        pm.update_market_price(symbol, bid, ask, bot_id=bot_id)
+                        await broadcast_tick(symbol, bid, ask, account_id)
+                    await websocket.send_json({"type": "ack", "status": "ok"})
+                else:
+                    await websocket.send_json({"type": "ack", "status": "received"})
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "message": "Invalid JSON"})
+    except WebSocketDisconnect:
+        logger.info(f"[cBot WS] Bot {bot_id} disconnected")
 
 async def broadcast_update():
     """Broadcast dashboard summary and positions to all connected clients."""

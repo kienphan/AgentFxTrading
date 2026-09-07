@@ -64,3 +64,24 @@ def test_websocket_tick_and_event_broadcast():
         assert event_msg["type"] == "event"
         assert event_msg["event_type"] == "GUARDRAIL"
         assert "High impact news" in event_msg["message"]
+
+def test_cbot_websocket_stream():
+    client = TestClient(app)
+    with client.websocket_connect("/ws/cbot") as ws:
+        # Test ping
+        ws.send_text(json.dumps({"type": "ping"}))
+        res = ws.receive_json()
+        assert res["type"] == "pong"
+
+        # Test tick stream
+        ws.send_text(json.dumps({
+            "type": "tick",
+            "bot_id": "cbot-xauusd-test",
+            "symbol": "XAUUSD",
+            "bid": 2910.0,
+            "ask": 2910.3,
+            "account_id": "demo"
+        }))
+        ack = ws.receive_json()
+        assert ack["type"] == "ack"
+        assert ack["status"] == "ok"

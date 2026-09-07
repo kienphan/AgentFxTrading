@@ -33,23 +33,28 @@ def test_ui_endpoints():
     data_cum = resp_cum.json()
     assert isinstance(data_cum, list)
 
-    # Test Latest Decisions API
+    # Test Latest Decisions API with filtering
     resp_dec = client.get("/api/dashboard/latest-decisions?limit=3")
     assert resp_dec.status_code == 200
     data_dec = resp_dec.json()
     assert isinstance(data_dec, list)
+
+    resp_dec_filtered = client.get("/api/dashboard/latest-decisions?limit=3&symbol=EURUSD")
+    assert resp_dec_filtered.status_code == 200
+    assert isinstance(resp_dec_filtered.json(), list)
 
     # Test Demo and Real Dashboard HTML renders cleanly with new widgets
     resp_demo = client.get("/demo/dashboard")
     assert resp_demo.status_code == 200
     html_demo = resp_demo.text
     assert "market-session-bar" in html_demo
-    assert "ai-decision-card" in html_demo
+    assert "pnl-chart" in html_demo
+    assert "equity-chart" in html_demo
     assert "exposure-chart" in html_demo
-    assert "btn-chart-equity" in html_demo
-
     resp_real = client.get("/real/dashboard")
     assert resp_real.status_code == 200
     html_real = resp_real.text
     assert "market-session-bar" in html_real
-    assert "ai-decision-card" in html_real
+    assert "view-decisions" in html_real
+    assert "view-decisions" in html_demo
+    assert "ai-feed-list" in html_real

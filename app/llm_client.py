@@ -265,33 +265,44 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
         raise ValueError(f"Unknown LLM provider: {provider}")
 
 class JSONResponseParser:
-    """Parse JSON from LLM responses, handling markdown code blocks."""
+    """Parse JSON from LLM responses, handling markdown code blocks and auto-repairing broken endings."""
 
     @staticmethod
     def parse(text: str) -> Dict[str, Any]:
-        """Extract and parse JSON from response text."""
-        # Try direct parse first
+        """Extract and parse JSON from response text with multi-tier recovery."""
+        clean_text = text.strip()
+
+        # 1. Direct parse
         try:
-            return json.loads(text)
+            return json.loads(clean_text)
         except json.JSONDecodeError:
             pass
 
-        # Try to extract from markdown code block
+        # 2. Extract from markdown code block
         import re
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', clean_text)
         if json_match:
             try:
-                return json.loads(json_match.group(1))
+                return json.loads(json_match.group(1).strip())
             except json.JSONDecodeError:
                 pass
 
-        # Try to find JSON object in text
-        brace_start = text.find('{')
-        brace_end = text.rfind('}')
-        if brace_start != -1 and brace_end != -1:
+        # 3. Find outermost JSON object
+        brace_start = clean_text.find('{')
+        brace_end = clean_text.rfind('}')
+        if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
             try:
-                return json.loads(text[brace_start:brace_end + 1])
+                return json.loads(clean_text[brace_start:brace_end + 1])
             except json.JSONDecodeError:
                 pass
 
-        raise ValueError(f"Could not parse JSON from response: {text[:200]}...")
+        # 4. Partial/Truncated JSON repair
+        if brace_start != -1:
+            fragment = clean_text[brace_start:]
+            for patch in ['"}', '"]}', '}', '"]}}', '}}']:
+                try:
+                    return json.loads(fragment + patch)
+                except json.JSONDecodeError:
+                    continue
+
+        raise ValueError(f"Could not parse JSON from response: {clean_text[:200]}...")

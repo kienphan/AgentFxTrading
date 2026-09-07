@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260905">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260907_feed_mobile">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
@@ -77,6 +77,10 @@
                 <span class="nav-icon"><i data-lucide="trophy"></i></span>
                 <span class="nav-label">Leaderboard</span>
             </a>
+            <a href="#" class="nav-item" data-target="view-decisions" title="AI Thinking Feed">
+                <span class="nav-icon"><i data-lucide="sparkles"></i></span>
+                <span class="nav-label">AI Thinking</span>
+            </a>
             <a href="#" class="nav-item" data-target="view-docker" title="Docker Bots">
                 <span class="nav-icon"><i data-lucide="bot"></i></span>
                 <span class="nav-label">Docker Bots</span>
@@ -114,49 +118,6 @@
                             <span id="kz-title">Judas Killzone: {{ market_sessions.killzone.name }}</span>
                             <span class="td-dim font-mono" id="kz-countdown" style="font-size:0.7rem; margin-left:4px;">({{ market_sessions.killzone.next_in }})</span>
                         </span>
-                    </div>
-                </div>
-
-                <!-- AI Decision & Reasoning Card Widget (Task 3) -->
-                <div class="ai-decision-card" id="ai-decision-card">
-                    <div class="ai-card-header">
-                        <div class="ai-card-title-group">
-                            <i data-lucide="sparkles" class="ai-sparkle-icon"></i>
-                            <span class="ai-card-title">Live AI Reasoning &amp; Strategy Signals</span>
-                            <span class="td-dim" id="ai-card-timestamp" style="font-size: 0.72rem;">Waiting for incoming bar decisions...</span>
-                        </div>
-                        <div class="ai-confidence-wrap">
-                            <div class="ai-confidence-label">
-                                <span>AI Confidence</span>
-                                <span id="ai-confidence-value" class="font-bold">--%</span>
-                            </div>
-                            <div class="ai-confidence-bar">
-                                <div class="ai-confidence-fill" id="ai-confidence-fill" style="width: 0%;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="ai-card-body">
-                        <div id="ai-action-badge-wrap">
-                            <span class="ai-action-badge ai-action--HOLD" id="ai-action-badge">
-                                <span id="ai-action-icon">⏸</span>
-                                <span id="ai-action-text">HOLD</span>
-                            </span>
-                        </div>
-                        <div>
-                            <div class="ai-reason-text" id="ai-reason-text">
-                                {% if latest_decisions and latest_decisions|length > 0 %}
-                                    <strong>[{{ latest_decisions[0].symbol or 'GLOBAL' }}]</strong> {{ latest_decisions[0].reason or 'Monitoring killzone setups & liquidity pools.' }}
-                                {% else %}
-                                    Waiting for first real-time cBot market snapshot...
-                                {% endif %}
-                            </div>
-                            <div class="ai-checklist-group" id="ai-checklist-group">
-                                <span class="ai-pill-tag" id="ai-pill-symbol">Symbol: {{ positions[0].symbol if positions else 'XAUUSD/EURUSD' }}</span>
-                                <span class="ai-pill-tag" id="ai-pill-tf">TF: M15</span>
-                                <span class="ai-pill-tag" id="ai-pill-regime">Engine: Dual TMS+Judas</span>
-                                <span class="ai-pill-tag" id="ai-pill-risk">Max Risk Cap: $12.00</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -339,23 +300,27 @@
                     </div>
                 </section>
 
-                <!-- Analytics Section: Dual Chart & Asset Exposure (Task 4) -->
+                <!-- Analytics Section: Daily P&L, Equity Curve, and Asset Exposure -->
                 <div class="analytics-grid">
                     <section class="panel chart-panel">
                         <div class="panel-header">
-                            <span class="panel-title" id="pnl-chart-title">Performance Analytics</span>
-                            <div class="chart-toggle-group">
-                                <button type="button" class="chart-btn active" id="btn-chart-daily" data-chart="daily">Daily P&amp;L</button>
-                                <button type="button" class="chart-btn" id="btn-chart-equity" data-chart="equity">Equity Curve</button>
-                            </div>
+                            <span class="panel-title"><i data-lucide="bar-chart-3" class="panel-icon text-green"></i> Daily P&amp;L (30 Days)</span>
                         </div>
                         <div class="panel-body panel-body--chart">
                             <canvas id="pnl-chart"></canvas>
                         </div>
                     </section>
+                    <section class="panel chart-panel">
+                        <div class="panel-header">
+                            <span class="panel-title"><i data-lucide="trending-up" class="panel-icon text-cyan"></i> Cumulative Equity Curve</span>
+                        </div>
+                        <div class="panel-body panel-body--chart">
+                            <canvas id="equity-chart"></canvas>
+                        </div>
+                    </section>
                     <section class="panel exposure-panel">
                         <div class="panel-header">
-                            <span class="panel-title"><i data-lucide="pie-chart" class="panel-icon text-cyan"></i> Active Asset Exposure</span>
+                            <span class="panel-title"><i data-lucide="pie-chart" class="panel-icon text-amber"></i> Active Asset Exposure</span>
                         </div>
                         <div class="panel-body">
                             <div class="exposure-wrap">
@@ -592,6 +557,37 @@
                     </div>
                 </section>
             </div>
+
+            <!-- AI Thinking & Decisions Mini-Feed View -->
+            <div id="view-decisions" class="view-section">
+                <section class="panel">
+                    <div class="panel-header ai-feed-panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-title text-nowrap"><i data-lucide="sparkles" class="panel-icon text-blue"></i> AI Strategy Feed</span>
+                            <span class="panel-badge" id="ai-feed-count">0 Decisions</span>
+                        </div>
+                    </div>
+                    <div class="ai-feed-toolbar">
+                        <div class="ai-feed-filter-group">
+                            <label for="ai-symbol-filter" class="td-dim font-bold">Pair:</label>
+                            <select id="ai-symbol-filter" class="log-select ai-feed-select">
+                                <option value="ALL">All Symbols</option>
+                            </select>
+                        </div>
+                        <div class="ai-feed-actions">
+                            <button id="ai-feed-refresh-btn" class="log-btn"><i data-lucide="refresh-cw" class="btn-icon"></i> Refresh</button>
+                            <button id="ai-feed-clear-btn" class="log-btn"><i data-lucide="trash-2" class="btn-icon"></i> Clear</button>
+                        </div>
+                    </div>
+                        <div id="ai-feed-list" class="ai-feed-container">
+                            <div class="ai-feed-empty" id="ai-feed-empty-state">
+                                <i data-lucide="brain-circuit" style="width: 36px; height: 36px; margin-bottom: 8px; opacity: 0.5;"></i>
+                                <div>Waiting for incoming AI decisions from trading bots...</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
         </main>
     </div>
 
@@ -600,7 +596,8 @@
         const sidebar = document.getElementById('app-sidebar');
         const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
         if (sidebar && sidebarToggleBtn) {
-            if (localStorage.getItem('sidebar_collapsed') === 'true') {
+            // Only restore collapsed state on desktop screens (>= 1024px)
+            if (window.innerWidth >= 1024 && localStorage.getItem('sidebar_collapsed') === 'true') {
                 sidebar.classList.add('collapsed');
                 document.body.classList.add('sidebar-collapsed');
             }
@@ -633,6 +630,8 @@
                         fetchBots();
                     } else if (targetId === 'view-leaderboard') {
                         fetchLeaderboard();
+                    } else if (targetId === 'view-decisions') {
+                        fetchAiDecisions();
                     }
                 }
             });
@@ -855,12 +854,12 @@
             fetchLeaderboard();
         });
 
-        let currentChartType = 'daily';
         let rawDailyHistory = {{ pnl_history | tojson }};
         let initialExposure = {{ exposure | tojson }};
 
-        const ctx=document.getElementById('pnl-chart').getContext('2d');
-        const pnlChart = new Chart(ctx, {
+        // 1. Daily P&L Bar Chart
+        const pnlCtx = document.getElementById('pnl-chart').getContext('2d');
+        const pnlChart = new Chart(pnlCtx, {
             type: 'bar',
             data: {
                 labels: rawDailyHistory.map(d=>d.date),
@@ -887,27 +886,17 @@
             }
         });
 
-        function updatePnlChart(h) {
-            rawDailyHistory = h;
-            if (currentChartType === 'daily') {
-                pnlChart.config.type = 'bar';
-                pnlChart.data.labels = h.map(d=>d.date);
-                pnlChart.data.datasets = [{
-                    label: 'Daily P&L',
-                    data: h.map(d=>d.pnl),
-                    backgroundColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),
-                    borderColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),
-                    borderWidth: 1,
-                    borderRadius: 2
-                }];
-            } else {
-                pnlChart.config.type = 'line';
-                let cum = 0;
-                const cumData = h.map(d => { cum += (d.pnl || 0); return parseFloat(cum.toFixed(2)); });
-                pnlChart.data.labels = h.map(d=>d.date);
-                pnlChart.data.datasets = [{
+        // 2. Cumulative Equity Curve Line Chart
+        const equityCtx = document.getElementById('equity-chart').getContext('2d');
+        let cumInit = 0;
+        const cumInitData = rawDailyHistory.map(d => { cumInit += (d.pnl || 0); return parseFloat(cumInit.toFixed(2)); });
+        const equityChart = new Chart(equityCtx, {
+            type: 'line',
+            data: {
+                labels: rawDailyHistory.map(d=>d.date),
+                datasets: [{
                     label: 'Cumulative Equity',
-                    data: cumData,
+                    data: cumInitData,
                     borderColor: '#38bdf8',
                     backgroundColor: 'rgba(56, 189, 248, 0.12)',
                     fill: true,
@@ -915,26 +904,53 @@
                     borderWidth: 2,
                     pointRadius: 3,
                     pointBackgroundColor: '#38bdf8'
-                }];
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#1e293b', titleColor: '#f0f0f0', bodyColor: '#a0a0a0' }
+                },
+                scales: {
+                    y: { beginAtZero: false, grid: { color: 'rgba(64,64,64,0.3)' }, ticks: { color: '#a0a0a0', callback: v => '$' + v } },
+                    x: { grid: { display: false }, ticks: { color: '#a0a0a0', maxRotation: 0 } }
+                }
             }
-            pnlChart.update();
-        }
+        });
 
-        // Chart toggle handlers
-        document.getElementById('btn-chart-daily').addEventListener('click', () => {
-            currentChartType = 'daily';
-            document.getElementById('btn-chart-daily').classList.add('active');
-            document.getElementById('btn-chart-equity').classList.remove('active');
-            document.getElementById('pnl-chart-title').textContent = 'Daily P&L · 30D';
-            updatePnlChart(rawDailyHistory);
-        });
-        document.getElementById('btn-chart-equity').addEventListener('click', () => {
-            currentChartType = 'equity';
-            document.getElementById('btn-chart-equity').classList.add('active');
-            document.getElementById('btn-chart-daily').classList.remove('active');
-            document.getElementById('pnl-chart-title').textContent = 'Cumulative Equity Curve';
-            updatePnlChart(rawDailyHistory);
-        });
+        function updatePnlChart(h) {
+            rawDailyHistory = h;
+            // Update Daily Bar Chart
+            pnlChart.data.labels = h.map(d=>d.date);
+            pnlChart.data.datasets = [{
+                label: 'Daily P&L',
+                data: h.map(d=>d.pnl),
+                backgroundColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,0.6)':'rgba(229,57,53,0.6)'),
+                borderColor: h.map(d=>d.pnl>=0?'rgba(125,189,30,1)':'rgba(229,57,53,1)'),
+                borderWidth: 1,
+                borderRadius: 2
+            }];
+            pnlChart.update();
+
+            // Update Cumulative Equity Chart
+            let cum = 0;
+            const cumData = h.map(d => { cum += (d.pnl || 0); return parseFloat(cum.toFixed(2)); });
+            equityChart.data.labels = h.map(d=>d.date);
+            equityChart.data.datasets = [{
+                label: 'Cumulative Equity',
+                data: cumData,
+                borderColor: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                fill: true,
+                tension: 0.25,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointBackgroundColor: '#38bdf8'
+            }];
+            equityChart.update();
+        }
 
         // Asset Exposure Doughnut Chart
         const expCtx = document.getElementById('exposure-chart').getContext('2d');
@@ -1028,31 +1044,8 @@
 
         function handleLiveDecision(dec) {
             if (!dec) return;
-            const action = (dec.action || 'HOLD').toUpperCase();
-            const badge = document.getElementById('ai-action-badge');
-            const text = document.getElementById('ai-action-text');
-            const icon = document.getElementById('ai-action-icon');
-            if (badge && text && icon) {
-                badge.className = `ai-action-badge ai-action--${action}`;
-                text.textContent = action;
-                icon.textContent = action === 'BUY' ? '▲' : (action === 'SELL' ? '▼' : '⏸');
-            }
-            const confVal = document.getElementById('ai-confidence-value');
-            const confFill = document.getElementById('ai-confidence-fill');
-            const confNum = parseFloat(dec.confidence) || 80;
-            if (confVal) confVal.textContent = `${confNum.toFixed(1)}%`;
-            if (confFill) confFill.style.width = `${Math.min(100, Math.max(0, confNum))}%`;
-
-            const reasonEl = document.getElementById('ai-reason-text');
-            if (reasonEl) {
-                reasonEl.innerHTML = `<strong>[${dec.symbol || 'SYMBOL'}]</strong> ${dec.reason || 'Decision processed by AI model.'}`;
-            }
-            const pillSym = document.getElementById('ai-pill-symbol');
-            if (pillSym && dec.symbol) pillSym.textContent = `Symbol: ${dec.symbol}`;
-            const pillTf = document.getElementById('ai-pill-tf');
-            if (pillTf && dec.timeframe) pillTf.textContent = `TF: ${dec.timeframe}`;
-            const tsEl = document.getElementById('ai-card-timestamp');
-            if (tsEl) tsEl.textContent = `Updated: ${new Date().toLocaleTimeString()} (GMT+7)`;
+            // Prepend directly to Mini-Feed in memory & DOM
+            addDecisionToFeed(dec);
         }
 
         function handleLiveTick(tick) {
@@ -1418,6 +1411,148 @@
             const lbView = document.getElementById('view-leaderboard');
             if (lbView && lbView.classList.contains('active') && !document.hidden) {
                 fetchLeaderboard();
+            }
+        }, 8000);
+
+        // --- AI Decisions Mini-Feed Implementation ---
+        let rawAiDecisions = [];
+        const aiFeedList = document.getElementById('ai-feed-list');
+        const aiFeedCount = document.getElementById('ai-feed-count');
+        const aiSymbolFilter = document.getElementById('ai-symbol-filter');
+        const aiFeedRefreshBtn = document.getElementById('ai-feed-refresh-btn');
+        const aiFeedClearBtn = document.getElementById('ai-feed-clear-btn');
+
+        async function fetchAiDecisions() {
+            try {
+                const sym = aiSymbolFilter ? aiSymbolFilter.value : 'ALL';
+                const url = sym && sym !== 'ALL' ? `/api/dashboard/latest-decisions?limit=50&symbol=${sym}` : `/api/dashboard/latest-decisions?limit=50`;
+                const res = await fetch(url);
+                const data = await res.json();
+                rawAiDecisions = data || [];
+                updateAiSymbolOptions(rawAiDecisions);
+                renderAiDecisionsFeed();
+            } catch (err) {
+                console.error('Error fetching AI decisions:', err);
+            }
+        }
+
+        function updateAiSymbolOptions(decisions) {
+            if (!aiSymbolFilter) return;
+            const currentVal = aiSymbolFilter.value;
+            const symbols = new Set(['ALL']);
+            decisions.forEach(d => {
+                if (d.symbol) symbols.add(d.symbol.toUpperCase());
+            });
+            // Keep existing options plus any new ones
+            const existing = Array.from(aiSymbolFilter.options).map(o => o.value);
+            symbols.forEach(sym => {
+                if (!existing.includes(sym)) {
+                    const opt = document.createElement('option');
+                    opt.value = sym;
+                    opt.textContent = sym === 'ALL' ? 'All Symbols' : sym;
+                    aiSymbolFilter.appendChild(opt);
+                }
+            });
+            aiSymbolFilter.value = currentVal;
+        }
+
+        function addDecisionToFeed(dec) {
+            if (!dec) return;
+            rawAiDecisions.unshift(dec);
+            if (rawAiDecisions.length > 50) rawAiDecisions.pop();
+            updateAiSymbolOptions(rawAiDecisions);
+            renderAiDecisionsFeed();
+        }
+
+        function renderAiDecisionsFeed() {
+            if (!aiFeedList) return;
+            const selectedSym = aiSymbolFilter ? aiSymbolFilter.value : 'ALL';
+            const filtered = (selectedSym === 'ALL')
+                ? rawAiDecisions
+                : rawAiDecisions.filter(d => (d.symbol || '').toUpperCase() === selectedSym);
+
+            if (aiFeedCount) {
+                aiFeedCount.textContent = `${filtered.length} Decision${filtered.length === 1 ? '' : 's'}`;
+            }
+
+            if (filtered.length === 0) {
+                aiFeedList.innerHTML = `
+                    <div class="ai-feed-empty" id="ai-feed-empty-state">
+                        <i data-lucide="brain-circuit" style="width: 36px; height: 36px; margin-bottom: 8px; opacity: 0.5;"></i>
+                        <div>No AI decisions recorded ${selectedSym !== 'ALL' ? 'for ' + selectedSym : 'yet'}.</div>
+                    </div>
+                `;
+                if (window.lucide) lucide.createIcons();
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(item => {
+                const action = (item.action || 'HOLD').toUpperCase();
+                const conf = parseFloat(item.confidence) || 80;
+                const sym = item.symbol || 'GLOBAL';
+                const tf = item.timeframe || 'M15';
+                const bot = item.bot_id || 'AiAgent';
+                const reason = item.reason || 'Decision processed by AI model.';
+                const actionIcon = action === 'BUY' ? '▲' : (action === 'SELL' ? '▼' : '⏸');
+                const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+                html += `
+                    <div class="ai-feed-item feed-action--${action}">
+                        <div class="ai-feed-header">
+                            <div class="ai-feed-header-left">
+                                <span class="ai-action-badge ai-action--${action}" style="font-size: 0.85rem; padding: 3px 10px;">
+                                    ${actionIcon} ${action}
+                                </span>
+                                <span class="ai-feed-symbol">${sym}</span>
+                                <span class="ai-pill-tag">${tf}</span>
+                            </div>
+                            <div class="ai-feed-meta">
+                                <span><strong style="color:var(--text-primary);">${conf.toFixed(1)}%</strong> Conf</span>
+                                <span>•</span>
+                                <span>${bot}</span>
+                                <span>•</span>
+                                <span>${timeStr} (GMT+7)</span>
+                            </div>
+                        </div>
+                        <div class="ai-feed-reason">
+                            ${reason}
+                        </div>
+                        <div class="ai-feed-params">
+                            ${item.volume_lots ? `<span class="ai-param-chip">Vol: <strong>${item.volume_lots}L</strong></span>` : ''}
+                            ${item.sl_pips ? `<span class="ai-param-chip">SL: <strong>${item.sl_pips}p</strong></span>` : ''}
+                            ${item.tp_pips ? `<span class="ai-param-chip">TP: <strong>${item.tp_pips}p</strong></span>` : ''}
+                            ${item.new_sl_price ? `<span class="ai-param-chip">New SL: <strong>${item.new_sl_price}</strong></span>` : ''}
+                            ${item.partial_ratio ? `<span class="ai-param-chip">Close: <strong>${(item.partial_ratio * 100).toFixed(0)}%</strong></span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            aiFeedList.innerHTML = html;
+            if (window.lucide) lucide.createIcons();
+        }
+
+        if (aiSymbolFilter) {
+            aiSymbolFilter.addEventListener('change', renderAiDecisionsFeed);
+        }
+        if (aiFeedRefreshBtn) {
+            aiFeedRefreshBtn.addEventListener('click', fetchAiDecisions);
+        }
+        if (aiFeedClearBtn) {
+            aiFeedClearBtn.addEventListener('click', () => {
+                rawAiDecisions = [];
+                renderAiDecisionsFeed();
+            });
+        }
+
+        // Fetch initial AI decisions on load
+        fetchAiDecisions();
+
+        // Periodically refresh AI decisions if on decisions view
+        setInterval(() => {
+            const decView = document.getElementById('view-decisions');
+            if (decView && decView.classList.contains('active') && !document.hidden) {
+                fetchAiDecisions();
             }
         }, 8000);
         if (window.lucide) { lucide.createIcons(); }

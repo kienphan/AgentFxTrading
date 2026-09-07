@@ -90,3 +90,9 @@ def test_json_response_parser():
 
     embedded_json = 'Here is the decision: {"action": "HOLD", "confidence": 90.0} hope this helps.'
     assert JSONResponseParser.parse(embedded_json) == {"action": "HOLD", "confidence": 90.0}
+
+    # Truncated or unclosed JSON recovery
+    truncated_json = '{"action": "BUY", "volume_lots": 0.05, "reason": "Sweep detected'
+    parsed_trunc = JSONResponseParser.parse(truncated_json)
+    assert parsed_trunc["action"] == "BUY"
+    assert parsed_trunc["volume_lots"] == 0.05

@@ -146,7 +146,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* --- Mobile Bottom Tabbar --- */
+/* --- Mobile Bottom Tabbar (Float Bottom) --- */
 .sidebar {
     position: fixed;
     bottom: 0;
@@ -156,11 +156,19 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     border-top: 1px solid var(--border-subtle);
     display: flex;
     justify-content: space-around;
-    padding: 8px 0;
+    padding: 6px 0 max(6px, env(safe-area-inset-bottom, 6px)) 0;
     z-index: 999;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
+/* Hide desktop sidebar toggle button on mobile devices */
+@media (max-width: 1023px) {
+    .sidebar-toggle-btn {
+        display: none !important;
+    }
+}
 .nav-item {
     display: flex;
     flex-direction: column;
@@ -240,20 +248,16 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         width: 60px;
         padding: 20px 6px;
     }
-
     .sidebar.collapsed .nav-label {
         display: none;
     }
-
     .sidebar.collapsed .nav-item {
         justify-content: center;
         padding: 10px 0;
     }
-
     .sidebar.collapsed .nav-icon {
         font-size: 1.25rem;
     }
-    
     .main-content {
         padding: 16px 20px 24px 20px;
         height: 100%;
@@ -735,13 +739,173 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #94a3b8;
 }
+/* --- AI Decision Mini-Feed View Styling --- */
+.ai-feed-panel-header {
+    padding: 10px 14px;
+}
+.text-nowrap {
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ai-feed-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.ai-feed-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 140px;
+}
+.ai-feed-select {
+    min-width: 120px;
+    max-width: 180px;
+    flex: 1;
+}
+.ai-feed-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+@media (max-width: 600px) {
+    .ai-feed-toolbar {
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 8px 10px;
+        gap: 8px;
+    }
+    .ai-feed-filter-group {
+        min-width: 0;
+        flex: 1;
+    }
+    .ai-feed-select {
+        min-width: 0;
+        width: 100%;
+    }
+    .ai-feed-actions .log-btn {
+        padding: 5px 8px;
+        font-size: 0.72rem;
+    }
+    .ai-feed-container {
+        padding: 10px 8px;
+    }
+    .ai-feed-item {
+        padding: 10px 12px;
+    }
+}
+.ai-feed-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.ai-feed-empty {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    background: var(--bg-surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+}
+.ai-feed-item {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-left: 4px solid #6366f1;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.15s, transform 0.15s;
+    animation: fadeIn 0.25s ease;
+}
+.ai-feed-item:hover {
+    border-color: var(--border);
+    transform: translateY(-1px);
+}
+.ai-feed-item.feed-action--BUY {
+    border-left-color: #22c55e;
+}
+.ai-feed-item.feed-action--SELL {
+    border-left-color: #ef4444;
+}
+.ai-feed-item.feed-action--HOLD {
+    border-left-color: #64748b;
+}
+.ai-feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.ai-feed-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ai-feed-symbol {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+}
+.ai-feed-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.ai-feed-reason {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #cbd5e1;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.ai-feed-params {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.ai-param-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+.ai-param-chip strong {
+    color: var(--text-primary);
+}
 
 /* ==========================================================================
    Task 4: Dual Chart Layout & Asset Exposure Doughnut
    ========================================================================== */
 .analytics-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 14px;
     margin-bottom: 14px;
 }
@@ -794,24 +958,58 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 /* ==========================================================================
    Task 5: Mobile Responsive & Thumb-friendly Cards
    ========================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 1023px) {
     .app-body {
         flex-direction: column;
     }
-    .sidebar {
-        width: 100% !important;
-        flex-direction: row;
-        justify-content: space-around;
-        height: auto;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-        padding: 4px 0;
-        position: sticky;
-        top: 0;
-        z-index: 99;
+    .main-content {
+        padding: 12px 12px calc(72px + env(safe-area-inset-bottom, 16px)) 12px !important;
     }
-    .nav-label {
-        font-size: 0.65rem;
+    .sidebar,
+    .sidebar.collapsed {
+        position: fixed !important;
+        bottom: 0 !important;
+        top: auto !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100vw !important;
+        height: auto !important;
+        min-height: 52px !important;
+        flex-direction: row !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        background: var(--bg-surface) !important;
+        border-right: none !important;
+        border-top: 1px solid var(--border) !important;
+        border-bottom: none !important;
+        padding: 6px 4px max(8px, env(safe-area-inset-bottom, 8px)) 4px !important;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5) !important;
+        z-index: 99999 !important;
+        display: flex !important;
+    }
+    .sidebar.collapsed .nav-label {
+        display: block !important;
+    }
+    .sidebar .nav-item,
+    .sidebar.collapsed .nav-item {
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 4px 6px !important;
+        flex: 1 !important;
+        max-width: 72px !important;
+        gap: 2px !important;
+    }
+    .sidebar .nav-label,
+    .sidebar.collapsed .nav-label {
+        font-size: 0.60rem !important;
+        display: block !important;
+        white-space: nowrap !important;
+    }
+    .sidebar .nav-icon svg,
+    .sidebar.collapsed .nav-icon svg {
+        width: 18px !important;
+        height: 18px !important;
     }
     .kpi-grid {
         grid-template-columns: repeat(2, 1fr) !important;
