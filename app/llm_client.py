@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
