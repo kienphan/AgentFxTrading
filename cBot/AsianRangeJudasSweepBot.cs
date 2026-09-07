@@ -33,6 +33,13 @@ namespace cAlgo.Robots
         Dynamic_ATR_Percent,
         Fixed_Pips
     }
+    public enum JudasDstRule
+    {
+        Auto,   // Auto: London follows Europe DST, New York follows US DST
+        None,   // Manual/Fixed UTC hours
+        Europe, // Always follows Europe DST (BST)
+        US      // Always follows US DST (EDT)
+    }
 
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.FullAccess)]
     public class Asian_Range_Judas_Sweep_AI_Bot : Robot
@@ -134,6 +141,8 @@ namespace cAlgo.Robots
 
         [Parameter("NY Killzone End (UTC Hour)", Group = "Asian Range & Judas Sweep", DefaultValue = 16, MinValue = 0, MaxValue = 23)]
         public int nyEndHour { get; set; }
+        [Parameter("DST Rule (Auto-adjust Summer/Winter)", Group = "Asian Range & Judas Sweep", DefaultValue = JudasDstRule.Auto)]
+        public JudasDstRule dstRule { get; set; }
 
         [Parameter("Judas Sweep Buffer (Pips)", Group = "Asian Range & Judas Sweep", DefaultValue = 15.0, MinValue = 1.0, MaxValue = 50000.0)]
         public double sweepBufferPips { get; set; }
@@ -481,6 +490,10 @@ namespace cAlgo.Robots
                 }
             }
             try { InitializeAsianSession(); } catch (Exception ex) { Print($"[Asian Range Init Warning] {ex.Message}"); }
+            GetAdjustedKillzoneHours(Server.Time, out int lStart, out int lEnd, out int nyStart, out int nyEnd);
+            bool isEurDst = IsEuropeDst(Server.Time);
+            bool isUsDst = IsUsDst(Server.Time);
+            Print($"[DST Time Sync] Rule: {dstRule} | Europe: {(isEurDst ? "Summer (BST)" : "Winter (GMT)")} -> London KZ: {lStart:D2}:00 - {lEnd:D2}:00 UTC | US: {(isUsDst ? "Summer (EDT)" : "Winter (EST)")} -> NY KZ: {nyStart:D2}:30 - {nyEnd:D2}:00 UTC");
 
 
             _httpClient = new HttpClient();
@@ -1005,16 +1018,78 @@ namespace cAlgo.Robots
             }
         }
 
+        private DateTime GetNthSunday(int year, int month, int n)
+        {
+            DateTime firstDay = new DateTime(year, month, 1);
+            int offset = (7 - (int)firstDay.DayOfWeek) % 7;
+            return firstDay.AddDays(offset + (n - 1) * 7);
+        }
+
+        private DateTime GetLastSunday(int year, int month)
+        {
+            DateTime lastDay = new DateTime(year, month, DateTime.DaysInMonth(year, month));
+            int offset = (int)lastDay.DayOfWeek;
+            return lastDay.AddDays(-offset);
+        }
+
+        private bool IsEuropeDst(DateTime timeUtc)
+        {
+            int y = timeUtc.Year;
+            // Europe: Last Sunday of March (1:00 UTC) to Last Sunday of October (1:00 UTC)
+            DateTime start = GetLastSunday(y, 3).AddHours(1);
+            DateTime end = GetLastSunday(y, 10).AddHours(1);
+            return timeUtc >= start && timeUtc < end;
+        }
+
+        private bool IsUsDst(DateTime timeUtc)
+        {
+            int y = timeUtc.Year;
+            // US: Second Sunday of March (7:00 UTC) to First Sunday of November (6:00 UTC)
+            DateTime start = GetNthSunday(y, 3, 2).AddHours(7);
+            DateTime end = GetNthSunday(y, 11, 1).AddHours(6);
+            return timeUtc >= start && timeUtc < end;
+        }
+
+        private void GetAdjustedKillzoneHours(DateTime timeUtc, out int adjLondonStart, out int adjLondonEnd, out int adjNyStart, out int adjNyEnd)
+        {
+            adjLondonStart = londonStartHour;
+            adjLondonEnd = londonEndHour;
+            adjNyStart = nyStartHour;
+            adjNyEnd = nyEndHour;
+
+            if (dstRule == JudasDstRule.None) return;
+
+            // Default input hours (london: 7-10 UTC, NY: 12:30-16:00 UTC) represent SUMMER schedule.
+            // In Winter (Standard Time), London open moves to 8:00 UTC (+1h), NY open moves to 13:30 UTC (+1h).
+            bool europeSummer = (dstRule == JudasDstRule.US) ? IsUsDst(timeUtc) : IsEuropeDst(timeUtc);
+            bool usSummer = (dstRule == JudasDstRule.Europe) ? IsEuropeDst(timeUtc) : IsUsDst(timeUtc);
+
+            if (!europeSummer)
+            {
+                adjLondonStart = (londonStartHour + 1) % 24;
+                adjLondonEnd = (londonEndHour + 1) % 24;
+            }
+
+            if (!usSummer)
+            {
+                adjNyStart = (nyStartHour + 1) % 24;
+                adjNyEnd = (nyEndHour + 1) % 24;
+            }
+        }
+
         private bool IsGoldenKillzone(DateTime timeUtc, out string killzoneName)
         {
             int hour = timeUtc.Hour;
             int min = timeUtc.Minute;
-            if (hour >= londonStartHour && hour < londonEndHour)
+
+            GetAdjustedKillzoneHours(timeUtc, out int adjLondonStart, out int adjLondonEnd, out int adjNyStart, out int adjNyEnd);
+
+            if (hour >= adjLondonStart && hour < adjLondonEnd)
             {
                 killzoneName = "London Open Killzone";
                 return true;
             }
-            if ((hour == nyStartHour && min >= 30) || (hour > nyStartHour && hour < nyEndHour))
+            if ((hour == adjNyStart && min >= 30) || (hour > adjNyStart && hour < adjNyEnd))
             {
                 killzoneName = "New York Overlap Killzone";
                 return true;
