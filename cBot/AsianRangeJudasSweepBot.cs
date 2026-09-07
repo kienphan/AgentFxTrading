@@ -22,6 +22,18 @@ namespace cAlgo.Robots
         Local_Python_Server
     }
 
+    public enum BreakEvenTriggerMode
+    {
+        Risk_Reward_Ratio,
+        Fixed_Pips
+    }
+
+    public enum AntiFomoToleranceMode
+    {
+        Dynamic_ATR_Percent,
+        Fixed_Pips
+    }
+
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.FullAccess)]
     public class Asian_Range_Judas_Sweep_AI_Bot : Robot
     {
@@ -227,11 +239,46 @@ namespace cAlgo.Robots
         [Parameter("Enable Moving Stoploss to break even price? ", Group = "Setting Break Even", DefaultValue = false)]
         public bool enableBreakEvenPrice { get; set; }
 
+        [Parameter("Break Even Trigger Mode", Group = "Setting Break Even", DefaultValue = BreakEvenTriggerMode.Risk_Reward_Ratio)]
+        public BreakEvenTriggerMode breakEvenMode { get; set; }
+
+        [Parameter("Trigger Point (R:R Ratio)", Group = "Setting Break Even", DefaultValue = 1.5, MinValue = 0.3, MaxValue = 10.0, Step = 0.1)]
+        public double breakEvenRrTrigger { get; set; }
+
         [Parameter("Trigger point of break even [pips]", Group = "Setting Break Even", DefaultValue = 250)]
         public double breakEvenTrigger { get; set; }
 
+        [Parameter("Break Even Extra Buffer (pips)", Group = "Setting Break Even", DefaultValue = 2.0, MinValue = 0.0)]
+        public double breakEvenExtraPips { get; set; }
+
         [Parameter("Enable Trailing Stop ? ", Group = "Setting Break Even", DefaultValue = false)]
         public bool enableTrailingStopFromBreakEven { get; set; }
+        #endregion
+
+        #region Anti-FOMO & Candle Wick Retracement Parameters
+        [Parameter("Enable Wick Retracement Hunting?", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = true)]
+        public bool enableWickRetracementHunting { get; set; }
+
+        [Parameter("Tolerance Mode", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = AntiFomoToleranceMode.Dynamic_ATR_Percent)]
+        public AntiFomoToleranceMode antiFomoToleranceMode { get; set; }
+
+        [Parameter("Slippage Tolerance (% of ATR)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 10.0, MinValue = 1.0, MaxValue = 50.0, Step = 0.5)]
+        public double slippageToleranceAtrPercent { get; set; }
+
+        [Parameter("Pullback Target Buffer (% of ATR)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 5.0, MinValue = 0.0, MaxValue = 30.0, Step = 0.5)]
+        public double pullbackBufferAtrPercent { get; set; }
+
+        [Parameter("Fixed Slippage (pips - fallback)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 5.0, MinValue = 0.5, MaxValue = 100.0, Step = 0.5)]
+        public double slippageTolerancePips { get; set; }
+
+        [Parameter("Fixed Pullback Buffer (pips - fallback)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 2.0, MinValue = 0.0, MaxValue = 50.0, Step = 0.5)]
+        public double pullbackBufferPips { get; set; }
+
+        [Parameter("Max Staging Wait (minutes)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 8, MinValue = 1, MaxValue = 60)]
+        public int maxStagingWaitMinutes { get; set; }
+
+        [Parameter("Cancel If TP Reached (%)", Group = "Anti-FOMO & Candle Wick Retracement", DefaultValue = 50.0, MinValue = 10.0, MaxValue = 90.0, Step = 5.0)]
+        public double cancelIfTpReachedPercent { get; set; }
         #endregion
 
         #region Setting DCA Parameters
@@ -365,6 +412,15 @@ namespace cAlgo.Robots
         private bool _isCircuitBreakerActive = false;
 
         private Dictionary<int, bool> _movedToBreakEven = new Dictionary<int, bool>();
+        private enum StagedActionState { None, Armed_Buy, Armed_Sell }
+        private StagedActionState _stagedState = StagedActionState.None;
+        private AgentDecision _stagedDecision = null;
+        private DateTime _stagedBarOpenTime = DateTime.MinValue;
+        private DateTime _stagedExpiryTime = DateTime.MinValue;
+        private double _stagedTargetPullbackPrice = 0.0;
+        private double _stagedVolumeUnits = 0.0;
+        private double _stagedSlPips = 0.0;
+        private double _stagedTpPips = 0.0;
 
         private Position dcaStartPosition = null;
         private Position dcaEndPosition_down = null;
@@ -549,6 +605,8 @@ namespace cAlgo.Robots
         protected override void OnTick()
         {
             if (_isExpired) return;
+            ProcessStagedOrderExecution();
+
 
             if (enableTrailingStop) { TrailingStop(); }
 
@@ -703,6 +761,7 @@ namespace cAlgo.Robots
             Position closedPosition = args.Position;
             if (closedPosition.Label != label) return;
 
+            _movedToBreakEven.Remove(closedPosition.Id);
             double exitPrice = closedPosition.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
             try
             {
@@ -1173,9 +1232,7 @@ namespace cAlgo.Robots
                         double newSL = Symbol.Bid - TrailingStopStep * Symbol.PipSize;
                         if (pos.StopLoss == null || newSL > pos.StopLoss)
                         {
-#pragma warning disable CS0618
-                            ModifyPosition(pos, newSL, pos.TakeProfit);
-#pragma warning restore CS0618
+                            SafeModifyPosition(pos, newSL, pos.TakeProfit, source: "TrailingStop");
                         }
                     }
                 }
@@ -1187,13 +1244,37 @@ namespace cAlgo.Robots
                         double newSL = Symbol.Ask + TrailingStopStep * Symbol.PipSize;
                         if (pos.StopLoss == null || newSL < pos.StopLoss)
                         {
-#pragma warning disable CS0618
-                            ModifyPosition(pos, newSL, pos.TakeProfit);
-#pragma warning restore CS0618
+                            SafeModifyPosition(pos, newSL, pos.TakeProfit, source: "TrailingStop");
                         }
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Dynamically calculates the required break-even buffer pips to fully offset broker round-trip commission and swap fees.
+        /// Prevents negative net profit when price returns to hit break-even Stop Loss.
+        /// </summary>
+        private double CalculateTrueBreakEvenBufferPips(Position pos)
+        {
+            if (pos == null) return breakEvenExtraPips;
+
+            // 1. Estimate total round-trip commission (cTrader ECN/Raw brokers charge half-turn at open and half-turn at close)
+            double estimatedCommission = Math.Abs(pos.Commissions) * 2.0;
+
+            // 2. Add accumulated negative swap (overnight financing cost) if any
+            double negativeSwap = pos.Swap < 0 ? Math.Abs(pos.Swap) : 0.0;
+            double totalFees = estimatedCommission + negativeSwap;
+
+            // 3. Convert fee monetary costs into pips based on position volume in units and pip value
+            double pipMoney = pos.VolumeInUnits * Symbol.PipValue;
+            double feePips = pipMoney > 0 ? (totalFees / pipMoney) : 0.0;
+
+            // 4. Add safety margin (+0.5 pip) to cover slippage and spread widening during closing execution
+            double minSafeBufferPips = feePips + 0.5;
+
+            // 5. Final buffer is the maximum of user's configured buffer and min fee-compensating buffer
+            return Math.Max(breakEvenExtraPips, minSafeBufferPips);
         }
 
         private void ProcessBreakEvenLogic()
@@ -1205,41 +1286,272 @@ namespace cAlgo.Robots
             {
                 if (_movedToBreakEven.ContainsKey(pos.Id) && _movedToBreakEven[pos.Id]) continue;
 
+                double pipsGain = 0;
                 if (pos.TradeType == TradeType.Buy)
                 {
-                    double pipsGain = (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize;
-                    if (pipsGain >= breakEvenTrigger)
-                    {
-                        double newSL = pos.EntryPrice + (Symbol.PipSize * 2);
-                        if (pos.StopLoss == null || newSL > pos.StopLoss)
-                        {
-#pragma warning disable CS0618
-                            ModifyPosition(pos, newSL, pos.TakeProfit);
-#pragma warning restore CS0618
-                            _movedToBreakEven[pos.Id] = true;
-                            Print($"[BreakEven] Buy position {pos.Id} moved SL to break-even.");
-                        }
-                    }
+                    pipsGain = (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize;
                 }
                 else if (pos.TradeType == TradeType.Sell)
                 {
-                    double pipsGain = (pos.EntryPrice - Symbol.Ask) / Symbol.PipSize;
+                    pipsGain = (pos.EntryPrice - Symbol.Ask) / Symbol.PipSize;
+                }
+
+                bool isTriggered = false;
+                if (breakEvenMode == BreakEvenTriggerMode.Risk_Reward_Ratio)
+                {
+                    double initialSlDistancePips = pos.StopLoss.HasValue 
+                        ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize 
+                        : stoplossPip;
+
+                    if (initialSlDistancePips <= 0) initialSlDistancePips = stoplossPip > 0 ? stoplossPip : 100;
+
+                    double currentRr = pipsGain / initialSlDistancePips;
+                    if (currentRr >= breakEvenRrTrigger)
+                    {
+                        isTriggered = true;
+                    }
+                }
+                else // Fixed_Pips
+                {
                     if (pipsGain >= breakEvenTrigger)
                     {
-                        double newSL = pos.EntryPrice - (Symbol.PipSize * 2);
+                        isTriggered = true;
+                    }
+                }
+
+                if (isTriggered)
+                {
+                    double effectiveBufferPips = CalculateTrueBreakEvenBufferPips(pos);
+                    double extraBuffer = effectiveBufferPips * Symbol.PipSize;
+                    bool enableNativeTs = enableTrailingStopFromBreakEven;
+
+                    if (pos.TradeType == TradeType.Buy)
+                    {
+                        double newSL = pos.EntryPrice + extraBuffer;
+                        if (pos.StopLoss == null || newSL > pos.StopLoss)
+                        {
+                            var res = SafeModifyPosition(pos, newSL, pos.TakeProfit, hasTrailingStop: enableNativeTs, source: "BreakEven");
+                            if (res != null && res.IsSuccessful)
+                            {
+                                _movedToBreakEven[pos.Id] = true;
+                                Print($"[BreakEven] Buy position #{pos.Id} moved SL to break-even ({newSL:F5}, Buffer: +{effectiveBufferPips:F1} pips, NativeTS: {enableNativeTs}). Gain: {pipsGain:F1} pips.");
+                            }
+                        }
+                    }
+                    else if (pos.TradeType == TradeType.Sell)
+                    {
+                        double newSL = pos.EntryPrice - extraBuffer;
                         if (pos.StopLoss == null || newSL < pos.StopLoss)
                         {
-#pragma warning disable CS0618
-                            ModifyPosition(pos, newSL, pos.TakeProfit);
-#pragma warning restore CS0618
-                            _movedToBreakEven[pos.Id] = true;
-                            Print($"[BreakEven] Sell position {pos.Id} moved SL to break-even.");
+                            var res = SafeModifyPosition(pos, newSL, pos.TakeProfit, hasTrailingStop: enableNativeTs, source: "BreakEven");
+                            if (res != null && res.IsSuccessful)
+                            {
+                                _movedToBreakEven[pos.Id] = true;
+                                Print($"[BreakEven] Sell position #{pos.Id} moved SL to break-even ({newSL:F5}, Buffer: -{effectiveBufferPips:F1} pips, NativeTS: {enableNativeTs}). Gain: {pipsGain:F1} pips.");
+                            }
                         }
                     }
                 }
             }
         }
         #endregion
+
+        #region Safe Position Modification & Pre-Flight Validation Engine
+        private TradeResult SafeModifyPosition(Position pos, double? targetSL, double? targetTP, bool? hasTrailingStop = null, string source = "")
+        {
+            if (pos == null) return null;
+
+            double currentBid = Symbol.Bid;
+            double currentAsk = Symbol.Ask;
+            double minStopBuffer = Math.Max(Symbol.Spread * 3, Symbol.TickSize * 10);
+
+            // Strict One-Way Profit Ratchet: Never loosen Stop Loss
+            double? finalSL = targetSL ?? pos.StopLoss;
+            if (targetSL.HasValue && pos.StopLoss.HasValue)
+            {
+                if (pos.TradeType == TradeType.Buy && targetSL.Value < pos.StopLoss.Value)
+                {
+                    finalSL = pos.StopLoss.Value;
+                }
+                else if (pos.TradeType == TradeType.Sell && targetSL.Value > pos.StopLoss.Value)
+                {
+                    finalSL = pos.StopLoss.Value;
+                }
+            }
+
+            double? finalTP = targetTP ?? pos.TakeProfit;
+            bool finalHasTrailingStop = hasTrailingStop ?? pos.HasTrailingStop;
+
+            // ── 1. SELL Position Intelligent Pre-Flight Validation & Auto-Mapping ──
+            if (pos.TradeType == TradeType.Sell)
+            {
+                // A. Smart Auto-Mapping: If proposed TP is at or ABOVE current market (targetTP >= currentBid - minStopBuffer)
+                // For a SELL order, TP cannot be placed above market. Geometrically, this is a Positive Trailing Stop Loss!
+                if (targetTP.HasValue && targetTP.Value >= (currentBid - minStopBuffer))
+                {
+                    double proposedTrailingSL = targetTP.Value;
+                    Print($"[SafeModify Auto-Mapping] Detected targetTP {targetTP.Value:F2} is >= Market (Bid: {currentBid:F2}) on SELL #{pos.Id}. Re-mapping to Trailing SL to lock profit!");
+                    
+                    // Preserve original structural TP
+                    finalTP = pos.TakeProfit;
+
+                    // If proposed trailing SL is valid above current market (proposedTrailingSL > currentAsk + minStopBuffer)
+                    if (proposedTrailingSL > (currentAsk + minStopBuffer))
+                    {
+                        if (!pos.StopLoss.HasValue || proposedTrailingSL < pos.StopLoss.Value)
+                        {
+                            finalSL = proposedTrailingSL;
+                        }
+                    }
+                    else
+                    {
+                        // Price has already reached or breached this trailing level
+                        if (currentAsk < pos.EntryPrice)
+                        {
+                            Print($"[SafeModify Profit-Lock] SELL #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and trailing level {proposedTrailingSL:F2} is breached by Ask ({currentAsk:F2}). Closing position to lock profit!");
+                            _lastAgentReason = "ProfitLockExit";
+                            ClosePosition(pos);
+                            return null;
+                        }
+                        else
+                        {
+                            finalSL = pos.StopLoss;
+                        }
+                    }
+                }
+
+                // B. Validate Stop Loss Boundary for SELL: SL must be strictly > (currentAsk + minStopBuffer)
+                if (finalSL.HasValue && finalSL.Value <= (currentAsk + minStopBuffer))
+                {
+                    if (currentAsk < pos.EntryPrice)
+                    {
+                        Print($"[SafeModify Profit-Lock] SELL #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and SL {finalSL.Value:F2} is within market Ask ({currentAsk:F2}). Closing position immediately!");
+                        _lastAgentReason = "ProfitLockExit";
+                        ClosePosition(pos);
+                        return null;
+                    }
+                    else
+                    {
+                        // In drawdown: retain original safe SL to prevent broker rejection
+                        finalSL = pos.StopLoss;
+                    }
+                }
+
+                // C. Validate Take Profit Boundary for SELL: TP must be strictly < (currentBid - minStopBuffer)
+                if (finalTP.HasValue && finalTP.Value >= (currentBid - minStopBuffer))
+                {
+                    finalTP = pos.TakeProfit;
+                }
+
+                // D. Ensure SL > TP for SELL
+                if (finalSL.HasValue && finalTP.HasValue && finalSL.Value <= finalTP.Value)
+                {
+                    finalTP = pos.TakeProfit;
+                }
+            }
+            // ── 2. BUY Position Intelligent Pre-Flight Validation & Auto-Mapping ──
+            else if (pos.TradeType == TradeType.Buy)
+            {
+                // A. Smart Auto-Mapping: If proposed TP is at or BELOW current market (targetTP <= currentAsk + minStopBuffer)
+                // For a BUY order, TP cannot be placed below market. Geometrically, this is a Positive Trailing Stop Loss!
+                if (targetTP.HasValue && targetTP.Value <= (currentAsk + minStopBuffer))
+                {
+                    double proposedTrailingSL = targetTP.Value;
+                    Print($"[SafeModify Auto-Mapping] Detected targetTP {targetTP.Value:F2} is <= Market (Ask: {currentAsk:F2}) on BUY #{pos.Id}. Re-mapping to Trailing SL to lock profit!");
+                    
+                    // Preserve original structural TP
+                    finalTP = pos.TakeProfit;
+
+                    // If proposed trailing SL is valid below current market (proposedTrailingSL < currentBid - minStopBuffer)
+                    if (proposedTrailingSL < (currentBid - minStopBuffer))
+                    {
+                        if (!pos.StopLoss.HasValue || proposedTrailingSL > pos.StopLoss.Value)
+                        {
+                            finalSL = proposedTrailingSL;
+                        }
+                    }
+                    else
+                    {
+                        // Price has already reached or breached this trailing level
+                        if (currentBid > pos.EntryPrice)
+                        {
+                            Print($"[SafeModify Profit-Lock] BUY #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and trailing level {proposedTrailingSL:F2} is breached by Bid ({currentBid:F2}). Closing position to lock profit!");
+                            _lastAgentReason = "ProfitLockExit";
+                            ClosePosition(pos);
+                            return null;
+                        }
+                        else
+                        {
+                            finalSL = pos.StopLoss;
+                        }
+                    }
+                }
+
+                // B. Validate Stop Loss Boundary for BUY: SL must be strictly < (currentBid - minStopBuffer)
+                if (finalSL.HasValue && finalSL.Value >= (currentBid - minStopBuffer))
+                {
+                    if (currentBid > pos.EntryPrice)
+                    {
+                        Print($"[SafeModify Profit-Lock] BUY #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and SL {finalSL.Value:F2} is within market Bid ({currentBid:F2}). Closing position immediately!");
+                        _lastAgentReason = "ProfitLockExit";
+                        ClosePosition(pos);
+                        return null;
+                    }
+                    else
+                    {
+                        // In drawdown: retain original safe SL to prevent broker rejection
+                        finalSL = pos.StopLoss;
+                    }
+                }
+
+                // C. Validate Take Profit Boundary for BUY: TP must be strictly > (currentAsk + minStopBuffer)
+                if (finalTP.HasValue && finalTP.Value <= (currentAsk + minStopBuffer))
+                {
+                    finalTP = pos.TakeProfit;
+                }
+
+                // D. Ensure SL < TP for BUY
+                if (finalSL.HasValue && finalTP.HasValue && finalSL.Value >= finalTP.Value)
+                {
+                    finalTP = pos.TakeProfit;
+                }
+            }
+
+            // ── 3. Final Boundary Verification & Submission to Broker ──
+            bool slChanged = (finalSL.HasValue && (!pos.StopLoss.HasValue || Math.Abs(finalSL.Value - pos.StopLoss.Value) > (Symbol.PipSize * 0.5)));
+            bool tpChanged = (finalTP.HasValue && (!pos.TakeProfit.HasValue || Math.Abs(finalTP.Value - pos.TakeProfit.Value) > (Symbol.PipSize * 0.5)));
+            bool tsChanged = (finalHasTrailingStop != pos.HasTrailingStop);
+
+            if (!slChanged && !tpChanged && !tsChanged)
+            {
+                return null;
+            }
+
+            // Pre-flight broker geometric compliance check
+            bool isSlSafe = !finalSL.HasValue || (pos.TradeType == TradeType.Buy ? finalSL.Value < (currentBid - minStopBuffer) : finalSL.Value > (currentAsk + minStopBuffer));
+            bool isTpSafe = !finalTP.HasValue || (pos.TradeType == TradeType.Buy ? finalTP.Value > (currentAsk + minStopBuffer) : finalTP.Value < (currentBid - minStopBuffer));
+
+            if (!isSlSafe || !isTpSafe)
+            {
+                Print($"[SafeModify Notice] Position #{pos.Id} modification bypassed (SL: {finalSL}, TP: {finalTP} vs Bid: {currentBid:F2}, Ask: {currentAsk:F2}, Buffer: {minStopBuffer:F2}). Prevented InvalidStopLossTakeProfit broker rejection.");
+                return null;
+            }
+
+#pragma warning disable CS0618
+            var result = ModifyPosition(pos, finalSL, finalTP, finalHasTrailingStop);
+#pragma warning restore CS0618
+            if (result.IsSuccessful)
+            {
+                Print($"[{source}] Position #{pos.Id} successfully modified -> SL: {finalSL:F2}, TP: {finalTP:F2}, HasTS: {finalHasTrailingStop}");
+            }
+            else
+            {
+                Print($"[{source} Warning] ModifyPosition for #{pos.Id} returned: {result.Error}");
+            }
+            return result;
+        }
+        #endregion
+
 
         #region DCA Logic
         private void ProcessDCALogic()
@@ -2916,155 +3228,9 @@ Reply strictly with JSON object.";
                                 targetTP = Math.Round(tpPrice, Symbol.Digits);
                             }
 
-                            double currentAsk = Symbol.Ask;
-                            double currentBid = Symbol.Bid;
-                            double minStopBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
-
-                            // Anti-Premature Break-Even Threshold (pips)
-                            // BTCUSD: min 6,000p ($60), ETHUSD: min 600p ($6), Gold: min 300p ($3), Forex: min 20p
-                            double minBeProfitPips = 20.0;
-                            string symUpper = SymbolName.ToUpperInvariant();
-                            if (symUpper.Contains("BTC")) minBeProfitPips = 6000.0;
-                            else if (symUpper.Contains("ETH")) minBeProfitPips = 600.0;
-                            else if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 300.0;
-
-                            double currentProfitPips = pos.TradeType == TradeType.Buy 
-                                ? (currentBid - pos.EntryPrice) / Symbol.PipSize 
-                                : (pos.EntryPrice - currentAsk) / Symbol.PipSize;
-
-                            // ── 1. SELL Position Intelligent TP/SL Analysis ──
-                            if (pos.TradeType == TradeType.Sell)
-                            {
-                                // A. Smart Auto-Mapping: Only map if position has verified profit (>= minBeProfitPips)
-                                if (targetTP.HasValue && targetTP.Value > (currentAsk + minStopBuffer) && targetTP.Value < pos.EntryPrice && currentProfitPips >= minBeProfitPips)
-                                {
-                                    Print($"[AI Smart Auto-Mapping] Detected targetTP {targetTP.Value:F2} is between Entry ({pos.EntryPrice:F2}) and Market ({currentAsk:F2}) on SELL #{pos.Id}. Re-mapping to Positive Trailing SL to lock profit!");
-                                    targetSL = targetTP.Value;
-                                    targetTP = pos.TakeProfit; // Preserve original TP target
-                                }
-                                // B. Genuine Take Profit Reached: Target TP is at or above current market price
-                                if (targetTP.HasValue && targetTP.Value >= (currentBid - minStopBuffer))
-                                {
-                                    Print($"[AI Agent TP Reached] Target TP {targetTP.Value:F2} reached/within buffer of current price (Bid: {currentBid:F2}, Ask: {currentAsk:F2}). Closing SELL position #{pos.Id} to lock profit!");
-                                    ClosePosition(pos);
-                                    _ = SendTelegramAlertAsync($"🎯 <b>[AI Agent] Take Profit Reached!</b>\nTarget TP {targetTP.Value:F2} reached at current price {currentBid:F2}.\nClosed SELL position #{pos.Id} to lock profit.\nReason: {decision.reason}");
-                                    continue;
-                                }
-
-                                // C. Stop Loss Handling (Hybrid Protection Engine)
-                                if (targetSL.HasValue && targetSL.Value <= (currentAsk + minStopBuffer))
-                                {
-                                    bool inProfit = currentAsk < pos.EntryPrice;
-                                    if (inProfit)
-                                    {
-                                        // Case 1: Trade is in profit -> Close position immediately to lock remaining gains!
-                                        Print($"[AI Smart SL Exit] SELL #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and proposed SL {targetSL.Value:F2} is breached by current price (Ask: {currentAsk:F2}). Closing position immediately to lock profit!");
-                                        ClosePosition(pos);
-                                        _ = SendTelegramAlertAsync($"🎯 <b>[AI Agent] Profit Lock Exit!</b>\nSELL #{pos.Id} closed at {currentAsk:F2} (Net Profit: ${pos.NetProfit:F2}) as trailing SL was breached.\nReason: {decision.reason}");
-                                        continue;
-                                    }
-                                    else
-                                    {
-                                        // Case 2: Trade is in drawdown
-                                        if (pos.StopLoss.HasValue && targetSL.Value < pos.StopLoss.Value && targetSL.Value > currentAsk)
-                                        {
-                                            targetSL = Math.Round(currentAsk + minStopBuffer, Symbol.Digits);
-                                            Print($"[AI Smart SL Notice] SELL #{pos.Id} in drawdown: tightening SL to minimum safe distance {targetSL.Value:F2} above market Ask.");
-                                        }
-                                        else
-                                        {
-                                            Print($"[AI Smart SL Notice] SELL #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Ask: {currentAsk:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
-                                            targetSL = pos.StopLoss;
-                                        }
-                                    }
-                                }
-                            }
-                            // ── 2. BUY Position Intelligent TP/SL Analysis ──
-                            else if (pos.TradeType == TradeType.Buy)
-                            {
-                                // A. Smart Auto-Mapping: Only map if position has verified profit (>= minBeProfitPips)
-                                if (targetTP.HasValue && targetTP.Value < (currentBid - minStopBuffer) && targetTP.Value > pos.EntryPrice && currentProfitPips >= minBeProfitPips)
-                                {
-                                    Print($"[AI Smart Auto-Mapping] Detected targetTP {targetTP.Value:F2} is between Entry ({pos.EntryPrice:F2}) and Market ({currentBid:F2}) on BUY #{pos.Id}. Re-mapping to Positive Trailing SL to lock profit!");
-                                    targetSL = targetTP.Value;
-                                    targetTP = pos.TakeProfit; // Preserve original TP target
-                                }
-
-                                // B. Genuine Take Profit Reached: Target TP is at or below current market price
-                                if (targetTP.HasValue && targetTP.Value <= (currentAsk + minStopBuffer))
-                                {
-                                    Print($"[AI Agent TP Reached] Target TP {targetTP.Value:F2} reached/within buffer of current price (Ask: {currentAsk:F2}, Bid: {currentBid:F2}). Closing BUY position #{pos.Id} to lock profit!");
-                                    ClosePosition(pos);
-                                    _ = SendTelegramAlertAsync($"🎯 <b>[AI Agent] Take Profit Reached!</b>\nTarget TP {targetTP.Value:F2} reached at current price {currentAsk:F2}.\nClosed BUY position #{pos.Id} to lock profit.\nReason: {decision.reason}");
-                                    continue;
-                                }
-
-                                // C. Stop Loss Handling (Hybrid Protection Engine)
-                                if (targetSL.HasValue && targetSL.Value >= (currentBid - minStopBuffer))
-                                {
-                                    bool inProfit = currentBid > pos.EntryPrice;
-                                    if (inProfit)
-                                    {
-                                        // Case 1: Trade is in profit -> Close position immediately to lock remaining gains!
-                                        Print($"[AI Smart SL Exit] BUY #{pos.Id} is in profit ($+{pos.NetProfit:F2}) and proposed SL {targetSL.Value:F2} is breached by current price (Bid: {currentBid:F2}). Closing position immediately to lock profit!");
-                                        ClosePosition(pos);
-                                        _ = SendTelegramAlertAsync($"🎯 <b>[AI Agent] Profit Lock Exit!</b>\nBUY #{pos.Id} closed at {currentBid:F2} (Net Profit: ${pos.NetProfit:F2}) as trailing SL was breached.\nReason: {decision.reason}");
-                                        continue;
-                                    }
-                                    else
-                                    {
-                                        // Case 2: Trade is in drawdown
-                                        if (pos.StopLoss.HasValue && targetSL.Value > pos.StopLoss.Value && targetSL.Value < currentBid)
-                                        {
-                                            targetSL = Math.Round(currentBid - minStopBuffer, Symbol.Digits);
-                                            Print($"[AI Smart SL Notice] BUY #{pos.Id} in drawdown: tightening SL to minimum safe distance {targetSL.Value:F2} below market Bid.");
-                                        }
-                                        else
-                                        {
-                                            Print($"[AI Smart SL Notice] BUY #{pos.Id} is in drawdown and proposed SL {targetSL.Value:F2} is within current market price (Bid: {currentBid:F2}). Retaining original safe SL ({pos.StopLoss}) to allow trade room to breathe.");
-                                            targetSL = pos.StopLoss;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── 3. Modify Position with Boundary Validation ──
                             if (targetSL.HasValue || targetTP.HasValue)
                             {
-                                // Guardrail: Anti-Premature Break-Even
-                                // If targetSL is near entry price (within 50 pips), reject if profit < minBeProfitPips
-                                if (targetSL.HasValue && Math.Abs(targetSL.Value - pos.EntryPrice) <= (Symbol.PipSize * 50) && currentProfitPips < minBeProfitPips)
-                                {
-                                    Print($"[AI Anti-Premature BE Guard] Blocked premature Break-Even SL ({targetSL.Value:F2}) for {SymbolName} #{pos.Id}. Current profit ({currentProfitPips:F1}p) < required threshold ({minBeProfitPips:F0}p). Keeping current SL ({pos.StopLoss}).");
-                                    targetSL = pos.StopLoss;
-                                }
-
-                                double? finalSL = targetSL ?? pos.StopLoss;
-                                double? finalTP = targetTP ?? pos.TakeProfit;
-
-                                bool slChanged = (finalSL.HasValue && (!pos.StopLoss.HasValue || Math.Abs(finalSL.Value - pos.StopLoss.Value) > (Symbol.PipSize * 0.5)));
-                                bool tpChanged = (finalTP.HasValue && (!pos.TakeProfit.HasValue || Math.Abs(finalTP.Value - pos.TakeProfit.Value) > (Symbol.PipSize * 0.5)));
-
-                                if (!slChanged && !tpChanged)
-                                {
-                                    Print($"[AI Agent ADJUST Notice] Position #{pos.Id} SL/TP unchanged (SL: {pos.StopLoss}, TP: {pos.TakeProfit}). No modification needed.");
-                                    continue;
-                                }
-
-                                bool isSlValid = !finalSL.HasValue || (pos.TradeType == TradeType.Buy ? finalSL.Value < (currentBid - minStopBuffer) : finalSL.Value > (currentAsk + minStopBuffer));
-                                bool isTpValid = !finalTP.HasValue || (pos.TradeType == TradeType.Buy ? finalTP.Value > (currentAsk + minStopBuffer) : finalTP.Value < (currentBid - minStopBuffer));
-
-                                if (isSlValid && isTpValid)
-                                {
-#pragma warning disable CS0618
-                                    ModifyPosition(pos, finalSL, finalTP);
-#pragma warning restore CS0618
-                                    Print($"[AI Agent ADJUST] Position #{pos.Id} updated -> SL: {finalSL}, TP: {finalTP}. Reason: {decision.reason}");
-                                }
-                                else
-                                {
-                                    Print($"[AI Agent ADJUST Notice] Stop distance too close for #{pos.Id} (SL: {finalSL}, TP: {finalTP} vs Bid: {currentBid:F2}, Ask: {currentAsk:F2}, MinBuffer: {minStopBuffer:F2}). Skipped modification.");
-                                }
+                                SafeModifyPosition(pos, targetSL, targetTP, source: "AI Agent ADJUST");
                             }
                         }
                         _ = SendTelegramAlertAsync($"⚙️ <b>[AI Agent] ADJUST Evaluated</b>\nEvaluated SL/TP on {openPos.Length} position(s).\nReason: {decision.reason}");
@@ -3145,6 +3311,74 @@ Reply strictly with JSON object.";
                 if (volume < Symbol.VolumeInUnitsMin) volume = Symbol.VolumeInUnitsMin;
                 if (volume > Symbol.VolumeInUnitsMax) volume = Symbol.VolumeInUnitsMax;
 
+                // ── Anti-FOMO & Candle Wick Retracement Evaluation ──────────────────
+                double candleOpenPrice = Bars.LastBar.Open;
+                double effectiveSlippagePrice;
+                double effectivePullbackBufferPrice;
+                double currentAtr = (atr != null && atr.Result.Count > 0) ? atr.Result.LastValue : 0;
+
+                if (antiFomoToleranceMode == AntiFomoToleranceMode.Dynamic_ATR_Percent && currentAtr > 0)
+                {
+                    effectiveSlippagePrice = currentAtr * (slippageToleranceAtrPercent / 100.0);
+                    effectivePullbackBufferPrice = currentAtr * (pullbackBufferAtrPercent / 100.0);
+                }
+                else
+                {
+                    effectiveSlippagePrice = slippageTolerancePips * Symbol.PipSize;
+                    effectivePullbackBufferPrice = pullbackBufferPips * Symbol.PipSize;
+                }
+
+                // Safety Floor: Ensure tolerance is never below 1.5x Spread to prevent broker spread noise triggers
+                double minSpreadBuffer = Symbol.Spread * 1.5;
+                if (effectiveSlippagePrice < minSpreadBuffer)
+                    effectiveSlippagePrice = minSpreadBuffer;
+
+                bool isFarFromOpen = false;
+
+                if (enableWickRetracementHunting)
+                {
+                    if (tradeType == TradeType.Buy)
+                    {
+                        isFarFromOpen = Symbol.Ask > (candleOpenPrice + effectiveSlippagePrice);
+                    }
+                    else if (tradeType == TradeType.Sell)
+                    {
+                        isFarFromOpen = Symbol.Bid < (candleOpenPrice - effectiveSlippagePrice);
+                    }
+                }
+
+                if (enableWickRetracementHunting && isFarFromOpen)
+                {
+                    // Arm the staged order and wait for pullback
+                    _stagedState = tradeType == TradeType.Buy ? StagedActionState.Armed_Buy : StagedActionState.Armed_Sell;
+                    _stagedDecision = decision;
+                    _stagedBarOpenTime = Bars.LastBar.OpenTime;
+                    _stagedExpiryTime = Server.Time.AddMinutes(maxStagingWaitMinutes);
+                    _stagedVolumeUnits = volume;
+                    _stagedSlPips = slPips;
+                    _stagedTpPips = tpPips;
+
+                    double tolPips = Symbol.PipSize > 0 ? (effectiveSlippagePrice / Symbol.PipSize) : 0;
+                    string modeInfo = antiFomoToleranceMode == AntiFomoToleranceMode.Dynamic_ATR_Percent
+                        ? $"{slippageToleranceAtrPercent:F1}% ATR ({tolPips:F1} pips)"
+                        : $"{tolPips:F1} pips (Fixed)";
+
+                    if (tradeType == TradeType.Buy)
+                    {
+                        _stagedTargetPullbackPrice = candleOpenPrice + effectivePullbackBufferPrice;
+                        double distancePips = Symbol.PipSize > 0 ? ((Symbol.Ask - candleOpenPrice) / Symbol.PipSize) : 0;
+                        Print($"[Anti-FOMO Staging] AI BUY received after delay. Market Ask ({Symbol.Ask:F2}) is +{distancePips:F1} pips above Open ({candleOpenPrice:F2}) > Tol: {modeInfo}. Staging order: waiting for pullback <= {_stagedTargetPullbackPrice:F2} (Max wait: {maxStagingWaitMinutes}m)...");
+                    }
+                    else if (tradeType == TradeType.Sell)
+                    {
+                        _stagedTargetPullbackPrice = candleOpenPrice - effectivePullbackBufferPrice;
+                        double distancePips = Symbol.PipSize > 0 ? ((candleOpenPrice - Symbol.Bid) / Symbol.PipSize) : 0;
+                        Print($"[Anti-FOMO Staging] AI SELL received after delay. Market Bid ({Symbol.Bid:F2}) is -{distancePips:F1} pips below Open ({candleOpenPrice:F2}) > Tol: {modeInfo}. Staging order: waiting for pullback >= {_stagedTargetPullbackPrice:F2} (Max wait: {maxStagingWaitMinutes}m)...");
+                    }
+
+                    return;
+                }
+
                 _lastAgentReason = decision.reason;
                 var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
                 if (result.IsSuccessful)
@@ -3161,6 +3395,167 @@ Reply strictly with JSON object.";
             {
                 Print($"[AI Decision Execution Error] {ex.Message}");
             }
+        }
+        #endregion
+
+        #region Anti-FOMO Staged Order Execution Engine
+        private void ProcessStagedOrderExecution()
+        {
+            if (_stagedState == StagedActionState.None || _stagedDecision == null) return;
+
+            // 0. Session Guard: Exited Golden Killzone
+            if (!IsGoldenKillzone(Server.Time, out string currentKz))
+            {
+                Print($"[Staged Order Guard] Staged {_stagedState} cancelled because market moved outside Golden Killzones ({currentKz}).");
+                ResetStagedOrder();
+                return;
+            }
+
+            // 0.1 News Filter Guard: Entered News Blackout
+            if (IsNewsPauseActive(out string newsBlockReason))
+            {
+                Print($"[Staged Order Guard] Staged {_stagedState} cancelled due to active news blackout: {newsBlockReason}");
+                ResetStagedOrder();
+                return;
+            }
+
+            // 1. Invalidation: Current Bar has closed (prevent trading on next bar with stale intent)
+            if (Bars.LastBar.OpenTime != _stagedBarOpenTime)
+            {
+                Print($"[Anti-FOMO Invalidation] Bar closed without pullback. Staged {_stagedState} cancelled. OpenTime: {_stagedBarOpenTime} -> Current: {Bars.LastBar.OpenTime}");
+                ResetStagedOrder();
+                return;
+            }
+
+            // 2. Invalidation: Timeout exceeded
+            if (Server.Time >= _stagedExpiryTime)
+            {
+                Print($"[Anti-FOMO Invalidation] Staged {_stagedState} expired after {maxStagingWaitMinutes} minutes without pullback.");
+                ResetStagedOrder();
+                return;
+            }
+
+            // 3. Invalidation: Market already moved too far towards TP (>= cancelIfTpReachedPercent)
+            if (_stagedDecision.new_tp_price > 0)
+            {
+                if (_stagedState == StagedActionState.Armed_Buy)
+                {
+                    double totalTpDistance = _stagedDecision.new_tp_price - Bars.LastBar.Open;
+                    if (totalTpDistance > 0)
+                    {
+                        double currentProgress = (Symbol.Bid - Bars.LastBar.Open) / totalTpDistance;
+                        if (currentProgress >= (cancelIfTpReachedPercent / 100.0))
+                        {
+                            Print($"[Anti-FOMO Invalidation] Price already reached {currentProgress:P0} of TP distance to {_stagedDecision.new_tp_price:F2}. Cancelling Staged BUY to avoid chasing top.");
+                            ResetStagedOrder();
+                            return;
+                        }
+                    }
+                }
+                else if (_stagedState == StagedActionState.Armed_Sell)
+                {
+                    double totalTpDistance = Bars.LastBar.Open - _stagedDecision.new_tp_price;
+                    if (totalTpDistance > 0)
+                    {
+                        double currentProgress = (Bars.LastBar.Open - Symbol.Ask) / totalTpDistance;
+                        if (currentProgress >= (cancelIfTpReachedPercent / 100.0))
+                        {
+                            Print($"[Anti-FOMO Invalidation] Price already reached {currentProgress:P0} of TP distance to {_stagedDecision.new_tp_price:F2}. Cancelling Staged SELL to avoid chasing bottom.");
+                            ResetStagedOrder();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 4. Invalidation: Price breached proposed Stop Loss in reverse (invalidated technical structure)
+            if (_stagedDecision.new_sl_price > 0)
+            {
+                if (_stagedState == StagedActionState.Armed_Buy && Symbol.Bid <= _stagedDecision.new_sl_price)
+                {
+                    Print($"[Anti-FOMO Invalidation] Price breached proposed SL {_stagedDecision.new_sl_price:F2} during pullback on BUY. Structure invalid, cancelling order.");
+                    ResetStagedOrder();
+                    return;
+                }
+                else if (_stagedState == StagedActionState.Armed_Sell && Symbol.Ask >= _stagedDecision.new_sl_price)
+                {
+                    Print($"[Anti-FOMO Invalidation] Price breached proposed SL {_stagedDecision.new_sl_price:F2} during pullback on SELL. Structure invalid, cancelling order.");
+                    ResetStagedOrder();
+                    return;
+                }
+            }
+
+            // 5. Trigger Execution: Check if price has pulled back to or below target discount price
+            if (_stagedState == StagedActionState.Armed_Buy)
+            {
+                if (Symbol.Ask <= _stagedTargetPullbackPrice)
+                {
+                    Print($"[Anti-FOMO Pullback Triggered] BUY target pullback reached! Ask: {Symbol.Ask:F2} <= Target: {_stagedTargetPullbackPrice:F2} (Open: {Bars.LastBar.Open:F2}). Executing Sniper BUY!");
+                    ExecuteStagedMarketOrder(TradeType.Buy);
+                }
+            }
+            else if (_stagedState == StagedActionState.Armed_Sell)
+            {
+                if (Symbol.Bid >= _stagedTargetPullbackPrice)
+                {
+                    Print($"[Anti-FOMO Pullback Triggered] SELL target pullback reached! Bid: {Symbol.Bid:F2} >= Target: {_stagedTargetPullbackPrice:F2} (Open: {Bars.LastBar.Open:F2}). Executing Sniper SELL!");
+                    ExecuteStagedMarketOrder(TradeType.Sell);
+                }
+            }
+        }
+
+        private void ExecuteStagedMarketOrder(TradeType tradeType)
+        {
+            if (Positions.FindAll(label, SymbolName).Length >= maxPermittedOrder)
+            {
+                Print($"[Anti-FOMO Notice] Max permitted orders ({maxPermittedOrder}) reached. Staged order aborted.");
+                ResetStagedOrder();
+                return;
+            }
+
+            double volume = _stagedVolumeUnits;
+            double slPips = _stagedSlPips;
+            double tpPips = _stagedTpPips;
+            var decision = _stagedDecision;
+
+            // Recalculate SL/TP pips relative to actual executed entry price if exact structural prices were provided
+            if (decision.new_sl_price > 0)
+            {
+                slPips = tradeType == TradeType.Buy 
+                    ? Math.Max(0, Math.Round((Symbol.Ask - decision.new_sl_price) / Symbol.PipSize, 1))
+                    : Math.Max(0, Math.Round((decision.new_sl_price - Symbol.Bid) / Symbol.PipSize, 1));
+            }
+            if (decision.new_tp_price > 0)
+            {
+                tpPips = tradeType == TradeType.Buy 
+                    ? Math.Max(0, Math.Round((decision.new_tp_price - Symbol.Ask) / Symbol.PipSize, 1))
+                    : Math.Max(0, Math.Round((Symbol.Bid - decision.new_tp_price) / Symbol.PipSize, 1));
+            }
+
+            _lastAgentReason = decision.reason;
+            var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
+            if (result.IsSuccessful)
+            {
+                Print($"[Anti-FOMO Sniper SUCCESS] Market order {tradeType} {volume / Symbol.LotSize:F2} lots placed @ {result.Position.EntryPrice}! SL: {slPips} pips, TP: {tpPips} pips. Sniped at candle pullback!");
+            }
+            else
+            {
+                Print($"[Anti-FOMO Order FAILED] Error: {result.Error}");
+            }
+
+            ResetStagedOrder();
+        }
+
+        private void ResetStagedOrder()
+        {
+            _stagedState = StagedActionState.None;
+            _stagedDecision = null;
+            _stagedBarOpenTime = DateTime.MinValue;
+            _stagedExpiryTime = DateTime.MinValue;
+            _stagedTargetPullbackPrice = 0.0;
+            _stagedVolumeUnits = 0.0;
+            _stagedSlPips = 0.0;
+            _stagedTpPips = 0.0;
         }
         #endregion
     }
