@@ -140,6 +140,11 @@ namespace cAlgo.Robots
 
         [Parameter("Draw Asian Range Visuals", Group = "Asian Range & Judas Sweep", DefaultValue = true)]
         public bool drawAsianRangeVisuals { get; set; }
+        [Parameter("Require Rejection Wick (Pinbar)?", Group = "Asian Range & Judas Sweep", DefaultValue = true)]
+        public bool requireRejectionWick { get; set; }
+
+        [Parameter("Min Rejection Wick Ratio", Group = "Asian Range & Judas Sweep", DefaultValue = 0.35, MinValue = 0.1, MaxValue = 0.9, Step = 0.05)]
+        public double minRejectionWickRatio { get; set; }
 
         [Parameter("Fast EMA Period", Group = "Strategy Indicators", DefaultValue = 9, MinValue = 1, MaxValue = 200)]
         public int fastEmaPeriod { get; set; }
@@ -1035,24 +1040,38 @@ namespace cAlgo.Robots
             var lastBar = Bars.LastBar;
             double sweepBuffer = sweepBufferPips * Symbol.PipSize;
 
+            double totalBarRange = lastBar.High - lastBar.Low;
+            double lowerWick = Math.Min(lastBar.Open, lastBar.Close) - lastBar.Low;
+            double upperWick = lastBar.High - Math.Max(lastBar.Open, lastBar.Close);
+
             // SELL Judas Sweep: Bar High spiked above Asian High + buffer, but closed back below Asian High
             if (lastBar.High >= (_asianHigh + sweepBuffer) && lastBar.Close <= _asianHigh)
             {
-                if (!enableRsiFilter || rsi == null || rsi.Result.LastValue > rsiOversold)
+                bool wickValid = !requireRejectionWick || (totalBarRange > 0 && (upperWick / totalBarRange) >= minRejectionWickRatio);
+                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result.LastValue > rsiOversold))
                 {
                     sellSignal = true;
                     _highSwept = true;
                     signalName = "JUDAS_SWEEP_SELL";
                 }
+                else if (!wickValid)
+                {
+                    Print($"[Judas Sweep Filter] BEARISH sweep above Asian High rejected: Upper wick ratio {(totalBarRange > 0 ? upperWick / totalBarRange : 0):P1} < {minRejectionWickRatio:P1}. Potential breakout, not rejection.");
+                }
             }
             // BUY Judas Sweep: Bar Low spiked below Asian Low - buffer, but closed back above Asian Low
             else if (lastBar.Low <= (_asianLow - sweepBuffer) && lastBar.Close >= _asianLow)
             {
-                if (!enableRsiFilter || rsi == null || rsi.Result.LastValue < rsiOverbought)
+                bool wickValid = !requireRejectionWick || (totalBarRange > 0 && (lowerWick / totalBarRange) >= minRejectionWickRatio);
+                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result.LastValue < rsiOverbought))
                 {
                     buySignal = true;
                     _lowSwept = true;
                     signalName = "JUDAS_SWEEP_BUY";
+                }
+                else if (!wickValid)
+                {
+                    Print($"[Judas Sweep Filter] BULLISH sweep below Asian Low rejected: Lower wick ratio {(totalBarRange > 0 ? lowerWick / totalBarRange : 0):P1} < {minRejectionWickRatio:P1}. Potential breakout, not rejection.");
                 }
             }
         }
@@ -3256,6 +3275,12 @@ Reply strictly with JSON object.";
                 if ((action == "BUY" || action == "SELL") && IsNewsPauseActive(out string activeNews))
                 {
                     Print($"[News Shield] Blocked {action} entry on {SymbolName} due to active High Impact news: {activeNews}");
+                    return;
+                }
+                // Confidence Threshold Guardrail for BUY/SELL
+                if ((action == "BUY" || action == "SELL") && decision.confidence < AiConfidenceThreshold)
+                {
+                    Print($"[Guardrail Blocked] Action {action} rejected: Confidence {decision.confidence:F1}% < {AiConfidenceThreshold:F1}% threshold.");
                     return;
                 }
 

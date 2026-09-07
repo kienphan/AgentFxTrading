@@ -50,6 +50,10 @@
                     {% endfor %}
                 </select>
             </div>
+            <button id="topbar-docker-btn" class="topbar-action-btn" title="Docker Bot Management" data-target="view-docker">
+                <i data-lucide="bot"></i>
+                <span class="topbar-action-label">Bots</span>
+            </button>
             <div id="connection-status" class="status-pill status-pill--offline">
                 <span class="status-dot"></span><span>Disconnected</span>
             </div>
@@ -83,11 +87,7 @@
             </a>
             <a href="#" class="nav-item" data-target="view-news" title="News Assessment">
                 <span class="nav-icon"><i data-lucide="newspaper"></i></span>
-                <span class="nav-label">News Assessment</span>
-            </a>
-            <a href="#" class="nav-item" data-target="view-docker" title="Docker Bots">
-                <span class="nav-icon"><i data-lucide="bot"></i></span>
-                <span class="nav-label">Docker Bots</span>
+                <span class="nav-label">News</span>
             </a>
             <a href="#" class="nav-item" data-target="view-logs" title="Agent Logs">
                 <span class="nav-icon"><i data-lucide="terminal"></i></span>
@@ -714,36 +714,50 @@
             });
         }
 
+        function switchView(targetId) {
+            // Remove active class from nav items, topbar action buttons, and views
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            document.querySelectorAll('.topbar-action-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
+
+            // Add active to matching nav item or topbar button
+            const activeNav = document.querySelector(`.nav-item[data-target="${targetId}"]`);
+            if (activeNav) activeNav.classList.add('active');
+            const activeTopbarBtn = document.querySelector(`.topbar-action-btn[data-target="${targetId}"]`);
+            if (activeTopbarBtn) activeTopbarBtn.classList.add('active');
+
+            // Show corresponding view
+            const targetView = document.getElementById(targetId);
+            if (targetView) {
+                targetView.classList.add('active');
+                if (targetId === 'view-logs') {
+                    fetchAgentLogs(logDateSelect.value);
+                } else if (targetId === 'view-docker') {
+                    fetchBots();
+                } else if (targetId === 'view-leaderboard') {
+                    fetchLeaderboard();
+                } else if (targetId === 'view-decisions') {
+                    fetchAiDecisions();
+                } else if (targetId === 'view-news') {
+                    fetchNewsCalendar();
+                }
+            }
+        }
+
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
-                
-                // Remove active class from all nav items and views
-                document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-                document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
-                
-                // Add active class to clicked nav item
-                const targetId = item.getAttribute('data-target');
-                item.classList.add('active');
-                
-                // Show corresponding view
-                const targetView = document.getElementById(targetId);
-                if (targetView) {
-                    targetView.classList.add('active');
-                    if (targetId === 'view-logs') {
-                        fetchAgentLogs(logDateSelect.value);
-                    } else if (targetId === 'view-docker') {
-                        fetchBots();
-                    } else if (targetId === 'view-leaderboard') {
-                        fetchLeaderboard();
-                    } else if (targetId === 'view-decisions') {
-                        fetchAiDecisions();
-                    } else if (targetId === 'view-news') {
-                        fetchNewsCalendar();
-                    }
-                }
+                switchView(item.getAttribute('data-target'));
             });
         });
+
+        const topbarDockerBtn = document.getElementById('topbar-docker-btn');
+        if (topbarDockerBtn) {
+            topbarDockerBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                switchView('view-docker');
+            });
+        }
         // --- Docker Bot Management ---
         async function fetchBots() {
             try {

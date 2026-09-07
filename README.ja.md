@@ -446,7 +446,7 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --stoplossPip=25000.0 \
        --takeprofitPip=60000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **ETHUSD アジアンレンジ・ジューダススイープ (M15 - ICT Judas Sweep)**:
@@ -480,7 +480,7 @@ cBotは**cTraderデスクトップGUI**または**ヘッドレスDocker CLI**（
        --stoplossPip=2000.0 \
        --takeprofitPip=5000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **XAUUSD TMS+ORB (M15 - ニューヨークセッション)**:

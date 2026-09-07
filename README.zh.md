@@ -436,7 +436,7 @@ python app/server.py
        --stoplossPip=25000.0 \
        --takeprofitPip=60000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **ETHUSD 亚洲流动性猎杀 (M15 - ICT Judas Sweep)**:
@@ -470,7 +470,7 @@ python app/server.py
        --stoplossPip=2000.0 \
        --takeprofitPip=5000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **XAUUSD TMS+ORB (M15 - 纽约时段)**:

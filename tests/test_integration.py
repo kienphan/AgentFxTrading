@@ -180,6 +180,48 @@ def test_judas_sweep_llm_active_entry():
         assert data["request_id"] == "test_req_002"
         assert data["new_sl_price"] == 2880.5
 
+def test_judas_sweep_low_confidence_blocked():
+    payload = {
+        "request_id": "test_low_conf_001",
+        "bot_id": "cbot-gbpjpy-judas",
+        "symbol": "GBPJPY",
+        "timeframe": "Minute15",
+        "ask": 210.74,
+        "bid": 210.70,
+        "bars": [
+            {"time": "2026-09-07T14:45:00Z", "open": 210.80, "high": 210.85, "low": 210.50, "close": 210.73, "volume": 100.0}
+        ],
+        "strategy": {
+            "tema1": 210.60,
+            "tema2": 210.50,
+            "rsi": 45.0,
+            "adx": 20.0,
+            "atr": 15.0,
+            "recent_high": 211.20,
+            "recent_low": 210.35,
+            "asian_high": 211.20,
+            "asian_low": 210.60,
+            "asian_range_pips": 60.0,
+            "killzone_session": "London Open Killzone",
+            "bias_direction": "BUY",
+            "traditional_signal": "JUDAS_SWEEP_BUY",
+            "signal_window_bars": 1
+        },
+        "account_number": "test_conf_acc",
+        "account_type": "demo",
+        "account_label": "Test-Conf",
+        "account_balance": 10000.0,
+        "account_equity": 10000.0
+    }
+    # LLM returns BUY but with 65.0% confidence (< 75.0% threshold)
+    with patch.object(app.server.llm_client, 'chat', new=AsyncMock(return_value='{"action": "BUY", "volume_lots": 0.02, "sl_pips": 39.0, "tp_pips": 46.0, "confidence": 65.0, "reason": "Judas sweep with low confidence"}')):
+        res = client.post("/trade", json=payload)
+        assert res.status_code == 200
+        data = res.json()
+        # Should be converted to HOLD by server-side Guardrail
+        assert data["action"] == "HOLD"
+        assert "Confidence 65.0% < 75.0% threshold" in data["reason"]
+
 def test_cycle_gate_giveback_index_vs_forex():
     from app.server import evaluate_cycle_gate, MarketSnapshot, PositionInfo, TmsSignals
 
@@ -516,6 +558,106 @@ def test_llm_timeout_fallback_position_management():
     assert fb3.action == "ADJUST"
     assert fb3.new_sl_price == 2462.0
     assert "Tightening SELL SL to recent swing high" in fb3.reason
+def test_relaxed_overextension_and_dynamic_retest():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData
+
+    # 1. JPY Cross direct entry with 30p breakout (exceeds old 25p limit, within new 35p limit)
+    snap_jpy_direct = MarketSnapshot(
+        symbol="GBPJPY",
+        timeframe="Minute15",
+        ask=210.50,
+        bid=210.48,
+        atr_pips=28.0,
+        tms=TmsSignals(bias="BEARISH"),
+        chart_tms=TmsSignals(bias="BEARISH", tdi_bounce_bear=False, price_below_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="down",
+            breakout_distance_pips=30.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=1
+        )
+    )
+    decision_jpy = evaluate_cycle_gate(snap_jpy_direct)
+    assert decision_jpy is None  # Allowed under relaxed 35p threshold!
+
+    # 2. Gold direct entry with 500p breakout (exceeds old 400p limit, within new 600p limit)
+    snap_gold_direct = MarketSnapshot(
+        symbol="XAUUSD",
+        timeframe="Minute15",
+        ask=2910.0,
+        bid=2909.5,
+        atr_pips=400.0,
+        tms=TmsSignals(bias="BULLISH"),
+        chart_tms=TmsSignals(bias="BULLISH", tdi_bounce_bull=False, price_above_ema=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=500.0,
+            is_decisive=True,
+            in_entry_window=True,
+            bars_since_breakout=2
+        )
+    )
+    decision_gold = evaluate_cycle_gate(snap_gold_direct)
+    assert decision_gold is None  # Allowed under relaxed 600p threshold!
+
+    # 3. Dynamic EMA Retest Continuation: tdi_bounce_bull is False, but price held EMA5,
+    # green slope > 0, green value >= 48, not red HA -> Model 2 allowed!
+    snap_dynamic_retest = MarketSnapshot(
+        symbol="EURUSD",
+        timeframe="Minute15",
+        ask=1.0920,
+        bid=1.0918,
+        atr_pips=15.0,
+        tms=TmsSignals(bias="BULLISH"),
+        chart_tms=TmsSignals(
+            bias="BULLISH",
+            tdi_bounce_bull=False,
+            price_above_ema=True,
+            green_tf_slope=0.35,
+            green_tf_value=55.0,
+            ha_turned_red=False,
+            stoch_bull=True
+        ),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=25.0,  # > direct max 20p
+            is_decisive=True,
+            in_entry_window=False,
+            bars_since_breakout=7  # aged breakout within 12 bars
+        )
+    )
+    decision_retest = evaluate_cycle_gate(snap_dynamic_retest)
+    assert decision_retest is None  # Dynamic EMA Retest Continuation allowed!
+
+    # 4. Breakout at 11 bars (within expanded 12 bars limit) with bounce -> Allowed!
+    snap_aged_11 = MarketSnapshot(
+        symbol="EURUSD",
+        timeframe="Minute15",
+        ask=1.0925,
+        bid=1.0923,
+        atr_pips=15.0,
+        tms=TmsSignals(bias="BULLISH"),
+        chart_tms=TmsSignals(
+            bias="BULLISH",
+            tdi_bounce_bull=True,
+            price_above_ema=True
+        ),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=25.0,
+            is_decisive=True,
+            in_entry_window=False,
+            bars_since_breakout=11  # old code banned > 10, new code allows <= 12
+        )
+    )
+    decision_aged = evaluate_cycle_gate(snap_aged_11)
+    assert decision_aged is None  # Allowed at 11 bars!
+
 
 def cleanup_test_data():
     import sqlite3

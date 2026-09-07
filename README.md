@@ -472,7 +472,7 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --stoplossPip=25000.0 \
        --takeprofitPip=60000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **ETHUSD Judas Sweep (M15 - ICT Asian Range Judas Sweep)**:
@@ -506,7 +506,7 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --stoplossPip=2000.0 \
        --takeprofitPip=5000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **XAUUSD TMS+ORB (M15 - New York Session)**:

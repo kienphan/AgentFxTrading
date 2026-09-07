@@ -470,7 +470,7 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --stoplossPip=25000.0 \
        --takeprofitPip=60000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **ETHUSD Judas Sweep (M15 - Săn Thanh Khoản Phiên Á ICT)**:
@@ -504,7 +504,7 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --stoplossPip=2000.0 \
        --takeprofitPip=5000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **XAUUSD TMS+ORB (M15 - Phiên New York)**:

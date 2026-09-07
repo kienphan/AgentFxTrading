@@ -446,7 +446,7 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --stoplossPip=25000.0 \
        --takeprofitPip=60000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **ETHUSD Caçada de Liquidez Asiática (M15 - ICT Judas Sweep)**:
@@ -480,7 +480,7 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
        --stoplossPip=2000.0 \
        --takeprofitPip=5000.0 \
        --enableBreakEvenPrice=true \
-       --riskFactor=1.0
+       --riskFactor=0.2
      ```
 
    * **XAUUSD TMS+ORB (M15 - Sessão de Nova York)**:

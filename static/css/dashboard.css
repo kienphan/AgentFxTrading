@@ -36,6 +36,39 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .status-pill--online{color:var(--accent-bright)}
 .status-pill--offline{color:var(--text-muted)}
 .last-updated{font-size:0.7rem;color:var(--text-dim);font-family:var(--font-mono)}
+.topbar-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 11px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: var(--font-ui);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    line-height: 1;
+}
+.topbar-action-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+.topbar-action-btn.active {
+    background: linear-gradient(135deg, rgba(0, 229, 255, 0.18), rgba(0, 150, 255, 0.1));
+    color: var(--accent-bright);
+    border-color: var(--accent-bright);
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.25);
+}
+.topbar-action-btn svg, .topbar-action-btn i {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.2;
+}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.5}}
 .main-content{padding:16px 20px 24px;max-width:1800px;margin:0 auto;width:100%}
 @media(min-width: 1200px){
@@ -995,21 +1028,24 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        padding: 4px 6px !important;
-        flex: 1 !important;
-        max-width: 72px !important;
-        gap: 2px !important;
+        padding: 6px 4px !important;
+        flex: 1 1 0 !important;
+        max-width: 80px !important;
+        gap: 3px !important;
+        border-radius: 6px !important;
     }
     .sidebar .nav-label,
     .sidebar.collapsed .nav-label {
-        font-size: 0.60rem !important;
+        font-size: 0.65rem !important;
+        font-weight: 600 !important;
         display: block !important;
         white-space: nowrap !important;
+        letter-spacing: 0.01em !important;
     }
     .sidebar .nav-icon svg,
     .sidebar.collapsed .nav-icon svg {
-        width: 18px !important;
-        height: 18px !important;
+        width: 20px !important;
+        height: 20px !important;
     }
     .kpi-grid {
         grid-template-columns: repeat(2, 1fr) !important;
