@@ -860,8 +860,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     return None
 
 def build_judas_sweep_system_prompt(snapshot: MarketSnapshot) -> str:
-    return "You are an elite Algorithmic Trading AI Co-Pilot for cTrader. Analyze the real-time market snapshot and output strictly valid JSON format with keys: \"action\" (\"BUY\"|\"SELL\"|\"HOLD\"|\"ADJUST\"|\"CLOSE_ALL\"), \"volume_lots\" (number), \"sl_pips\" (number), \"tp_pips\" (number), \"new_sl_price\" (number), \"new_tp_price\" (number), \"confidence\" (number between 0 and 100), \"reason\" (concise technical rationale). MANDATORY FOR ADJUST: If action is \"ADJUST\", you MUST provide the exact target price in \"new_sl_price\" (e.g. 2455.50), NEVER 0.0. Output NO markdown explanations outside the JSON object."
-
+    return "You are an elite Algorithmic Trading AI Co-Pilot for cTrader. Analyze the real-time market snapshot and output strictly valid JSON format with keys: \"action\" (\"BUY\"|\"SELL\"|\"HOLD\"|\"ADJUST\"|\"CLOSE_ALL\"), \"volume_lots\" (number), \"sl_pips\" (number), \"tp_pips\" (number), \"new_sl_price\" (number), \"new_tp_price\" (number), \"confidence\" (number between 0 and 100), \"reason\" (concise technical rationale). MANDATORY FOR BUY/SELL/ADJUST: You MUST provide the exact target price in \"new_tp_price\" (e.g. 2524.00 for ETH, 80120.00 for BTC) and protective stop in \"new_sl_price\" (e.g. 2454.00 for ETH, 79600.00 for BTC), NEVER 0.0. Output NO markdown explanations outside the JSON object."
 def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
     strat = snapshot.strategy or StrategyData()
     sym_up = snapshot.symbol.upper()
@@ -893,6 +892,7 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
     has_open_pos = open_pos_count > 0 or snapshot.position is not None
 
     # 1. Format 50 chronological bars
+    # 1. Format 50 chronological bars with Volume Delta approximation
     bar_lines = []
     if snapshot.bars:
         max_bars = min(50, len(snapshot.bars))
@@ -904,7 +904,15 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
             l_val = b.low if b.low is not None else 0.0
             c_val = b.close if b.close is not None else 0.0
             v_val = b.volume if b.volume is not None else 0.0
-            bar_lines.append(f"Bar[{bar_idx}]: O={format_price(o_val, snapshot.symbol)}, H={format_price(h_val, snapshot.symbol)}, L={format_price(l_val, snapshot.symbol)}, C={format_price(c_val, snapshot.symbol)}, V={v_val:.0f}")
+            # Calculate Volume Delta & Imbalance:
+            hl_range = h_val - l_val
+            if hl_range > 0:
+                buy_ratio = max(0.0, min(1.0, (c_val - l_val) / hl_range))
+                delta_vol = v_val * (2.0 * buy_ratio - 1.0)
+                delta_str = f" | Delta={'+' if delta_vol >= 0 else ''}{delta_vol:.0f}"
+            else:
+                delta_str = ""
+            bar_lines.append(f"Bar[{bar_idx}]: O={format_price(o_val, snapshot.symbol)}, H={format_price(h_val, snapshot.symbol)}, L={format_price(l_val, snapshot.symbol)}, C={format_price(c_val, snapshot.symbol)}, V={v_val:.0f}{delta_str}")
     bars_formatted = "\n".join(bar_lines) if bar_lines else "No OHLCV bars available."
 
     # 2. Format recent trade history
@@ -978,13 +986,40 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
 === 7. SMART MONEY CONCEPTS (SMC) & JUDAS SWEEP RULES ===
 1. Judas Swing Reversal: Price fakeouts above Asian High or below Asian Low during London/NY Killzones, sweeps liquidity (BSL/SSL), and rejects back inside range.
 2. Entry Confirmation: Validated Order Block, Fair Value Gap (FVG), or pinbar rejection on M15.
-3. Technical SL & TP: Place SL safely beyond the sweep extreme spike (min floor 200 pips); TP targeted at opposing Asian Range boundary (Asian Low for SELL, Asian High for BUY) or target liquidity pool. For XAUUSD, $1.00 move = 100 pips.
+3. Technical SL & TP (MANDATORY EXACT PRICES):
+   - new_tp_price: Targeted at opposing Asian Range boundary (Asian High for BUY, Asian Low for SELL) or target liquidity pool. You MUST provide the exact price in "new_tp_price".
+   - new_sl_price: Placed safely beyond the sweep extreme spike (min floor 200 pips). You MUST provide the exact price in "new_sl_price".
+   - sl_pips & tp_pips: Must match the distance between entry and new_sl_price / new_tp_price.
 
 === 8. VALID ACTIONS ===
-- BUY: Validated Bullish Judas Sweep (Asian Low fakeout) + Order Block bounce.
-- SELL: Validated Bearish Judas Sweep (Asian High fakeout) + Order Block rejection.
+- BUY: Validated Bullish Judas Sweep (Asian Low fakeout) + Order Block bounce. Must set new_tp_price and new_sl_price!
+- SELL: Validated Bearish Judas Sweep (Asian High fakeout) + Order Block rejection. Must set new_tp_price and new_sl_price!
 - HOLD: Choppy consolidation inside Asian Range, no sweep, or conflicting HTF bias.
 
+=== 9. REFERENCE FEW-SHOT EXAMPLES ===
+Example 1 (High-Probability Asian Low Sweep -> BUY with exact prices):
+{{
+  "action": "BUY",
+  "volume_lots": 0.0,
+  "sl_pips": 2500.0,
+  "tp_pips": 5100.0,
+  "new_sl_price": 2454.00,
+  "new_tp_price": 2524.00,
+  "confidence": 88.0,
+  "reason": "Price swept Asian Low during London Open, printed pinbar rejection with positive Delta (+450), and aligned with H1 bullish order block. SL below sweep spike at 2454.00, TP at Asian High 2524.00."
+}}
+
+Example 2 (False Breakout / Stale Signal -> HOLD):
+{{
+  "action": "HOLD",
+  "volume_lots": 0.0,
+  "sl_pips": 0.0,
+  "tp_pips": 0.0,
+  "new_sl_price": 0.0,
+  "new_tp_price": 0.0,
+  "confidence": 85.0,
+  "reason": "Sweep occurred 4 bars ago without swift displacement back inside range; negative Delta indicates heavy absorption. Holding flat."
+}}
 Reply strictly with JSON object."""
     else:
         pos_lines = []
@@ -1031,24 +1066,23 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
 
 === 6. POSITION MANAGEMENT EVALUATION RULES ===
 1. Trend & Structure Health: Check if current structure still favors the open position.
-   - Do NOT panic on minor 1-2 bar pullbacks or wicks on M15 if Higher Timeframe (H1) trend remains aligned. Let the position breathe towards TP!
+   - Do NOT panic on minor 1-2 bar pullbacks or wicks on M15 if Higher Timeframe (H1) trend remains aligned and structure is intact. Let the position breathe towards TP!
 2. Action Decisions:
    - HOLD: Position healthy and progressing towards TP. (Default choice during normal fluctuations).
    - ADJUST: Move SL to Break-Even OR Trailing Stop behind a verified structural swing/Order Block.
-     ⚠️ STRICT ANTI-PREMATURE BREAK-EVEN RULES:
-       * NEVER move SL to Break-Even on minor market noise! Pullbacks of $50-$100 on BTC or $3-$8 on ETH are NORMAL noise on M15.
-       * Minimum profit required BEFORE moving SL to Break-Even:
-         - BTCUSD: Position MUST be in profit by at least +$150.00 to +$200.00 price gain (15,000 - 20,000 pips).
-         - ETHUSD: Position MUST be in profit by at least +$15.00 to +$20.00 price gain (1,500 - 2,000 pips).
-         - XAUUSD: Position MUST be in profit by at least +$5.00 to +$8.00 price gain (500 - 800 pips).
-         - Forex: Position MUST be in profit by at least +20 to +30 pips.
-       * SPREAD BUFFER ON BREAK-EVEN: When moving SL to protect an order, DO NOT set SL directly at entry price where normal spread fluctuations sweep it!
-         - For SELL: Set new_sl_price with breathing room above entry or trailing swing.
-         - For BUY: Set new_sl_price with breathing room below entry or trailing swing.
-     ⚠️ MANDATORY OUTPUT: You MUST specify the exact absolute price level in "new_sl_price" (e.g. 2455.50 for ETHUSD, 79600.00 for BTCUSD, 2895.50 for XAUUSD) and/or "new_tp_price". NEVER leave new_sl_price as 0.0 when ADJUSTing!
-   - CLOSE_ALL: Emergency exit ONLY if a genuine major opposing structural reversal (e.g. decisive H1 CHoCH body close against position) occurs.
+     ⚠️ MANDATORY PROFIT LOCK-IN & BREAK-EVEN RULES:
+       * When a position reaches >= 40% of the distance to TP (or >= 1.0x R:R), you MUST ADJUST SL to Break-Even or trail behind the nearest M15 swing!
+       * Minimum profit required BEFORE moving SL to Break-Even / Trailing:
+         - BTCUSD: Position in profit by at least +$60.00 price gain (6,000 pips) OR >= 40% distance to TP.
+         - ETHUSD: Position in profit by at least +$6.00 price gain (600 pips) OR >= 40% distance to TP.
+         - XAUUSD: Position in profit by at least +$3.00 price gain (300 pips) OR >= 40% distance to TP.
+         - Forex: Position in profit by at least +15 to +20 pips OR >= 40% distance to TP.
+       * SPREAD BUFFER ON BREAK-EVEN: When moving SL to protect an order, set SL with breathing room beyond entry (e.g. entry + $10 on BTC, entry + $1 on ETH, entry + $0.50 on Gold for BUY) to lock in commission/spread!
+     ⚠️ MANDATORY OUTPUT: You MUST specify the exact absolute price level in "new_sl_price" (e.g. 2475.50 for ETHUSD, 79900.00 for BTCUSD, 2898.50 for XAUUSD) and/or "new_tp_price". NEVER leave new_sl_price as 0.0 when ADJUSTing!
+   - CLOSE_ALL: Exit immediately if:
+       a) Trade was in substantial profit and reverses, printing a confirmed opposing CHoCH on M15 (e.g. decisive close back below Asian Low / entry for BUY). Do NOT hold all the way to full SL!
+       b) Major opposing H1/H4 structural reversal occurs.
    - BUY / SELL: Scale-in ONLY if trend is extremely strong with fresh unmitigated Order Block.
-
 === 7. ASSET-SPECIFIC PIP & PRICE RULES ===
 - Crypto (ETHUSD, BTCUSD): 1 pip = 0.01 ($0.01 move). Always calculate and output exact absolute price in "new_sl_price" and "new_tp_price".
 - Gold (XAUUSD): 1 pip = 0.01 ($1.00 move = 100 pips). Always output exact absolute price in "new_sl_price".
@@ -1294,6 +1328,45 @@ async def trade_decision(snapshot: MarketSnapshot):
             decision_dict["timeframe"] = snapshot.timeframe
         if "confidence" not in decision_dict:
             decision_dict["confidence"] = 80.0
+        if is_judas:
+            action_val = str(decision_dict.get("action", "HOLD")).upper()
+            sym_up = (snapshot.symbol or "").upper()
+            pip_size = 0.01 if (any(c in sym_up for c in ["BTC", "ETH", "XAU", "GOLD", "JPY"])) else 0.0001
+            entry_ref = snapshot.ask if action_val == "BUY" else snapshot.bid
+
+            if action_val in ("BUY", "SELL"):
+                try:
+                    new_tp = float(decision_dict.get("new_tp_price") or 0.0)
+                    new_sl = float(decision_dict.get("new_sl_price") or 0.0)
+                    tp_p = float(decision_dict.get("tp_pips") or 0.0)
+                    sl_p = float(decision_dict.get("sl_pips") or 0.0)
+                    strat = snapshot.strategy
+
+                    # 1. Target TP price fallback to Asian boundary if omitted
+                    if new_tp <= 0 and strat:
+                        if action_val == "BUY" and strat.asian_high > snapshot.ask:
+                            new_tp = strat.asian_high
+                            decision_dict["new_tp_price"] = new_tp
+                        elif action_val == "SELL" and strat.asian_low > 0 and strat.asian_low < snapshot.bid:
+                            new_tp = strat.asian_low
+                            decision_dict["new_tp_price"] = new_tp
+
+                    # 2. Harmonize tp_pips with new_tp_price or correct crypto pip scale
+                    if new_tp > 0:
+                        calc_tp_pips = round(abs(new_tp - entry_ref) / pip_size, 1)
+                        if tp_p <= 0 or abs(tp_p - calc_tp_pips) > calc_tp_pips * 0.4:
+                            decision_dict["tp_pips"] = calc_tp_pips
+                    elif any(c in sym_up for c in ["BTC", "ETH"]) and strat and strat.asian_range_pips > 1000:
+                        if 0 < tp_p < 800 and (tp_p * 10) <= strat.asian_range_pips * 1.5:
+                            decision_dict["tp_pips"] = tp_p * 10
+
+                    # 3. Harmonize sl_pips with new_sl_price
+                    if new_sl > 0:
+                        calc_sl_pips = round(abs(entry_ref - new_sl) / pip_size, 1)
+                        if sl_p <= 0 or abs(sl_p - calc_sl_pips) > calc_sl_pips * 0.4:
+                            decision_dict["sl_pips"] = calc_sl_pips
+                except Exception as ex:
+                    logger.warning(f"Error harmonizing Judas decision: {ex}")
 
         logger.info(
             f"[LLM DECISION] {account_id}/{snapshot.bot_id} -> Action: {decision_dict.get('action', 'HOLD')} | "

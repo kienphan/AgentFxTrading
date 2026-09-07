@@ -1744,10 +1744,10 @@ namespace cAlgo.Robots
                         // Anti-Premature Break-Even Guardrail for Forex, Metals, Indices
                         double minBeProfitPips = 20.0;
                         string symUpper = SymbolName.ToUpperInvariant();
-                        if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 500.0;
+                        if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 300.0;
                         else if (symUpper.Contains("US30") || symUpper.Contains("USTEC") || symUpper.Contains("DE40") || symUpper.Contains("NAS100")) minBeProfitPips = 50.0;
-                        else if (symUpper.Contains("BTC")) minBeProfitPips = 15000.0;
-                        else if (symUpper.Contains("ETH")) minBeProfitPips = 1500.0;
+                        else if (symUpper.Contains("BTC")) minBeProfitPips = 6000.0;
+                        else if (symUpper.Contains("ETH")) minBeProfitPips = 600.0;
 
                         double currentProfitPips = pos.TradeType == TradeType.Buy 
                             ? (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize 

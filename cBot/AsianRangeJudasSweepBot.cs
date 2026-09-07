@@ -2921,12 +2921,12 @@ Reply strictly with JSON object.";
                             double minStopBuffer = Math.Max(Symbol.Spread * 1.2, Symbol.PipSize * 5);
 
                             // Anti-Premature Break-Even Threshold (pips)
-                            // BTCUSD: min 15,000p ($150), ETHUSD: min 1,500p ($15), Gold: min 500p ($5), Forex: min 20p
+                            // BTCUSD: min 6,000p ($60), ETHUSD: min 600p ($6), Gold: min 300p ($3), Forex: min 20p
                             double minBeProfitPips = 20.0;
                             string symUpper = SymbolName.ToUpperInvariant();
-                            if (symUpper.Contains("BTC")) minBeProfitPips = 15000.0;
-                            else if (symUpper.Contains("ETH")) minBeProfitPips = 1500.0;
-                            else if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 500.0;
+                            if (symUpper.Contains("BTC")) minBeProfitPips = 6000.0;
+                            else if (symUpper.Contains("ETH")) minBeProfitPips = 600.0;
+                            else if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 300.0;
 
                             double currentProfitPips = pos.TradeType == TradeType.Buy 
                                 ? (currentBid - pos.EntryPrice) / Symbol.PipSize 
