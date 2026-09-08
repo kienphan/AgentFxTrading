@@ -116,4 +116,88 @@ class DockerManager:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def restart_container(self, name: str, timeout: int = 10) -> Dict:
+        if not self.is_available:
+            return {"success": False, "message": "Docker not available"}
+        try:
+            container = self.client.containers.get(name)
+            container.restart(timeout=timeout)
+            return {"success": True, "message": f"Container {name} restarted"}
+        except docker.errors.NotFound:
+            return {"success": False, "message": "Container not found"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def get_container_logs(self, name: str, tail: int = 50) -> Optional[str]:
+        if not self.is_available:
+            return None
+        try:
+            container = self.client.containers.get(name)
+            logs = container.logs(tail=tail)
+            return logs.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+
+    def check_cbot_health(self, name: str) -> Dict:
+        status_info = self.get_container_status(name)
+        status = status_info.get("status", "unknown")
+        if status != "running":
+            return {
+                "name": name,
+                "status": status,
+                "healthy": False,
+                "stuck": False,
+                "reason": f"Container is {status}"
+            }
+
+        logs = self.get_container_logs(name, tail=40)
+        if not logs:
+            return {
+                "name": name,
+                "status": status,
+                "healthy": True,
+                "stuck": False,
+                "reason": "Running (no logs available)"
+            }
+
+        lines = [line.strip() for line in logs.strip().splitlines() if line.strip()]
+        all_retry_idx = -1
+        logged_in_idx = -1
+        for idx, l in enumerate(lines):
+            l_low = l.lower()
+            if "all login retry attempts failed" in l_low or "connection failed, moving to reconnection state" in l_low:
+                all_retry_idx = idx
+            if "logged in" in l_low or "cbot instance [" in l_low or "aiagentbot started" in l_low or "asianrangejudassweepbot started" in l_low:
+                logged_in_idx = idx
+
+        if all_retry_idx != -1 and logged_in_idx < all_retry_idx:
+            return {
+                "name": name,
+                "status": status,
+                "healthy": False,
+                "stuck": True,
+                "reason": "Login retries exhausted without re-authenticating ('All login retry attempts failed')"
+            }
+
+        # Check for persistent repeated login failure loop in recent lines without any healthy indicator
+        recent_lines = lines[-15:]
+        has_errors = any("connection error:" in l.lower() or "login failed" in l.lower() for l in recent_lines)
+        has_healthy = any("logged in" in l.lower() or "cbot instance [" in l.lower() or "executing market order" in l.lower() or "reported position" in l.lower() for l in recent_lines)
+        if has_errors and not has_healthy and all_retry_idx != -1:
+            return {
+                "name": name,
+                "status": status,
+                "healthy": False,
+                "stuck": True,
+                "reason": "Continuous login error loop without successful recovery"
+            }
+
+        return {
+            "name": name,
+            "status": status,
+            "healthy": True,
+            "stuck": False,
+            "reason": "Healthy and running"
+        }
+
 docker_manager = DockerManager()

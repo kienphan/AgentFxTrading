@@ -848,6 +848,10 @@ async def api_get_bots():
         status_info = docker_manager.get_container_status(cfg["name"])
         cfg["status"] = status_info.get("status", "unknown")
         cfg["container_id"] = status_info.get("id", "")
+        health_info = docker_manager.check_cbot_health(cfg["name"])
+        cfg["healthy"] = health_info.get("healthy", True)
+        cfg["stuck"] = health_info.get("stuck", False)
+        cfg["health_reason"] = health_info.get("reason", "")
         cmd_lower = (cfg.get("run_command") or "").lower()
         name_lower = (cfg.get("name") or "").lower()
         if 'accountlabel="live"' in cmd_lower or "accountlabel='live'" in cmd_lower or "accountlabel=live" in cmd_lower or "-live" in name_lower or "live-" in name_lower or "_live" in name_lower or "--account=6094347" in cmd_lower:
@@ -909,6 +913,16 @@ async def api_stop_bot(name: str):
 async def api_remove_bot(name: str):
     result = docker_manager.remove_container(name)
     return result
+
+@router.post("/api/bots/{name}/restart")
+async def api_restart_bot(name: str):
+    result = docker_manager.restart_container(name)
+    return result
+
+@router.get("/api/watchdog/status")
+async def api_watchdog_status():
+    from app.cbot_watchdog import cbot_watchdog
+    return cbot_watchdog.get_status()
 
 # ── News Service & Macro Assessment API Endpoints ─────────────────────────
 

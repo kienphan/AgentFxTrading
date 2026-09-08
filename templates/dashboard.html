@@ -788,7 +788,14 @@
             let html = "";
             filteredBots.forEach(b => {
                 const isRunning = b.status === "running";
-                const statusColor = isRunning ? "var(--color-profit)" : (b.status === "error" ? "var(--color-loss)" : "var(--color-dim)");
+                let statusHtml = `<span style="color:var(--color-dim)">${b.status}</span>`;
+                if (b.stuck) {
+                    statusHtml = `<span style="color:var(--color-loss); font-weight:bold;" title="${b.health_reason || 'Bot is stuck'}">⚠️ STUCK</span>`;
+                } else if (isRunning) {
+                    statusHtml = `<span style="color:var(--color-profit)">● running</span>`;
+                } else if (b.status === "error") {
+                    statusHtml = `<span style="color:var(--color-loss)">● error</span>`;
+                }
                 const escapedCmd = (b.run_command || '').replace(/"/g, '&quot;');
                 const escapedDesc = (b.description || '').replace(/"/g, '&quot;');
                 const modeBadge = (b.account_type === 'live')
@@ -798,13 +805,13 @@
                 html += `<tr>
                     <td><strong>${b.name}</strong></td>
                     <td>${modeBadge}</td>
-                    <td><span style="color:${statusColor}">${b.status}</span></td>
+                    <td>${statusHtml}</td>
                     <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
                     <td class="td-dim">${b.description || "-"}</td>
                     <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
                     <td style="text-align:right; white-space:nowrap;">
                         ${isRunning 
-                            ? `<button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
+                            ? `<button class="log-btn action-restart" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Restart</button><button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
                             : `<button class="log-btn action-start" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit);">Start</button>`
                         }
                         <button class="log-btn action-edit" data-name="${b.name}" data-desc="${escapedDesc}" data-cmd="${escapedCmd}" style="background:var(--bg-elevated); margin:0 4px;">Edit</button>
@@ -817,6 +824,7 @@
             document.querySelectorAll(".action-start").forEach(btn => btn.addEventListener("click", e => actionBot(e.target.dataset.name, "start")));
             document.querySelectorAll(".action-stop").forEach(btn => btn.addEventListener("click", e => actionBot(e.target.dataset.name, "stop")));
             document.querySelectorAll(".action-delete").forEach(btn => btn.addEventListener("click", e => deleteBot(e.target.dataset.name)));
+            document.querySelectorAll(".action-restart").forEach(btn => btn.addEventListener("click", e => actionBot(e.target.dataset.name, "restart")));
             document.querySelectorAll(".action-edit").forEach(btn => btn.addEventListener("click", e => {
                 const bName = btn.dataset.name;
                 const bDesc = btn.dataset.desc;

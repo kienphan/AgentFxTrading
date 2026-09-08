@@ -17,6 +17,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 import datetime
 import asyncio
 import logging.handlers
+import threading
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
 
@@ -33,22 +34,71 @@ class GMT7Formatter(logging.Formatter):
         else:
             s = datetime.datetime(*ct[:6]).strftime("%Y-%m-%d %H:%M:%S")
         return s
+class DailyDateFileHandler(logging.Handler):
+    """
+    Daily log file handler that writes directly to logs/agent_YYYY-MM-DD.log based on GMT+7 date.
+    Rolls over cleanly at 00:00 GMT+7 without filename mangling.
+    """
+    def __init__(self, logs_dir: Path, backup_count: int = 14, encoding: str = "utf-8"):
+        super().__init__()
+        self.logs_dir = Path(logs_dir)
+        self.logs_dir.mkdir(exist_ok=True)
+        self.backup_count = backup_count
+        self.encoding = encoding
+        self._current_date = None
+        self._file = None
+        self._lock = threading.Lock()
+
+    def _get_current_date(self) -> str:
+        now_gmt7 = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=7)
+        return now_gmt7.strftime("%Y-%m-%d")
+
+    def _cleanup_old_logs(self):
+        try:
+            log_files = sorted(self.logs_dir.glob("agent_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for f in log_files[self.backup_count:]:
+                f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            date_str = self._get_current_date()
+            with self._lock:
+                if self._file is None or self._current_date != date_str:
+                    if self._file is not None:
+                        try:
+                            self._file.close()
+                        except Exception:
+                            pass
+                    self._current_date = date_str
+                    log_path = self.logs_dir / f"agent_{date_str}.log"
+                    self._file = open(log_path, "a", encoding=self.encoding)
+                    self._cleanup_old_logs()
+                self._file.write(msg + "\n")
+                self._file.flush()
+        except Exception:
+            self.handleError(record)
+
+    def close(self):
+        with self._lock:
+            if self._file is not None:
+                try:
+                    self._file.close()
+                except Exception:
+                    pass
+                self._file = None
+        super().close()
+
 def setup_agent_logging(level=logging.INFO):
     logs_dir = PROJECT_ROOT / "logs"
     logs_dir.mkdir(exist_ok=True)
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
     
-    # Daily rotating file handler (14 days backup)
-    file_handler = logging.handlers.TimedRotatingFileHandler(
-        logs_dir / f"agent_{today}.log",
-        when="midnight",
-        interval=1,
-        backupCount=14,
-        encoding="utf-8"
-    )
+    # Daily rotating file handler (14 days backup, GMT+7 date-aligned)
+    file_handler = DailyDateFileHandler(logs_dir, backup_count=14, encoding="utf-8")
     file_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
     file_handler.setLevel(level)
-
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%H:%M:%S"))
@@ -96,7 +146,20 @@ async def lifespan(app: FastAPI):
         ws_manager.set_event_loop(loop)
     except Exception as e:
         logger.warning(f"Failed to set event loop for ws_manager: {e}")
+
+    # Start cBot Watchdog service for automatic relogin and crash recovery
+    from app.cbot_watchdog import cbot_watchdog
+    watchdog_task = asyncio.create_task(cbot_watchdog.run_loop())
+
     yield
+
+    # Shutdown watchdog cleanly
+    cbot_watchdog.stop()
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(title="TMS+ORB Agent Server", lifespan=lifespan)
 
