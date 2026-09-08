@@ -32,7 +32,6 @@ _CLUSTERS_CACHE: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_SECONDS = 900  # 15 minutes
 
 FF_JSON_THISWEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-FF_JSON_NEXTWEEK = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
 FF_XML_THISWEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
 
 HTTP_HEADERS = {
@@ -45,18 +44,6 @@ DB_PATH = PROJECT_ROOT / "portfolio.db"
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_TTL_SECONDS = 900  # 15 minutes
-
-FF_JSON_THISWEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-FF_JSON_NEXTWEEK = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
-FF_XML_THISWEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
-
-HTTP_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/xml, */*"
-}
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "portfolio.db"
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -109,23 +96,39 @@ def generate_cluster_hash(timestamp_utc: str, event_titles: List[str], symbol: s
 async def fetch_forexfactory_raw_events(week_range: str = "thisweek", force_refresh: bool = False) -> List[Dict[str, Any]]:
     """
     Fetches raw economic calendar events with in-memory caching, disk persistence, and XML fallback.
+    Supports week_range: 'today', 'tomorrow', 'thisweek' (default).
     """
-    cache_key = f"ff_raw_{week_range.lower()}"
+    norm_range = (week_range or "thisweek").strip().lower()
+
+    # If filtering for today or tomorrow, fetch full week events first then filter by date
+    if norm_range in ("today", "tomorrow"):
+        all_events = await fetch_forexfactory_raw_events("thisweek", force_refresh=force_refresh)
+        target_date = datetime.now(timezone.utc).date()
+        if norm_range == "tomorrow":
+            target_date += timedelta(days=1)
+
+        filtered = []
+        for ev in all_events:
+            parsed_dt = parse_iso_or_ff_date(ev.get("date", ""))
+            if parsed_dt and parsed_dt.date() == target_date:
+                filtered.append(ev)
+        return filtered
+
+    cache_key = "ff_raw_thisweek"
     now_ts = time.time()
-    disk_cache_file = DATA_DIR / f"ff_calendar_{week_range.lower()}.json"
+    disk_cache_file = DATA_DIR / "ff_calendar_thisweek.json"
     
     if not force_refresh and cache_key in _NEWS_CACHE:
         cached_entry = _NEWS_CACHE[cache_key]
         if now_ts - cached_entry["timestamp"] < CACHE_TTL_SECONDS:
             return cached_entry["data"]
 
-    target_url = FF_JSON_NEXTWEEK if week_range.lower() == "nextweek" else FF_JSON_THISWEEK
     events: List[Dict[str, Any]] = []
     fetch_error = None
 
     try:
         async with httpx.AsyncClient(headers=HTTP_HEADERS, timeout=12.0) as client:
-            resp = await client.get(target_url)
+            resp = await client.get(FF_JSON_THISWEEK)
             if resp.status_code == 200:
                 events = resp.json()
             else:
@@ -133,27 +136,26 @@ async def fetch_forexfactory_raw_events(week_range: str = "thisweek", force_refr
     except Exception as json_err:
         fetch_error = json_err
         # Fallback to XML if thisweek fails
-        if week_range.lower() == "thisweek":
-            try:
-                async with httpx.AsyncClient(headers=HTTP_HEADERS, timeout=12.0) as client:
-                    xml_resp = await client.get(FF_XML_THISWEEK)
-                    if xml_resp.status_code == 200:
-                        root = ET.fromstring(xml_resp.content)
-                        for item in root.findall(".//event"):
-                            d_val = (item.findtext("date", "") or "").strip()
-                            t_val = (item.findtext("time", "") or "").strip()
-                            full_dt = f"{d_val} {t_val}".strip() if t_val else d_val
-                            events.append({
-                                "title": (item.findtext("title", "") or "").strip(),
-                                "country": (item.findtext("country", "") or "").strip(),
-                                "date": full_dt,
-                                "time": t_val,
-                                "impact": (item.findtext("impact", "") or "").strip(),
-                                "forecast": (item.findtext("forecast", "") or "").strip(),
-                                "previous": (item.findtext("previous", "") or "").strip()
-                            })
-            except Exception as xml_err:
-                logger.error(f"[NewsService] ForexFactory XML fallback failed: {xml_err}")
+        try:
+            async with httpx.AsyncClient(headers=HTTP_HEADERS, timeout=12.0) as client:
+                xml_resp = await client.get(FF_XML_THISWEEK)
+                if xml_resp.status_code == 200:
+                    root = ET.fromstring(xml_resp.content)
+                    for item in root.findall(".//event"):
+                        d_val = (item.findtext("date", "") or "").strip()
+                        t_val = (item.findtext("time", "") or "").strip()
+                        full_dt = f"{d_val} {t_val}".strip() if t_val else d_val
+                        events.append({
+                            "title": (item.findtext("title", "") or "").strip(),
+                            "country": (item.findtext("country", "") or "").strip(),
+                            "date": full_dt,
+                            "time": t_val,
+                            "impact": (item.findtext("impact", "") or "").strip(),
+                            "forecast": (item.findtext("forecast", "") or "").strip(),
+                            "previous": (item.findtext("previous", "") or "").strip()
+                        })
+        except Exception as xml_err:
+            logger.error(f"[NewsService] ForexFactory XML fallback failed: {xml_err}")
 
     if events:
         _NEWS_CACHE[cache_key] = {
@@ -567,11 +569,9 @@ async def assess_news_cluster(
 
     # 4. Search alternate week_range fallback
     if not target_cluster:
-        alt_range = "nextweek" if week_range == "thisweek" else "thisweek"
-        alt_events = await fetch_forexfactory_raw_events(alt_range)
+        alt_events = await fetch_forexfactory_raw_events("thisweek")
         alt_clusters = cluster_red_news(alt_events)
         target_cluster = next((c for c in alt_clusters if c["id"] == cluster_id), None)
-
     if not target_cluster:
         raise ValueError(f"Cluster '{cluster_id}' not found in calendar.")
     system_prompt, user_prompt = generate_news_cluster_prompt(target_cluster, symbol, user_notes)

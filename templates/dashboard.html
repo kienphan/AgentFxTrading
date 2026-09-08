@@ -608,8 +608,9 @@
                     <div class="news-toolbar-left">
                         <span class="panel-title" style="font-size:0.88rem;"><i data-lucide="newspaper" class="text-red"></i> Red News &amp; Macro AI</span>
                         <div class="news-btn-group">
+                            <button class="news-filter-btn" id="news-filter-today" onclick="switchNewsRange('today')">Today</button>
+                            <button class="news-filter-btn" id="news-filter-tomorrow" onclick="switchNewsRange('tomorrow')">Tomorrow</button>
                             <button class="news-filter-btn active" id="news-filter-thisweek" onclick="switchNewsRange('thisweek')">This Week</button>
-                            <button class="news-filter-btn" id="news-filter-nextweek" onclick="switchNewsRange('nextweek')">Next Week</button>
                         </div>
                         <div class="news-btn-group">
                             <button class="news-filter-btn active" data-curr="ALL" onclick="filterNewsCurrency('ALL')">All</button>
@@ -1731,8 +1732,12 @@
 
         function switchNewsRange(range) {
             currentNewsRange = range;
-            document.getElementById('news-filter-thisweek').classList.toggle('active', range === 'thisweek');
-            document.getElementById('news-filter-nextweek').classList.toggle('active', range === 'nextweek');
+            const btnToday = document.getElementById('news-filter-today');
+            const btnTomorrow = document.getElementById('news-filter-tomorrow');
+            const btnThisweek = document.getElementById('news-filter-thisweek');
+            if (btnToday) btnToday.classList.toggle('active', range === 'today');
+            if (btnTomorrow) btnTomorrow.classList.toggle('active', range === 'tomorrow');
+            if (btnThisweek) btnThisweek.classList.toggle('active', range === 'thisweek');
             fetchNewsCalendar();
         }
 
@@ -1782,7 +1787,8 @@
                 const res = await fetch(`/api/news/calendar?range=${currentNewsRange}&refresh=${refresh}`);
                 const data = await res.json();
                 if (!data.success || !data.clusters || data.clusters.length === 0) {
-                    container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${currentNewsRange === 'thisweek' ? 'this week' : 'next week'}.</p></div>`;
+                    const rangeText = currentNewsRange === 'today' ? 'today' : (currentNewsRange === 'tomorrow' ? 'tomorrow' : 'this week');
+                    container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${rangeText}.</p></div>`;
                     return;
                 }
                 renderNewsClusters(data.clusters);
@@ -1809,7 +1815,9 @@
             }
 
             if (!filtered || filtered.length === 0) {
-                container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No high-impact news found matching currency filter "${currentNewsCurrency}".</p></div>`;
+                const rangeText = currentNewsRange === 'today' ? 'today' : (currentNewsRange === 'tomorrow' ? 'tomorrow' : 'this week');
+                const filterDesc = currentNewsCurrency !== 'ALL' ? `matching currency "${currentNewsCurrency}"` : '';
+                container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${rangeText} ${filterDesc}.</p></div>`;
                 return;
             }
 

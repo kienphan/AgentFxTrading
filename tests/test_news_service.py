@@ -179,13 +179,20 @@ def test_api_news_endpoints():
     assert data["success"] is True
     assert "is_blackout" in data
 
-    # Test Calendar API
+    # Test Calendar API (thisweek, today, tomorrow)
     resp = client.get("/api/news/calendar?range=thisweek")
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
     assert "clusters" in data
 
+    resp_today = client.get("/api/news/calendar?range=today")
+    assert resp_today.status_code == 200
+    assert resp_today.json()["success"] is True
+
+    resp_tomorrow = client.get("/api/news/calendar?range=tomorrow")
+    assert resp_tomorrow.status_code == 200
+    assert resp_tomorrow.json()["success"] is True
     # Test Assessments API
     resp = client.get("/api/news/assessments")
     assert resp.status_code == 200
