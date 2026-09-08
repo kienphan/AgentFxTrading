@@ -1469,7 +1469,7 @@ Contribuições são bem-vindas! Aqui está como você pode ajudar:
 
 - 💬 [Discussões](https://github.com/kienphan/AgentFxTrading/discussions)
 - 🐛 [Issues](https://github.com/kienphan/AgentFxTrading/issues)
-- 📧 Email: your-email@example.com
+- 📧 Email: senior1206@gmail.com
 
 ---
 

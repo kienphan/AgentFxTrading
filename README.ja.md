@@ -1469,7 +1469,7 @@ AgentFxTrading/
 
 - 💬 [ディスカッション](https://github.com/kienphan/AgentFxTrading/discussions)
 - 🐛 [イシュー](https://github.com/kienphan/AgentFxTrading/issues)
-- 📧 メール：your-email@example.com
+- 📧 メール：senior1206@gmail.com
 
 ---
 

@@ -1469,7 +1469,7 @@ AgentFxTrading/
 
 - 💬 [Обсуждения](https://github.com/kienphan/AgentFxTrading/discussions)
 - 🐛 [Проблемы](https://github.com/kienphan/AgentFxTrading/issues)
-- 📧 Email: your-email@example.com
+- 📧 Email: senior1206@gmail.com
 
 ---
 
