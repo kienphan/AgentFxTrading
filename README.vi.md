@@ -1556,7 +1556,7 @@ Mọi đóng góp đều được chào đón! Đây là cách bạn có thể g
 
 - 💬 [Discussions](https://github.com/kienphan/AgentFxTrading/discussions)
 - 🐛 [Issues](https://github.com/kienphan/AgentFxTrading/issues)
-- 📧 Email: your-email@example.com
+- 📧 Email: senior1206@gmail.com
 
 ---
 
