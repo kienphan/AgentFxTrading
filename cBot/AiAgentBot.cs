@@ -1223,10 +1223,15 @@ namespace cAlgo.Robots
                         if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
                         {
                             double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
-                            if (volumeToClose >= Symbol.VolumeInUnitsMin)
+                            double remainingVolume = pos.VolumeInUnits - volumeToClose;
+                            if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
                             {
-                                pos.ModifyVolume(pos.VolumeInUnits - volumeToClose);
-                                if (ShowLogs) Print($"[Partial Close] Pos#{pos.Id} closed {volumeToClose / Symbol.LotSize} lots at TP1 (BE)");
+                                pos.ModifyVolume(remainingVolume);
+                                if (ShowLogs) Print($"[Partial Close] Pos#{pos.Id} closed {volumeToClose / Symbol.LotSize} lots at TP1 (BE), remaining {remainingVolume / Symbol.LotSize} lots");
+                            }
+                            else if (ShowLogs)
+                            {
+                                Print($"[Partial Close Skipped] Pos#{pos.Id} volume ({pos.VolumeInUnits / Symbol.LotSize} lots) too small for partial close (remaining {remainingVolume / Symbol.LotSize} < min {Symbol.VolumeInUnitsMin / Symbol.LotSize}). Holding full position with BE SL.");
                             }
                         }
                         if (ShowLogs) Print($"[BE] Pos#{pos.Id} SL → {beSl:F5} (pnl={pnlPips:F1}p, trigger={beTriggerPips:F1}p)");
