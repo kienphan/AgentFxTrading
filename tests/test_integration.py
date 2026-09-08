@@ -653,6 +653,109 @@ def test_relaxed_overextension_and_dynamic_retest():
     assert decision_aged is None  # Allowed at 11 bars!
 
 
+def test_nyse_open_buffer_active_and_inactive():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData, SessionInfo, BarData
+
+    # 1. At 13:20 UTC (9:20 AM NY): inside buffer -> must be gated to HOLD
+    snap_in_buffer = MarketSnapshot(
+        bot_id="cbot-xauusd",
+        symbol="XAUUSD",
+        timeframe="Minute15",
+        ask=2910.0,
+        bid=2909.5,
+        bars=[BarData(time="2026-09-08 13:20:00")],
+        session=SessionInfo(session_name="newyork", phase="active", is_trading_time=True),
+        tms=TmsSignals(bias="BULLISH", bars_since_cross=1, cross_up=True, price_above_ema=True, long_entry=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=300.0,
+            in_entry_window=True,
+            is_decisive=True,
+            bars_since_breakout=1
+        )
+    )
+    decision_buffered = evaluate_cycle_gate(snap_in_buffer)
+    assert decision_buffered is not None
+    assert decision_buffered.action == "HOLD"
+    assert "NYSE Cash Open Buffer" in decision_buffered.reason
+
+    # 2. At 13:45 UTC (9:45 AM NY): outside buffer -> should pass buffer gate
+    snap_outside_buffer = MarketSnapshot(
+        bot_id="cbot-xauusd",
+        symbol="XAUUSD",
+        timeframe="Minute15",
+        ask=2910.0,
+        bid=2909.5,
+        bars=[BarData(time="2026-09-08 13:45:00")],
+        session=SessionInfo(session_name="newyork", phase="active", is_trading_time=True),
+        tms=TmsSignals(bias="BULLISH", bars_since_cross=1, cross_up=True, price_above_ema=True, long_entry=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=300.0,
+            in_entry_window=True,
+            is_decisive=True,
+            bars_since_breakout=2
+        )
+    )
+    decision_outside = evaluate_cycle_gate(snap_outside_buffer)
+    assert decision_outside is None
+
+
+def test_gold_min_decisive_breakout_gate():
+    from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData, SessionInfo, BarData
+
+    # Breakout distance 150 pips (< 250.0 threshold for Gold) -> Gated to HOLD
+    snap_small_breakout = MarketSnapshot(
+        bot_id="cbot-xauusd",
+        symbol="XAUUSD",
+        timeframe="Minute15",
+        ask=2910.0,
+        bid=2909.5,
+        bars=[BarData(time="2026-09-08 14:00:00")],
+        session=SessionInfo(session_name="newyork", phase="active", is_trading_time=True),
+        tms=TmsSignals(bias="BULLISH", bars_since_cross=1, cross_up=True, price_above_ema=True, long_entry=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=150.0,
+            in_entry_window=True,
+            is_decisive=True,
+            bars_since_breakout=1
+        )
+    )
+    decision = evaluate_cycle_gate(snap_small_breakout)
+    assert decision is not None
+    assert decision.action == "HOLD"
+    assert "Gold breakout not decisive" in decision.reason
+
+    # Breakout distance 260 pips (>= 250.0 threshold for Gold) -> Passes gate
+    snap_decisive = MarketSnapshot(
+        bot_id="cbot-xauusd",
+        symbol="XAUUSD",
+        timeframe="Minute15",
+        ask=2910.0,
+        bid=2909.5,
+        bars=[BarData(time="2026-09-08 14:00:00")],
+        session=SessionInfo(session_name="newyork", phase="active", is_trading_time=True),
+        tms=TmsSignals(bias="BULLISH", bars_since_cross=1, cross_up=True, price_above_ema=True, long_entry=True),
+        orb=OrbData(
+            or_complete=True,
+            breakout_direction="up",
+            breakout_distance_pips=260.0,
+            in_entry_window=True,
+            is_decisive=True,
+            bars_since_breakout=1
+        )
+    )
+    assert evaluate_cycle_gate(snap_decisive) is None
+
+
+def test_logging_isolation_flag():
+    from app.server import is_running_under_test
+    assert is_running_under_test() is True
+
 def cleanup_test_data():
     import sqlite3
     try:

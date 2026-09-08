@@ -18,6 +18,7 @@ import datetime
 import asyncio
 import logging.handlers
 import threading
+from typing import Optional, List, Dict, Any, Union
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
 
@@ -91,12 +92,28 @@ class DailyDateFileHandler(logging.Handler):
                 self._file = None
         super().close()
 
-def setup_agent_logging(level=logging.INFO):
+def is_running_under_test() -> bool:
+    return (
+        "pytest" in sys.modules
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or any("pytest" in str(arg).lower() for arg in sys.argv)
+        or os.environ.get("ENV") == "test"
+        or os.environ.get("TESTING") == "1"
+    )
+
+def setup_agent_logging(level=logging.INFO, log_filename: Optional[str] = None):
     logs_dir = PROJECT_ROOT / "logs"
     logs_dir.mkdir(exist_ok=True)
     
-    # Daily rotating file handler (14 days backup, GMT+7 date-aligned)
-    file_handler = DailyDateFileHandler(logs_dir, backup_count=14, encoding="utf-8")
+    under_test = is_running_under_test()
+    if under_test or log_filename:
+        # Isolate pytest / test runner logs to logs/test.log instead of polluting live daily logs
+        target_log = logs_dir / (log_filename or "test.log")
+        file_handler = logging.FileHandler(target_log, mode="a", encoding="utf-8")
+    else:
+        # Daily rotating file handler (14 days backup, GMT+7 date-aligned) for production live trading
+        file_handler = DailyDateFileHandler(logs_dir, backup_count=14, encoding="utf-8")
+
     file_handler.setFormatter(GMT7Formatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
     file_handler.setLevel(level)
     # Console handler
@@ -700,6 +717,54 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 reason=f"Cycle gate: Market outside trading session (phase={snapshot.session.phase}, is_trading_time={snapshot.session.is_trading_time})"
             )
 
+    # Gate 2.1.1: NYSE Cash Open Buffer (13:10 – 13:35 UTC / 9:10 – 9:35 AM NY)
+    # Khung 15 phút trước và 5 phút sau giờ mở sàn Mỹ (9:30 AM NY) là giai đoạn gom hàng / quét thanh khoản
+    # có xác suất False Breakout cao nhất trong ngày của phiên New York.
+    # Chặn mở lệnh mới (chuyển về HOLD) trong khoảng thời gian này, bảo toàn vốn trước bẫy Pre-market sweep.
+    session_name = (snapshot.session.session_name if snapshot.session else "").lower()
+    is_ny_session = (
+        "newyork" in session_name
+        or "ny" in session_name
+        or any(s in snapshot.symbol.upper() for s in ["US30", "DJ30", "USTEC", "NAS100", "XAU", "GOLD"])
+    )
+
+    if is_ny_session:
+        current_dt = None
+        if snapshot.bars and getattr(snapshot.bars[0], "time", None):
+            try:
+                t_str = str(snapshot.bars[0].time)
+                if "T" in t_str:
+                    current_dt = datetime.datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+                else:
+                    current_dt = datetime.datetime.strptime(t_str[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+            except Exception:
+                current_dt = None
+
+        if current_dt is None:
+            current_dt = datetime.datetime.now(datetime.timezone.utc)
+
+        is_nyse_buffer = False
+        try:
+            from zoneinfo import ZoneInfo
+            ny_dt = current_dt.astimezone(ZoneInfo("America/New_York"))
+            ny_minute = ny_dt.hour * 60 + ny_dt.minute
+            # 9:10 AM NY is 550 min; 9:35 AM NY is 575 min
+            is_nyse_buffer = (550 <= ny_minute <= 575)
+        except Exception:
+            utc_dt = current_dt.astimezone(datetime.timezone.utc)
+            utc_minute = utc_dt.hour * 60 + utc_dt.minute
+            # 13:10 UTC is 790 min; 13:35 UTC is 815 min
+            is_nyse_buffer = (790 <= utc_minute <= 815)
+
+        if is_nyse_buffer:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason="Cycle gate: NYSE Cash Open Buffer active (13:10 - 13:35 UTC / 9:10 - 9:35 AM NY). Pre-market liquidity sweep protection."
+            )
+
     # Gate 2.2: Loss Streak Gate (Circuit breaker)
     if snapshot.loss_streak >= 3:
         return AgentDecision(
@@ -827,6 +892,18 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 f"Cycle gate: Breakout candle exhausted ({orb.breakout_distance_pips:.1f}p > direct max {max_direct_breakout_dist:.1f}p threshold). "
                 f"Model 1 direct entry prohibited; wait for Retest + TDI Bounce (Model 2)."
             )
+        )
+
+    # For Gold (XAUUSD / GOLD), enforce minimum decisive breakout distance >= 250.0 pips ($2.50)
+    # to filter out minor noise / false breakouts around OR boundaries.
+    min_decisive_threshold = 250.0 if ("XAU" in sym_upper or "GOLD" in sym_upper) else None
+    if min_decisive_threshold and orb.breakout_distance_pips < min_decisive_threshold and not has_bounce:
+        return AgentDecision(
+            action="HOLD",
+            volume_lots=0.01,
+            sl_pips=0.0,
+            tp_pips=0.0,
+            reason=f"Cycle gate: Gold breakout not decisive ({orb.breakout_distance_pips:.1f}p < min {min_decisive_threshold:.1f}p / $2.50 threshold)"
         )
 
     if not orb.is_decisive and not has_bounce:
