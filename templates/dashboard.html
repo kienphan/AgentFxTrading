@@ -596,25 +596,40 @@
             <div id="view-news" class="view-section">
                 <div class="news-toolbar">
                     <div class="news-toolbar-left">
-                        <span class="panel-title" style="font-size:0.9rem;"><i data-lucide="newspaper" class="text-red"></i> ForexFactory Red News &amp; AI Macro Assessment</span>
-                        <div style="display:flex; gap:4px; margin-left:12px;">
+                        <span class="panel-title" style="font-size:0.88rem;"><i data-lucide="newspaper" class="text-red"></i> Red News &amp; Macro AI</span>
+                        <div class="news-btn-group">
                             <button class="news-filter-btn active" id="news-filter-thisweek" onclick="switchNewsRange('thisweek')">This Week</button>
                             <button class="news-filter-btn" id="news-filter-nextweek" onclick="switchNewsRange('nextweek')">Next Week</button>
                         </div>
+                        <div class="news-btn-group">
+                            <button class="news-filter-btn active" data-curr="ALL" onclick="filterNewsCurrency('ALL')">All</button>
+                            <button class="news-filter-btn" data-curr="USD" onclick="filterNewsCurrency('USD')">USD</button>
+                            <button class="news-filter-btn" data-curr="EUR" onclick="filterNewsCurrency('EUR')">EUR</button>
+                            <button class="news-filter-btn" data-curr="GBP" onclick="filterNewsCurrency('GBP')">GBP</button>
+                            <button class="news-filter-btn" data-curr="JPY" onclick="filterNewsCurrency('JPY')">JPY</button>
+                        </div>
                     </div>
                     <div class="news-toolbar-right">
+                        <div class="news-btn-group">
+                            <button class="news-filter-btn active" id="news-view-grid" onclick="switchNewsView('grid')" title="Compact Cards View">
+                                <i data-lucide="layout-grid" style="width:13px; height:13px;"></i> Cards
+                            </button>
+                            <button class="news-filter-btn" id="news-view-table" onclick="switchNewsView('table')" title="Dense Table View">
+                                <i data-lucide="table" style="width:13px; height:13px;"></i> Table
+                            </button>
+                        </div>
                         <span id="news-shield-status-chip" class="status-pill status-pill--online">
                             <span class="status-dot"></span> Shield: Clear
                         </span>
-                        <button class="news-filter-btn" onclick="fetchNewsCalendar(true)">
-                            <i data-lucide="refresh-cw" style="width:14px; height:14px; vertical-align:middle;"></i> Refresh
+                        <button class="news-filter-btn" style="border:1px solid var(--border); padding:4px 8px;" onclick="fetchNewsCalendar(true)" title="Refresh ForexFactory Calendar">
+                            <i data-lucide="refresh-cw" style="width:13px; height:13px; vertical-align:middle;"></i>
                         </button>
                     </div>
                 </div>
 
-                <!-- Clusters Container -->
-                <div id="news-clusters-container" class="news-clusters-grid">
-                    <div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);">
+                <!-- Clusters Container (Cards or Table) -->
+                <div id="news-clusters-container">
+                    <div style="text-align:center; padding:30px; color:var(--text-muted);">
                         <p>Loading economic calendar...</p>
                     </div>
                 </div>
@@ -1688,14 +1703,35 @@
 
         // ── News Assessment System Frontend ─────────────────────────────────
         let currentNewsRange = 'thisweek';
+        let currentNewsView = (function(){ try { return localStorage.getItem('news_view_mode') || 'grid'; } catch(e){ return 'grid'; } })();
+        let currentNewsCurrency = 'ALL';
         let activeAssessmentData = null;
         let currentModalLang = 'vi';
+        let _cachedClusters = [];
 
         function switchNewsRange(range) {
             currentNewsRange = range;
             document.getElementById('news-filter-thisweek').classList.toggle('active', range === 'thisweek');
             document.getElementById('news-filter-nextweek').classList.toggle('active', range === 'nextweek');
             fetchNewsCalendar();
+        }
+
+        function switchNewsView(view) {
+            currentNewsView = view;
+            try { localStorage.setItem('news_view_mode', view); } catch(e){}
+            const gridBtn = document.getElementById('news-view-grid');
+            const tableBtn = document.getElementById('news-view-table');
+            if (gridBtn) gridBtn.classList.toggle('active', view === 'grid');
+            if (tableBtn) tableBtn.classList.toggle('active', view === 'table');
+            renderNewsClusters(_cachedClusters);
+        }
+
+        function filterNewsCurrency(curr) {
+            currentNewsCurrency = curr;
+            document.querySelectorAll('.news-toolbar [data-curr]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.curr === curr);
+            });
+            renderNewsClusters(_cachedClusters);
         }
 
         async function updateNewsShieldStatus() {
@@ -1709,7 +1745,7 @@
                         chip.innerHTML = `<span class="status-dot"></span> 🚨 Shield Active: ${data.event_title} (${data.remaining_minutes}m left)`;
                     } else {
                         chip.className = 'status-pill status-pill--online';
-                        chip.innerHTML = `<span class="status-dot"></span> Shield: Clear (No Blackout)`;
+                        chip.innerHTML = `<span class="status-dot"></span> Shield: Clear`;
                     }
                 }
             } catch(e) { }
@@ -1719,115 +1755,228 @@
             const container = document.getElementById('news-clusters-container');
             if (!container) return;
             if (refresh) {
-                container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);"><p>Refreshing ForexFactory events...</p></div>`;
+                container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>Refreshing ForexFactory events...</p></div>`;
             }
             updateNewsShieldStatus();
             try {
                 const res = await fetch(`/api/news/calendar?range=${currentNewsRange}&refresh=${refresh}`);
                 const data = await res.json();
                 if (!data.success || !data.clusters || data.clusters.length === 0) {
-                    container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${currentNewsRange === 'thisweek' ? 'this week' : 'next week'}.</p></div>`;
+                    container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${currentNewsRange === 'thisweek' ? 'this week' : 'next week'}.</p></div>`;
                     return;
                 }
                 renderNewsClusters(data.clusters);
             } catch(e) {
                 console.error("Error fetching news calendar:", e);
-                container.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--loss);"><p>Failed to load economic news calendar.</p></div>`;
+                container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--loss);"><p>Failed to load economic news calendar.</p></div>`;
             }
         }
 
-        let _cachedClusters = [];
         function renderNewsClusters(clusters) {
             _cachedClusters = clusters || [];
             const container = document.getElementById('news-clusters-container');
-            let html = '';
-            clusters.forEach(c => {
-                let countdownText = '';
-                let countdownClass = 'news-countdown-badge';
-                if (c.is_past) {
-                    countdownText = 'Past Event';
-                    countdownClass += ' news-countdown-badge--past';
-                } else if (c.diff_minutes <= 0) {
-                    countdownText = '🔴 Live Now';
-                    countdownClass += ' news-countdown-badge--pulse';
-                } else if (c.diff_minutes < 60) {
-                    countdownText = `⏳ In ${c.diff_minutes}m`;
-                    countdownClass += ' news-countdown-badge--pulse';
-                } else {
-                    const h = Math.floor(c.diff_minutes / 60);
-                    const m = c.diff_minutes % 60;
-                    countdownText = `In ${h}h ${m}m`;
-                }
+            if (!container) return;
 
-                const currPills = (c.currencies || []).map(curr => {
-                    const cls = curr.toLowerCase() === 'usd' ? 'currency-pill--usd' : 
-                                curr.toLowerCase() === 'eur' ? 'currency-pill--eur' : 
-                                curr.toLowerCase() === 'gbp' ? 'currency-pill--gbp' : 
-                                curr.toLowerCase() === 'jpy' ? 'currency-pill--jpy' : '';
-                    return `<span class="currency-pill ${cls}">${curr}</span>`;
-                }).join('');
+            // Sync view toggle buttons state
+            const gridBtn = document.getElementById('news-view-grid');
+            const tableBtn = document.getElementById('news-view-table');
+            if (gridBtn) gridBtn.classList.toggle('active', currentNewsView === 'grid');
+            if (tableBtn) tableBtn.classList.toggle('active', currentNewsView === 'table');
 
-                const eventsList = (c.events || []).map(ev => `
-                    <div class="news-event-row">
-                        <div class="news-event-title">${ev.title}</div>
-                        <div class="news-event-meta">
-                            <span>Forecast: <strong style="color:var(--text-primary);">${ev.forecast || '--'}</strong></span>
-                            <span>Previous: <strong style="color:var(--text-primary);">${ev.previous || '--'}</strong></span>
+            let filtered = _cachedClusters;
+            if (currentNewsCurrency !== 'ALL') {
+                filtered = _cachedClusters.filter(c => (c.currencies || []).includes(currentNewsCurrency));
+            }
+
+            if (!filtered || filtered.length === 0) {
+                container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No high-impact news found matching currency filter "${currentNewsCurrency}".</p></div>`;
+                return;
+            }
+
+            if (currentNewsView === 'table') {
+                // Dense Table View
+                let rowsHtml = '';
+                filtered.forEach(c => {
+                    let countdownText = '';
+                    let countdownClass = 'news-countdown-badge';
+                    if (c.is_past) {
+                        countdownText = 'Past';
+                        countdownClass += ' news-countdown-badge--past';
+                    } else if (c.diff_minutes <= 0) {
+                        countdownText = '🔴 Live';
+                        countdownClass += ' news-countdown-badge--pulse';
+                    } else if (c.diff_minutes < 60) {
+                        countdownText = `⏳ ${c.diff_minutes}m`;
+                        countdownClass += ' news-countdown-badge--pulse';
+                    } else {
+                        const h = Math.floor(c.diff_minutes / 60);
+                        countdownText = `In ${h}h`;
+                    }
+
+                    const currPills = (c.currencies || []).map(curr => {
+                        const cls = 'currency-pill--' + curr.toLowerCase();
+                        return `<span class="currency-pill ${cls}">${curr}</span>`;
+                    }).join(' ');
+
+                    const eventsHtml = (c.events || []).map(ev => `
+                        <div class="news-table-event-item">
+                            <span class="news-table-event-title">🔴 ${ev.title}</span>
+                            <span class="news-event-values">
+                                <span class="val-tag">F: <b>${ev.forecast || '--'}</b></span>
+                                <span class="val-tag">P: <b>${ev.previous || '--'}</b></span>
+                            </span>
                         </div>
-                    </div>
-                `).join('');
+                    `).join('');
 
-                const assessmentBadge = c.is_assessed && c.latest_assessment ? `
-                    <span style="font-size:0.72rem; color:var(--accent-bright); font-weight:700;">
-                        ✓ Assessed: ${c.latest_assessment.volatility_level} (${c.latest_assessment.expected_pips_range})
-                    </span>
-                ` : '';
+                    const assessmentHtml = c.is_assessed && c.latest_assessment ? `
+                        <span class="assessed-chip" onclick='viewSavedAssessment("${c.id}")' title="Click to view AI report">
+                            ✓ ${c.latest_assessment.volatility_level} (${c.latest_assessment.expected_pips_range})
+                        </span>
+                    ` : `<span style="color:var(--text-dim); font-size:0.7rem;">Not assessed</span>`;
 
-                html += `
-                    <div class="news-cluster-card ${c.is_past ? 'news-cluster-card--past' : 'news-cluster-card--upcoming'}" id="card-${c.id}">
-                        <div class="news-cluster-header">
-                            <div class="news-time-wrap">
-                                <span class="news-time-gmt">${c.time_formatted_vn}</span>
-                                <span class="news-time-utc">${c.date_formatted_vn} (${c.time_formatted_utc})</span>
+                    const dateShort = c.date_formatted_vn ? (c.date_formatted_vn.split(',')[1] || c.date_formatted_vn).trim() : '';
+                    const timeVn = c.time_formatted_vn ? c.time_formatted_vn.replace(' (GMT+7)', '') : '';
+
+                    rowsHtml += `
+                        <tr class="${c.is_past ? 'news-table-row--past' : ''}">
+                            <td style="white-space:nowrap;">
+                                <strong style="color:var(--text-primary); font-family:var(--font-mono);">${timeVn}</strong>
+                                <small style="display:block; color:var(--text-muted); font-size:0.68rem;">${dateShort}</small>
+                            </td>
+                            <td><span class="${countdownClass}">${countdownText}</span></td>
+                            <td>${currPills}</td>
+                            <td>
+                                <div class="news-table-events-cell">${eventsHtml}</div>
+                            </td>
+                            <td>${assessmentHtml}</td>
+                            <td style="text-align:right; white-space:nowrap;">
+                                <div style="display:inline-flex; align-items:center; gap:4px;">
+                                    <select class="news-symbol-select" id="symbol-tbl-${c.id}">
+                                        <option value="XAUUSD" selected>XAUUSD</option>
+                                        <option value="EURUSD">EURUSD</option>
+                                        <option value="GBPUSD">GBPUSD</option>
+                                        <option value="BTCUSD">BTCUSD</option>
+                                        <option value="US30">US30</option>
+                                    </select>
+                                    ${c.is_assessed ? `<button class="news-view-btn" onclick='viewSavedAssessment("${c.id}")' title="View Report">📖</button>` : ''}
+                                    <button class="news-assess-btn" id="btn-assess-tbl-${c.id}" onclick="triggerAiAssessment('${c.id}', 'tbl-')">
+                                        <i data-lucide="zap" style="width:12px; height:12px;"></i> Assess
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                container.className = 'news-table-wrap';
+                container.innerHTML = `
+                    <table class="news-table">
+                        <thead>
+                            <tr>
+                                <th style="width:110px;">Time (VN)</th>
+                                <th style="width:85px;">Countdown</th>
+                                <th style="width:55px;">Currency</th>
+                                <th>Events &amp; Expected Figures</th>
+                                <th style="width:170px;">AI Assessment</th>
+                                <th style="width:170px; text-align:right;">Target &amp; Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                `;
+            } else {
+                // Compact Cards View
+                let cardsHtml = '';
+                filtered.forEach(c => {
+                    let countdownText = '';
+                    let countdownClass = 'news-countdown-badge';
+                    if (c.is_past) {
+                        countdownText = 'Past';
+                        countdownClass += ' news-countdown-badge--past';
+                    } else if (c.diff_minutes <= 0) {
+                        countdownText = '🔴 Live';
+                        countdownClass += ' news-countdown-badge--pulse';
+                    } else if (c.diff_minutes < 60) {
+                        countdownText = `⏳ ${c.diff_minutes}m`;
+                        countdownClass += ' news-countdown-badge--pulse';
+                    } else {
+                        const h = Math.floor(c.diff_minutes / 60);
+                        const m = c.diff_minutes % 60;
+                        countdownText = `In ${h}h ${m > 0 ? m + 'm' : ''}`;
+                    }
+
+                    const currPills = (c.currencies || []).map(curr => {
+                        const cls = 'currency-pill--' + curr.toLowerCase();
+                        return `<span class="currency-pill ${cls}">${curr}</span>`;
+                    }).join('');
+
+                    const eventsList = (c.events || []).map(ev => `
+                        <div class="news-event-item">
+                            <span class="news-event-name" title="${ev.title}">🔴 ${ev.title}</span>
+                            <span class="news-event-values">
+                                <span class="val-tag" title="Forecast">F: <b>${ev.forecast || '--'}</b></span>
+                                <span class="val-tag" title="Previous">P: <b>${ev.previous || '--'}</b></span>
+                            </span>
+                        </div>
+                    `).join('');
+
+                    const assessmentBadge = c.is_assessed && c.latest_assessment ? `
+                        <div class="news-card-assessed-tag" onclick='viewSavedAssessment("${c.id}")' style="cursor:pointer;" title="Click to view AI report">
+                            ✓ Assessed: <b>${c.latest_assessment.volatility_level}</b> (${c.latest_assessment.expected_pips_range})
+                        </div>
+                    ` : '';
+
+                    const timeShort = c.time_formatted_vn ? c.time_formatted_vn.replace(' (GMT+7)', '') : '';
+                    const dateShort = c.date_formatted_vn ? (c.date_formatted_vn.split(',')[1] || c.date_formatted_vn).trim() : '';
+
+                    cardsHtml += `
+                        <div class="news-cluster-card ${c.is_past ? 'news-cluster-card--past' : 'news-cluster-card--upcoming'}" id="card-${c.id}">
+                            <div class="news-cluster-header">
+                                <div class="news-header-meta">
+                                    <span class="news-time-gmt">${timeShort}</span>
+                                    <span class="news-time-utc">${dateShort}</span>
+                                    ${currPills}
+                                </div>
+                                <span class="${countdownClass}">${countdownText}</span>
                             </div>
-                            <span class="${countdownClass}">${countdownText}</span>
-                        </div>
-                        <div class="news-cluster-body">
-                            <div class="news-currencies-strip">${currPills}</div>
-                            <div class="news-events-list">${eventsList}</div>
-                        </div>
-                        <div class="news-cluster-footer">
-                            <div style="display:flex; align-items:center; gap:6px;">
+                            <div class="news-cluster-body">
+                                <div class="news-events-list">${eventsList}</div>
+                                ${assessmentBadge}
+                            </div>
+                            <div class="news-cluster-footer">
                                 <select class="news-symbol-select" id="symbol-${c.id}">
-                                    <option value="XAUUSD" selected>XAUUSD (Gold)</option>
+                                    <option value="XAUUSD" selected>XAUUSD</option>
                                     <option value="EURUSD">EURUSD</option>
                                     <option value="GBPUSD">GBPUSD</option>
                                     <option value="BTCUSD">BTCUSD</option>
                                     <option value="US30">US30</option>
                                 </select>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                ${c.is_assessed ? `<button class="news-view-btn" onclick='viewSavedAssessment("${c.id}")'>📖 View Report</button>` : ''}
-                                <button class="news-assess-btn" id="btn-assess-${c.id}" onclick="triggerAiAssessment('${c.id}')">
-                                    <i data-lucide="zap" style="width:13px; height:13px;"></i> Assess AI
-                                </button>
+                                <div style="display:flex; align-items:center; gap:4px;">
+                                    ${c.is_assessed ? `<button class="news-view-btn" onclick='viewSavedAssessment("${c.id}")' title="View Report">📖</button>` : ''}
+                                    <button class="news-assess-btn" id="btn-assess-${c.id}" onclick="triggerAiAssessment('${c.id}')">
+                                        <i data-lucide="zap" style="width:12px; height:12px;"></i> Assess
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
+                    `;
+                });
+
+                container.className = 'news-clusters-grid';
+                container.innerHTML = cardsHtml;
+            }
+
             if (window.lucide) { lucide.createIcons(); }
         }
 
-        async function triggerAiAssessment(clusterId) {
-            const symSelect = document.getElementById(`symbol-${clusterId}`);
+        async function triggerAiAssessment(clusterId, prefix = '') {
+            const symSelect = document.getElementById(`symbol-${prefix}${clusterId}`) || document.getElementById(`symbol-${clusterId}`);
             const symbol = symSelect ? symSelect.value : 'XAUUSD';
             const clusterObj = _cachedClusters.find(c => c.id === clusterId) || null;
-            const btn = document.getElementById(`btn-assess-${clusterId}`);
+            const btn = document.getElementById(`btn-assess-${prefix}${clusterId}`) || document.getElementById(`btn-assess-${clusterId}`);
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = `<i data-lucide="loader" style="animation:spin 1s linear infinite; width:13px; height:13px;"></i> Analyzing...`;
+                btn.innerHTML = `<i data-lucide="loader" style="animation:spin 1s linear infinite; width:12px; height:12px;"></i> ...`;
                 if (window.lucide) { lucide.createIcons(); }
             }
             try {
@@ -1853,7 +2002,7 @@
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = `<i data-lucide="zap" style="width:13px; height:13px;"></i> Assess AI`;
+                    btn.innerHTML = `<i data-lucide="zap" style="width:12px; height:12px;"></i> Assess`;
                     if (window.lucide) { lucide.createIcons(); }
                 }
             }
