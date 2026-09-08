@@ -7,9 +7,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![cTrader](https://img.shields.io/badge/cTrader-4.x+-green.svg)](https://ctdn.com/)
-[![Stars](https://img.shields.io/github/stars/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/stargazers)
-[![Forks](https://img.shields.io/github/forks/yourusername/AgentFxTrading?style=social)](https://github.com/yourusername/AgentFxTrading/network/members)
-[![Issues](https://img.shields.io/github/issues/yourusername/AgentFxTrading)](https://github.com/yourusername/AgentFxTrading/issues)
+[![Stars](https://img.shields.io/github/stars/kienphan/AgentFxTrading?style=social)](https://github.com/kienphan/AgentFxTrading/stargazers)
+[![Forks](https://img.shields.io/github/forks/kienphan/AgentFxTrading?style=social)](https://github.com/kienphan/AgentFxTrading/network/members)
+[![Issues](https://img.shields.io/github/issues/kienphan/AgentFxTrading)](https://github.com/kienphan/AgentFxTrading/issues)
 [![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kaz126)
 
 [🇬🇧 English](README.md) | [🇻🇳 Tiếng Việt](README.vi.md) | [🇨🇳 中文](README.zh.md) | [🇵🇹 Português](README.pt.md) | [🇯🇵 日本語](README.ja.md) | [🇷🇺 Русский](README.ru.md)
@@ -168,7 +168,7 @@ WS   /ws/dashboard             # 实时WebSocket更新通道
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/AgentFxTrading.git
+git clone https://github.com/kienphan/AgentFxTrading.git
 cd AgentFxTrading
 
 # 安装依赖
@@ -1457,8 +1457,8 @@ AgentFxTrading/
 
 ### 社区
 
-- 💬 [讨论](https://github.com/yourusername/AgentFxTrading/discussions)
-- 🐛 [问题](https://github.com/yourusername/AgentFxTrading/issues)
+- 💬 [讨论](https://github.com/kienphan/AgentFxTrading/discussions)
+- 🐛 [问题](https://github.com/kienphan/AgentFxTrading/issues)
 - 📧 邮箱：your-email@example.com
 
 ---
@@ -1479,7 +1479,7 @@ AgentFxTrading/
 
 ## 📈 Star历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/AgentFxTrading&type=Date)](https://star-history.com/#yourusername/AgentFxTrading&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=kienphan/AgentFxTrading&type=Date)](https://star-history.com/#kienphan/AgentFxTrading&Date)
 
 ---
 
