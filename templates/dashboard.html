@@ -1197,6 +1197,8 @@
             ws.onclose=()=>{setConn(false);if(pingInterval)clearInterval(pingInterval);setTimeout(connectWebSocket,3000)};
             ws.onerror=(e)=>console.error('WS error:',e);
         }
+        // Start WebSocket connection on page load
+        connectWebSocket();
 
         function handleLiveDecision(dec) {
             if (!dec) return;
