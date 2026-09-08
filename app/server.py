@@ -541,7 +541,9 @@ You analyze market structure and propose trade actions. The deterministic execut
 - **POSITION MEMORY & GIVEBACK FLOOR (PROFIT LOCK-IN)**:
   - position.mfe_pips = PEAK floating profit reached.
   - position.giveback_pips = Profit given back from peak (MFE - Current PnL).
-  - **Golden Rule**: Giveback protection activates on winning trades. For Forex/Metals, activation starts when MFE >= 0.8x ATR, triggering CLOSE_ALL if giveback >= 40% of peak MFE with momentum stall/reversal. For Indices (US30, USTEC, DE40, etc.), activation requires MFE >= 1.5x ATR (min 1000 pips / 100 points for US30) and giveback >= 55% of peak MFE with momentum stall/reversal, allowing natural intraday index swings (50–300 points). NEVER let a winning trade turn into a full loss.
+- **Golden Rule (2-Tier Profit Lock-in & Trailing Stop)**:
+  - **Tier 1 (Moderate Gains - Trend Inception)**: Provides generous breathing room for the trend to develop through normal pullbacks. Activates when MFE >= 0.8x ATR (Forex/Metals) with 40% giveback cap, or MFE >= 1.5x ATR (min 1000p on US30 / 300p on USTEC) with 55% giveback cap for indices. Trailing stop tracks at standard 1.2x - 1.5x ATR.
+  - **Tier 2 (Large Gains / Deep Trend Run)**: Activates when MFE >= 2.5x ATR (or >= 1200p on US30, >= 600p on USTEC, >= 400p on DE40, or >= 65% distance to TP). In Tier 2, giveback tolerance strictly tightens from 55% down to 35% (indices) and 30% (forex/metals), and trailing distance tightens to 0.9x ATR. When a position achieves large floating gains (e.g. +$15+ on US30), lock in at least 65% of peak gains; NEVER let a major win slip below +$11.
 - **ASSET SCALE & RISK DISCIPLINE (CRYPTO / INDICES / METALS / FOREX)**:
   - Stop Loss is hard-capped by ATR guardrails and max dollar risk ($10–$15 max per trade on a $700 account).
   - On Gold (XAUUSD), 1 pip = $0.01. Do NOT trade with massive SLs > 1200 pips ($12).
@@ -564,7 +566,7 @@ You analyze market structure and propose trade actions. The deterministic execut
 ### Exit Criteria:
 1. session.phase = "ending" -> CLOSE_ALL (EOD safety).
 2. Confirmed Reversal Signal: exit_long = true (for BUY) or exit_short = true (for SELL) indicating a true TDI cross / momentum reversal -> CLOSE_ALL.
-3. Significant Giveback on Winning Trade: Trade achieved profit (MFE >= 0.8x ATR) and gives back >= 40% of peak with momentum stall or reversal -> CLOSE_ALL (Lock-in profit).
+3. Significant Giveback on Winning Trade: Giveback reaches Tier 1 (40% Forex / 55% Indices) or Tier 2 (30% Forex / 35% Indices on large gains >= 2.5x ATR / 65% TP) with momentum stall or reversal -> CLOSE_ALL (Lock-in profit).
 4. Otherwise (trade in normal consolidation or healthy pullback within trend) -> HOLD (let ATR SL/TP and Trailing Stop manage the trade).
 
 ## Output Format (JSON only)

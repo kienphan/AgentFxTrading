@@ -1201,6 +1201,8 @@ namespace cAlgo.Robots
             double beOffsetPips = BreakevenOffsetAtr * atrInPips;
             double trailTriggerPips = TrailTriggerAtr * atrInPips;
             double trailDistancePips = TrailDistanceAtr * atrInPips;
+            string symUp = SymbolName.ToUpperInvariant();
+            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30");
 
             foreach (var pos in GetBotPositions())
             {
@@ -1241,18 +1243,56 @@ namespace cAlgo.Robots
                 // Trailing: trail SL when profit >= trail trigger
                 if (TrailTriggerAtr > 0 && pnlPips >= trailTriggerPips && pos.StopLoss != null)
                 {
-                    double trailSl;
-                    if (pos.TradeType == TradeType.Buy)
+                    double totalTpPips = 0;
+                    if (pos.TakeProfit != null)
                     {
-                        trailSl = Symbol.Bid - trailDistancePips * Symbol.PipSize;
-                        if (trailSl > pos.StopLoss.Value && trailSl < Symbol.Bid)
-                            pos.ModifyStopLossPrice(trailSl);
+                        totalTpPips = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize;
+                    }
+
+                    // Tier 2 Trailing Stop: Khi lợi nhuận đã đạt mức lớn (>= 2.5x ATR, hoặc >= 1200p US30/600p USTEC/400p DE40, hoặc >= 65% TP),
+                    // tự động siết khoảng cách Trailing từ 1.2-1.5 ATR xuống 0.9 ATR (Indices) hoặc 0.6 ATR (Forex/Metals)
+                    // để khóa chặt lợi nhuận lớn, không để nhả lại quá nhiều.
+                    double effectiveTrailDistanceAtr = TrailDistanceAtr;
+                    bool isTier2Trailing = false;
+                    if (isIndex)
+                    {
+                        double minIndexTier2Pips = symUp.Contains("US30") ? 1200.0 : (symUp.Contains("USTEC") ? 600.0 : 400.0);
+                        if (pnlPips >= 2.5 * atrInPips || pnlPips >= minIndexTier2Pips || (totalTpPips > 0 && pnlPips >= 0.65 * totalTpPips))
+                        {
+                            effectiveTrailDistanceAtr = Math.Min(TrailDistanceAtr, 0.9);
+                            isTier2Trailing = true;
+                        }
                     }
                     else
                     {
-                        trailSl = Symbol.Ask + trailDistancePips * Symbol.PipSize;
-                        if (trailSl < pos.StopLoss.Value && trailSl > Symbol.Ask)
+                        if (pnlPips >= 2.0 * atrInPips || (totalTpPips > 0 && pnlPips >= 0.65 * totalTpPips))
+                        {
+                            effectiveTrailDistanceAtr = Math.Min(TrailDistanceAtr, 0.6);
+                            isTier2Trailing = true;
+                        }
+                    }
+
+                    double effectiveTrailDistancePips = effectiveTrailDistanceAtr * atrInPips;
+                    double trailSl;
+                    if (pos.TradeType == TradeType.Buy)
+                    {
+                        trailSl = Symbol.Bid - effectiveTrailDistancePips * Symbol.PipSize;
+                        if (trailSl > pos.StopLoss.Value && trailSl < Symbol.Bid)
+                        {
                             pos.ModifyStopLossPrice(trailSl);
+                            if (isTier2Trailing && ShowLogs)
+                                Print($"[Trailing Tier 2] Pos#{pos.Id} tightened SL → {trailSl:F5} (dist={effectiveTrailDistancePips:F1}p / pnl={pnlPips:F1}p)");
+                        }
+                    }
+                    else
+                    {
+                        trailSl = Symbol.Ask + effectiveTrailDistancePips * Symbol.PipSize;
+                        if (trailSl < pos.StopLoss.Value && trailSl > Symbol.Ask)
+                        {
+                            pos.ModifyStopLossPrice(trailSl);
+                            if (isTier2Trailing && ShowLogs)
+                                Print($"[Trailing Tier 2] Pos#{pos.Id} tightened SL → {trailSl:F5} (dist={effectiveTrailDistancePips:F1}p / pnl={pnlPips:F1}p)");
+                        }
                     }
                 }
             }
@@ -1290,11 +1330,42 @@ namespace cAlgo.Robots
                 double giveback = mfe - pnlPips;
 
                 // 1. Percentage-based MFE Giveback Guard (For Indices: max 55% giveback; Forex/Metals: max 40%)
+                // 1. Percentage-based MFE Giveback Guard:
+                // Tier 1 (Normal profit): Indices max 55% giveback, Forex/Metals max 40%.
+                // Tier 2 (Large profit - MFE >= 2.5x ATR hoặc MFE >= 1200p trên US30 / 600p USTEC / 400p DE40 hoặc >= 65% TP):
+                // Tighten giveback from 55% down to 35% (Indices) and 30% (Forex/Metals) to lock in at least 65-70% of peak gains!
                 double effectiveMfeRatio = isIndex ? Math.Max(MaxGivebackMfeRatio, 0.55) : MaxGivebackMfeRatio;
+
+                double totalTpPips = 0;
+                if (pos.TakeProfit != null)
+                {
+                    totalTpPips = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize;
+                }
+
+                bool isTier2Giveback = false;
+                if (isIndex)
+                {
+                    double minIndexTier2Mfe = symUp.Contains("US30") ? 1200.0 : (symUp.Contains("USTEC") ? 600.0 : 400.0);
+                    if (mfe >= 2.5 * atrInPips || mfe >= minIndexTier2Mfe || (totalTpPips > 0 && mfe >= 0.65 * totalTpPips))
+                    {
+                        effectiveMfeRatio = 0.35;
+                        isTier2Giveback = true;
+                    }
+                }
+                else
+                {
+                    if (mfe >= 2.0 * atrInPips || (totalTpPips > 0 && mfe >= 0.65 * totalTpPips))
+                    {
+                        effectiveMfeRatio = 0.30;
+                        isTier2Giveback = true;
+                    }
+                }
+
                 if (effectiveMfeRatio > 0 && giveback >= (mfe * effectiveMfeRatio))
                 {
                     pos.Close();
-                    if (ShowLogs) Print($"[Giveback %] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {effectiveMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
+                    string tierLabel = isTier2Giveback ? "Tier 2 (Tight 35%)" : "Tier 1";
+                    if (ShowLogs) Print($"[Giveback % {tierLabel}] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {effectiveMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
                     continue;
                 }
 
