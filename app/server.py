@@ -676,65 +676,14 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
         return None
 
     # 1. When we HAVE an open position:
-    if snapshot.position is not None:
-        # Check if session is ending -> Deterministic CLOSE_ALL
-        if snapshot.session and snapshot.session.phase in ("ending", "closed"):
-            return AgentDecision(
-                action="CLOSE_ALL",
-                volume_lots=0.0,
-                sl_pips=0.0,
-                tp_pips=0.0,
-                reason=f"Cycle gate: Session {snapshot.session.phase} (EOD close)"
-            )
-        # Check if explicit TMS exit signal fired for current position side
-        pos_side = snapshot.position.resolved_side
-        chart_tms = snapshot.chart_tms or snapshot.tms
-        if (pos_side == "BUY" and chart_tms.exit_long) or (pos_side == "SELL" and chart_tms.exit_short):
-            return AgentDecision(
-                action="CLOSE_ALL",
-                volume_lots=0.0,
-                sl_pips=0.0,
-                tp_pips=0.0,
-                reason=f"Cycle gate: TMS exit signal triggered ({chart_tms.exit_reason})"
-            )
-        # Check Profit Lock-in Giveback Guard
-        # Differentiate Asset Class:
-        # - Indices (US30, USTEC, DE40, NAS100, GER40, DJ30):
-        #   Activation MFE >= 1.5x ATR (min 1000.0 pips / 100 points for US30, 300.0 pips for others)
-        #   Giveback ratio threshold = 0.55 (55%)
-        # - Forex / Metals:
-        #   Activation MFE >= 0.8x ATR
-        #   Giveback ratio threshold = 0.40 (40%)
-        sym_upper = snapshot.symbol.upper()
-        is_index = any(idx in sym_upper for idx in ["US30", "USTEC", "DE40", "NAS100", "DJ30", "GER40"])
-
-        if is_index:
-            default_atr = 1000.0 if "US30" in sym_upper else 300.0
-            atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else default_atr
-            activation_mfe = max(1.5 * atr_ref, 1000.0 if "US30" in sym_upper else 300.0)
-            giveback_ratio_threshold = 0.55
-        else:
-            atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else 30.0
-            activation_mfe = 0.8 * atr_ref
-            giveback_ratio_threshold = 0.40
-
-        pos = snapshot.position
-        if pos.mfe_pips >= activation_mfe and pos.giveback_pips >= pos.mfe_pips * giveback_ratio_threshold:
-            chart_tms = snapshot.chart_tms or snapshot.tms
-            momentum_stall = False
-            if pos_side == "BUY" and (chart_tms.ha_turned_red or chart_tms.exit_long or chart_tms.green_tf_slope < 0):
-                momentum_stall = True
-            elif pos_side == "SELL" and (chart_tms.ha_turned_green or chart_tms.exit_short or chart_tms.green_tf_slope > 0):
-                momentum_stall = True
-            if momentum_stall:
-                return AgentDecision(
-                    action="CLOSE_ALL",
-                    volume_lots=0.0,
-                    sl_pips=0.0,
-                    tp_pips=0.0,
-                    reason=f"Cycle gate: Profit lock-in triggered (MFE={pos.mfe_pips:.1f}p >= {activation_mfe:.1f}p, gave back {pos.giveback_pips:.1f}p >= {giveback_ratio_threshold*100:.0f}% with momentum stall)"
-                )
-        # Position is open and needs active LLM monitoring (momentum slope, MFE giveback, etc.)
+    # Trao toan quyen quyet dinh quan ly vi the cho AI (LLM) tren tat ca cac bot.
+    # Khong can thiep hoac tu y CLOSE_ALL bang cac rule co hoc cung (nhu TDI M15 cross hay MFE giveback),
+    # de AI co khong gian cho lenh tho (breathing room) va quan ly vi the thong minh.
+    has_open_pos = (
+        snapshot.position is not None
+        or (snapshot.active_positions is not None and len(snapshot.active_positions) > 0)
+    )
+    if has_open_pos:
         return None
 
     # 2. When we DO NOT have an open position (Flat):
@@ -1332,7 +1281,7 @@ async def trade_decision(snapshot: MarketSnapshot):
         tdi_str = "N/A"
         stoch_str = "N/A"
         if snapshot.bars and len(snapshot.bars) > 0:
-            b = snapshot.bars[-1]
+            b = snapshot.bars[0]
             if b.ha_color is not None:
                 ha_icon = "🟢" if str(b.ha_color).lower() == "green" else "🔴" if str(b.ha_color).lower() == "red" else str(b.ha_color)
                 ha_str = f"HA={ha_icon}"

@@ -266,10 +266,8 @@ def test_cycle_gate_giveback_index_vs_forex():
         )
     )
     decision_large = evaluate_cycle_gate(snap_us30_large_mfe)
-    assert decision_large is not None
-    assert decision_large.action == "CLOSE_ALL"
-    assert "Profit lock-in triggered" in decision_large.reason
-
+    # When a position is open, deterministic gates are bypassed to delegate full decision power to AI
+    assert decision_large is None
     # 3. EURUSD with MFE = 30p (>= 0.8*30 = 24p), giveback = 13p (43.3% >= 40%), HA turned red
     snap_eurusd = MarketSnapshot(
         symbol="EURUSD",
@@ -289,10 +287,8 @@ def test_cycle_gate_giveback_index_vs_forex():
         )
     )
     decision_eur = evaluate_cycle_gate(snap_eurusd)
-    assert decision_eur is not None
-    assert decision_eur.action == "CLOSE_ALL"
-    assert "Profit lock-in triggered" in decision_eur.reason
-
+    # Open position is delegated to AI
+    assert decision_eur is None
 def test_eth_crypto_classification():
     from app.server import evaluate_cycle_gate, MarketSnapshot, TmsSignals, OrbData
     snap_eth = MarketSnapshot(
@@ -431,10 +427,8 @@ def test_chart_tms_exit_signal_cycle_gate():
         chart_tms=TmsSignals(bias="BEARISH", exit_short=True, exit_reason="tdi_cross_up")
     )
     decision = evaluate_cycle_gate(snap_pos)
-    assert decision is not None
-    assert decision.action == "CLOSE_ALL"
-    assert "TMS exit signal triggered (tdi_cross_up)" in decision.reason
-
+    # Open position is delegated to AI rather than hard-cut by cycle gate
+    assert decision is None
 def test_format_price_and_prompt_precision():
     from app.server import format_price, build_judas_sweep_user_prompt, MarketSnapshot, BarData, StrategyData
     assert format_price(1.35034, "GBPUSD") == "1.35034"
