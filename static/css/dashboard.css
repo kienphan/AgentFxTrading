@@ -77,7 +77,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 /* 1-Row KPI Grid */
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
 @media(min-width:600px){.kpi-grid{grid-template-columns:repeat(4,1fr)}}
-@media(min-width:1024px){.kpi-grid{grid-template-columns:repeat(8,minmax(0,1fr))}}
+@media(min-width:1024px){.kpi-grid{grid-template-columns:repeat(9,minmax(0,1fr))}}
 .kpi-grid--4{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
 @media(min-width:600px){.kpi-grid--4{grid-template-columns:repeat(4,1fr)}}
 @media(min-width:1024px){.kpi-grid--4{grid-template-columns:repeat(4,minmax(0,1fr))}}

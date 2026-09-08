@@ -152,6 +152,16 @@
                         <div id="win-rate" class="kpi-value">{{ summary.win_rate }}%</div>
                     </div>
                     <div class="kpi-card">
+                        <div class="kpi-label">Profit Factor</div>
+                        <div id="profit-factor" class="kpi-value kpi-value--mono {% if summary.profit_factor and summary.profit_factor >= 1.5 %}kpi-value--profit{% elif summary.profit_factor and summary.profit_factor < 1.0 %}kpi-value--loss{% endif %}">
+                            {% if summary.profit_factor is not none and summary.total_trades > 0 %}
+                                {{ "%.2f"|format(summary.profit_factor) }}
+                            {% else %}
+                                --
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="kpi-card">
                         <div class="kpi-label">Trades Today</div>
                         <div id="trades-today" class="kpi-value">{{ summary.trades_today }}</div>
                     </div>
@@ -1254,6 +1264,16 @@
             const dEl=document.getElementById('daily-pnl');dEl.textContent=formatMoney(summary.daily_pnl);dEl.className=`kpi-value ${pnlClass(summary.daily_pnl)}`;
             const tEl=document.getElementById('total-pnl');tEl.textContent=formatMoney(summary.total_pnl);tEl.className=`kpi-value ${pnlClass(summary.total_pnl)}`;
             document.getElementById('win-rate').textContent=`${summary.win_rate}%`;
+            const pfEl=document.getElementById('profit-factor');
+            if(pfEl){
+                if(summary.profit_factor!==undefined && summary.profit_factor!==null && summary.total_trades>0){
+                    pfEl.textContent=Number(summary.profit_factor).toFixed(2);
+                    pfEl.className=`kpi-value kpi-value--mono ${summary.profit_factor>=1.5?'kpi-value--profit':(summary.profit_factor<1.0?'kpi-value--loss':'')}`;
+                } else {
+                    pfEl.textContent='--';
+                    pfEl.className='kpi-value kpi-value--mono';
+                }
+            }
             document.getElementById('trades-today').textContent=summary.trades_today;
             const lEl=document.getElementById('loss-streak');lEl.textContent=summary.loss_streak;lEl.className=`kpi-value ${summary.loss_streak>=3?'kpi-value--warn':''}`;
             document.getElementById('last-updated').textContent=new Date().toLocaleTimeString();

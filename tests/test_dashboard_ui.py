@@ -42,6 +42,13 @@ def test_ui_endpoints():
     resp_dec_filtered = client.get("/api/dashboard/latest-decisions?limit=3&symbol=EURUSD")
     assert resp_dec_filtered.status_code == 200
     assert isinstance(resp_dec_filtered.json(), list)
+    # Test Summary API
+    resp_summary = client.get("/api/dashboard/summary")
+    assert resp_summary.status_code == 200
+    data_sum = resp_summary.json()
+    assert "profit_factor" in data_sum
+    assert "win_rate" in data_sum
+    assert "total_trades" in data_sum
 
     # Test Demo and Real Dashboard HTML renders cleanly with new widgets
     resp_demo = client.get("/demo/dashboard")
@@ -51,6 +58,7 @@ def test_ui_endpoints():
     assert "pnl-chart" in html_demo
     assert "equity-chart" in html_demo
     assert "exposure-chart" in html_demo
+    assert 'id="profit-factor"' in html_demo
     resp_real = client.get("/real/dashboard")
     assert resp_real.status_code == 200
     html_real = resp_real.text
@@ -58,6 +66,7 @@ def test_ui_endpoints():
     assert "view-decisions" in html_real
     assert "view-decisions" in html_demo
     assert "ai-feed-list" in html_real
+    assert 'id="profit-factor"' in html_real
     assert "view-news" in html_demo
     # Ensure view-news is inside <main class="main-content"> before </main>
     main_close_idx = html_demo.find("</main>")

@@ -86,7 +86,26 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         )
         total_trades = cursor.fetchone()[0]
         win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-        
+
+        # Profit factor calculation
+        cursor = conn.execute(
+            f"SELECT COALESCE(SUM(pnl), 0.0) FROM positions WHERE status = 'closed' AND pnl > 0{account_filter}", tuple(params)
+        )
+        gross_profit = cursor.fetchone()[0] or 0.0
+
+        cursor = conn.execute(
+            f"SELECT COALESCE(ABS(SUM(pnl)), 0.0) FROM positions WHERE status = 'closed' AND pnl < 0{account_filter}", tuple(params)
+        )
+        gross_loss = cursor.fetchone()[0] or 0.0
+
+        if total_trades == 0:
+            profit_factor = None
+        elif gross_loss > 0:
+            profit_factor = round(gross_profit / gross_loss, 2)
+        elif gross_profit > 0:
+            profit_factor = round(gross_profit, 2)
+        else:
+            profit_factor = 0.0
         # Fetch account balance/equity
         account_balance = None
         account_equity = None
@@ -116,6 +135,8 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
             "loss_streak": loss_streak,
             "total_pnl": round(total_pnl, 2),
             "win_rate": round(win_rate, 1),
+            "profit_factor": profit_factor,
+            "total_trades": total_trades,
             "account_id": account_id,
             "account_balance": account_balance,
             "account_equity": account_equity
