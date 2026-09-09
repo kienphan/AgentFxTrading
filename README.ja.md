@@ -106,7 +106,7 @@ graph LR
     C --> F[Claude]
     C --> G[Gemini]
     C --> H[DeepSeek]
-    B --> I[(SQLite<br/>Portfolio DB)]
+    B --> I[(PostgreSQL<br/>Portfolio DB)]
 ```
 
 ### コンポーネント詳細
@@ -115,7 +115,7 @@ graph LR
 |--------------|------|------|
 | **cBot** | C# / cTrader | 指標計算、取引実行 |
 | **Server** | Python / FastAPI | AI意思決定、リスク管理 |
-| **Database** | SQLite | ポートフォリオ追跡、ポジション履歴 |
+| **Database** | PostgreSQL / SQLite | ポートフォリオ追跡、ポジション履歴（本番環境はPostgreSQL、テスト用はSQLite） |
 | **LLM** | 複数 | 取引判断分析 |
 
 
@@ -1396,13 +1396,17 @@ AgentFxTrading/
 ├── app/
 │   ├── llm_client.py      # LLM抽象化レイヤー
 │   ├── server.py          # FastAPIサーバー
-│   └── portfolio.py       # ポートフォリオリスク管理
+│   ├── portfolio.py       # ポートフォリオリスク管理
+│   └── db.py              # データベース層 (PostgreSQL / SQLite)
 ├── cBot/
 │   └── AiAgentBot.cs      # cTrader cBot
+├── scripts/
+│   ├── backup_postgres.sh # 自動日次バックアップ (03:00)
+│   └── migrate_sqlite_to_pg.py # PostgreSQL移行スクリプト
 ├── .env.example           # 環境テンプレート
 ├── requirements.txt       # Python依存関係
 ├── README.md              # ドキュメント（6言語）
-└── portfolio.db           # SQLiteデータベース（自動作成）
+└── portfolio.db           # SQLiteデータベース（テスト / バックアップ）
 ```
 
 ### 新しいLLM Providerの追加

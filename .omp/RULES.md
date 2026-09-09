@@ -14,7 +14,7 @@ You MUST adhere to this delivery protocol on every task where code, templates, c
    - Verify health: `curl -s http://127.0.0.1:8000/api/watchdog/status` and `systemctl status agentfx.service`.
 
 3. **RESTART CBOT CONTAINERS (IF APPLICABLE)**:
-   - If cBot algorithms (`cBot/*.cs`), bot run commands, parameters, or database configs (`portfolio.db`) were modified:
+   - If cBot algorithms (`cBot/*.cs`), bot run commands, parameters, or database configs were modified:
      Restart the affected container(s): `docker restart <container_name>` (e.g. `cbot-usdjpy`).
    - Check container logs to ensure clean login: `docker logs --tail 20 <container_name>`.
 

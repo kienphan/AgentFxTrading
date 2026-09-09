@@ -106,7 +106,7 @@ graph LR
     C --> F[Claude]
     C --> G[Gemini]
     C --> H[DeepSeek]
-    B --> I[(SQLite<br/>Portfolio DB)]
+    B --> I[(PostgreSQL<br/>Portfolio DB)]
 ```
 
 ### Phân Tích Component
@@ -115,7 +115,7 @@ graph LR
 |-----------|-----------|----------------|
 | **cBot** | C# / cTrader | Tính toán chỉ báo, thực thi giao dịch |
 | **Server** | Python / FastAPI | Ra quyết định AI, quản lý rủi ro |
-| **Database** | SQLite | Theo dõi danh mục, lịch sử vị thế |
+| **Database** | PostgreSQL / SQLite | Theo dõi danh mục, lịch sử vị thế (PostgreSQL cho production, SQLite fallback) |
 | **LLM** | Nhiều loại | Phân tích quyết định giao dịch |
 
 
@@ -1450,13 +1450,17 @@ AgentFxTrading/
 ├── app/
 │   ├── llm_client.py      # Lớp trừu tượng hóa LLM
 │   ├── server.py          # FastAPI server
-│   └── portfolio.py       # Quản lý rủi ro danh mục
+│   ├── portfolio.py       # Quản lý rủi ro danh mục
+│   └── db.py              # Tầng cơ sở dữ liệu (PostgreSQL / SQLite)
 ├── cBot/
 │   └── AiAgentBot.cs      # cTrader cBot
+├── scripts/
+│   ├── backup_postgres.sh # Tự động sao lưu hàng ngày (03:00 sáng)
+│   └── migrate_sqlite_to_pg.py # Script di chuyển dữ liệu SQLite sang PostgreSQL
 ├── .env.example           # Template môi trường
 ├── requirements.txt       # Python dependencies
 ├── README.md              # Documentation (6 ngôn ngữ)
-└── portfolio.db           # SQLite database (tự động tạo)
+└── portfolio.db           # SQLite database (fallback / testing)
 ```
 
 ### Thêm LLM Provider Mới

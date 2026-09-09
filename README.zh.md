@@ -106,7 +106,7 @@ graph LR
     C --> F[Claude]
     C --> G[Gemini]
     C --> H[DeepSeek]
-    B --> I[(SQLite<br/>Portfolio DB)]
+    B --> I[(PostgreSQL<br/>Portfolio DB)]
 ```
 
 ---
@@ -1386,13 +1386,17 @@ AgentFxTrading/
 ├── app/
 │   ├── llm_client.py      # LLM抽象层
 │   ├── server.py          # FastAPI服务器
-│   └── portfolio.py       # 投资组合风险管理
+│   ├── portfolio.py       # 投资组合风险管理
+│   └── db.py              # 数据库层 (PostgreSQL / SQLite)
 ├── cBot/
 │   └── AiAgentBot.cs      # cTrader cBot
+├── scripts/
+│   ├── backup_postgres.sh # 自动每日备份 (03:00)
+│   └── migrate_sqlite_to_pg.py # 迁移脚本
 ├── .env.example           # 环境模板
 ├── requirements.txt       # Python依赖
 ├── README.md              # 文档（6种语言）
-└── portfolio.db           # SQLite数据库（自动创建）
+└── portfolio.db           # SQLite数据库（测试/备用）
 ```
 
 ### 添加新的LLM Provider

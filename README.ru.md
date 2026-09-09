@@ -106,7 +106,7 @@ graph LR
     C --> F[Claude]
     C --> G[Gemini]
     C --> H[DeepSeek]
-    B --> I[(SQLite<br/>Portfolio DB)]
+    B --> I[(PostgreSQL<br/>Portfolio DB)]
 ```
 
 ### Детализация Компонентов
@@ -115,7 +115,7 @@ graph LR
 |-----------|-----------|-----------------|
 | **cBot** | C# / cTrader | Расчет индикаторов, выполнение сделок |
 | **Server** | Python / FastAPI | Принятие решений ИИ, управление рисками |
-| **Database** | SQLite | Отслеживание портфеля, история позиций |
+| **Database** | PostgreSQL / SQLite | Отслеживание портфеля, история позиций (PostgreSQL в проде, SQLite резерв) |
 | **LLM** | Несколько | Анализ торговых решений |
 
 
@@ -1396,13 +1396,17 @@ AgentFxTrading/
 ├── app/
 │   ├── llm_client.py      # Слой абстракции LLM
 │   ├── server.py          # FastAPI сервер
-│   └── portfolio.py       # Управление рисками портфеля
+│   ├── portfolio.py       # Управление рисками портфеля
+│   └── db.py              # Слой базы данных (PostgreSQL / SQLite)
 ├── cBot/
 │   └── AiAgentBot.cs      # cTrader cBot
+├── scripts/
+│   ├── backup_postgres.sh # Автоматический бэкап (03:00)
+│   └── migrate_sqlite_to_pg.py # Скрипт миграции в PostgreSQL
 ├── .env.example           # Шаблон окружения
 ├── requirements.txt       # Зависимости Python
 ├── README.md              # Документация (6 языков)
-└── portfolio.db           # База данных SQLite (автосоздание)
+└── portfolio.db           # База данных SQLite (резерв / тесты)
 ```
 
 ### Добавление Нового LLM Provider

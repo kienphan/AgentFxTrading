@@ -107,7 +107,7 @@ graph LR
     C --> F[Claude]
     C --> G[Gemini]
     C --> H[DeepSeek]
-    B --> I[(SQLite<br/>Portfolio DB)]
+    B --> I[(PostgreSQL<br/>Portfolio DB)]
 ```
 
 ### Component Breakdown
@@ -116,7 +116,7 @@ graph LR
 |-----------|-----------|----------------|
 | **cBot** | C# / cTrader | Calculate indicators, execute trades |
 | **Server** | Python / FastAPI | AI decision making, risk management |
-| **Database** | SQLite | Portfolio tracking, position history |
+| **Database** | PostgreSQL / SQLite | Portfolio tracking, position history (PostgreSQL in production, SQLite fallback) |
 | **LLM** | Multiple | Trading decision analysis |
 
 ---
@@ -1450,13 +1450,17 @@ AgentFxTrading/
 ├── app/
 │   ├── llm_client.py      # LLM abstraction layer
 │   ├── server.py          # FastAPI server
-│   └── portfolio.py       # Portfolio risk management
+│   ├── portfolio.py       # Portfolio risk management
+│   └── db.py              # Database layer (PostgreSQL / SQLite)
 ├── cBot/
 │   └── AiAgentBot.cs      # cTrader cBot
+├── scripts/
+│   ├── backup_postgres.sh # Automated daily backup (03:00 AM)
+│   └── migrate_sqlite_to_pg.py # SQLite to PG migration
 ├── .env.example           # Environment template
 ├── requirements.txt       # Python dependencies
 ├── README.md              # Documentation (6 languages)
-└── portfolio.db           # SQLite database (auto-created)
+└── portfolio.db           # SQLite database (testing / fallback)
 ```
 
 ### Adding New LLM Provider

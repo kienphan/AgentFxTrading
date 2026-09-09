@@ -8,7 +8,7 @@
   - `cbot-xauusd`, `cbot-us30`, `cbot-ustec` (New York session)
   - `cbot-xauusd-judas`, `cbot-gbpusd-judas` (Judas sweep SMC bots)
 - **Watchdog**: Background auto-healing loop in `app/cbot_watchdog.py` monitoring cBot login state and auto-restarting stuck containers.
-- **Database**: SQLite WAL mode at `portfolio.db`.
+- **Database**: PostgreSQL 17.11 (Production) via `DATABASE_URL` with automated daily backup cron job (`scripts/backup_postgres.sh`); fallback to SQLite WAL mode (`portfolio.db`) for testing.
 
 ## Mandatory Post-Feature Delivery Workflow
 Whenever you add a feature, fix a bug, or adjust configurations:
@@ -28,6 +28,6 @@ Whenever you add a feature, fix a bug, or adjust configurations:
    - Verify: `systemctl status agentfx.service` and `curl -s http://127.0.0.1:8000/api/watchdog/status`
 
 4. **Restart cBot Containers (If Relevant)**:
-   - If `cBot/*.cs`, bot parameters, or `portfolio.db` bot configs changed:
-     `docker restart <cbot_name>`
-     Verify: `docker logs --tail 20 <cbot_name>`
+   - If `cBot/*.cs`, bot parameters, or database bot configs changed:
+     Restart the affected container(s): `docker restart <container_name>` (e.g. `cbot-usdjpy`).
+     Check container logs to ensure clean login: `docker logs --tail 20 <container_name>`.
