@@ -17,7 +17,7 @@ import json
 import re
 import time
 import hashlib
-import sqlite3
+from app.db import get_db_connection
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -45,11 +45,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_TTL_SECONDS = 900  # 15 minutes
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+def get_db():
+    return get_db_connection(DB_PATH)
 
 def init_news_db(conn: Optional[sqlite3.Connection] = None) -> None:
     """Initialize news_assessments table in SQLite."""

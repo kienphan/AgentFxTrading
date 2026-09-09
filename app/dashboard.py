@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import sqlite3
+from app.db import get_db_connection
 import json
 import asyncio
 from datetime import datetime, date, timedelta, timezone
@@ -30,9 +31,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 def get_db():
     """Get database connection."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+    return get_db_connection()
 
 def get_portfolio_summary(account_id: str = "all") -> Dict:
     """Get portfolio summary statistics."""

@@ -192,12 +192,11 @@ async def favicon():
         return FileResponse(favicon_path)
     return ""
 # Initialize Account Registry
-account_registry = init_account_registry("portfolio.db")
+account_registry = init_account_registry()
 account_registry.seed_from_env()
 
 # Initialize Portfolio Manager
-portfolio_manager = init_portfolio("portfolio.db")
-
+portfolio_manager = init_portfolio()
 # Create LLM client based on LLM_PROVIDER env variable
 # Supports: "qwen", "openai", "anthropic", "deepseek", "openai_compatible"
 llm_client = create_llm_client()

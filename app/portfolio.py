@@ -3,12 +3,12 @@ Portfolio Manager with SQLite backend.
 Tracks positions across multiple bots and enforces portfolio-level risk limits.
 """
 
-import sqlite3
 import logging
 from datetime import datetime, date
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
+from app.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -23,106 +23,92 @@ class PortfolioConfig:
 class PortfolioManager:
     """Manages portfolio-level risk across multiple trading bots."""
     
-    def __init__(self, db_path: str = "portfolio.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = Path(db_path) if db_path else None
         self.config = PortfolioConfig()
         self._init_db()
     
     def _init_db(self):
-        """Initialize SQLite database with schema."""
-        conn = sqlite3.connect(self.db_path)
-        # WAL mode + busy timeout: 11 bots report concurrently; without these
-        # concurrent writes throw "database is locked".
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        """Initialize database with schema."""
+        conn = self._get_conn()
+        try:
+            # Setup accounts table
+            registry = get_account_registry()
+            registry._init_schema()
+
+            # Positions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bot_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    volume REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    sl_pips REAL,
+                    tp_pips REAL,
+                    entry_time TEXT NOT NULL,
+                    exit_time TEXT,
+                    exit_price REAL,
+                    pnl REAL,
+                    status TEXT DEFAULT 'open',
+                    account_id TEXT NOT NULL DEFAULT 'default',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
         
-        # Setup accounts table
-        registry = get_account_registry()
-        registry._init_schema()
+            # Create automatic dynamic view for daily_stats
+            try:
+                conn.execute("""
+                    CREATE VIEW IF NOT EXISTS daily_stats AS
+                    SELECT 
+                        account_id,
+                        bot_id,
+                        DATE(COALESCE(exit_time, entry_time)) as date,
+                        ROUND(SUM(pnl), 2) as total_pnl,
+                        COUNT(*) as trades_count,
+                        0 as loss_streak,
+                        MAX(COALESCE(exit_time, entry_time)) as updated_at
+                    FROM positions
+                    WHERE status = 'closed'
+                    GROUP BY account_id, bot_id, DATE(COALESCE(exit_time, entry_time))
+                """)
+            except Exception as e:
+                logger.debug(f"daily_stats view init: {e}")
 
-        # Migrate positions table
-        try:
-            conn.execute("ALTER TABLE positions ADD COLUMN account_id TEXT NOT NULL DEFAULT 'default'")
-        except sqlite3.OperationalError:
-            pass # column exists
+            # Create indexes for performance
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_bot_id ON positions(bot_id)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_account_status ON positions(account_id, status)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_exit_time ON positions(exit_time)",
+                "CREATE INDEX IF NOT EXISTS idx_positions_entry_time ON positions(entry_time)",
+            ]:
+                try:
+                    conn.execute(idx_sql)
+                except Exception:
+                    pass
 
-        # Positions table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS positions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                bot_id TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                side TEXT NOT NULL,
-                volume REAL NOT NULL,
-                entry_price REAL NOT NULL,
-                sl_pips REAL,
-                tp_pips REAL,
-                entry_time TEXT NOT NULL,
-                exit_time TEXT,
-                exit_price REAL,
-                pnl REAL,
-                status TEXT DEFAULT 'open',
-                account_id TEXT NOT NULL DEFAULT 'default',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Dynamic daily_stats VIEW migration (Single Source of Truth from positions)
-        try:
-            cursor = conn.execute("SELECT type FROM sqlite_master WHERE name = 'daily_stats'")
-            row = cursor.fetchone()
-            if row and row[0] == 'table':
-                conn.execute("DROP TABLE daily_stats")
-        except Exception:
-            pass
-        try:
-            conn.execute("DROP TABLE IF EXISTS daily_stats_v2")
-        except Exception:
-            pass
-
-        # Create automatic dynamic view for daily_stats
-        conn.execute("""
-            CREATE VIEW IF NOT EXISTS daily_stats AS
-            SELECT 
-                account_id,
-                bot_id,
-                DATE(COALESCE(exit_time, entry_time)) as date,
-                ROUND(SUM(pnl), 2) as total_pnl,
-                COUNT(*) as trades_count,
-                0 as loss_streak,
-                MAX(COALESCE(exit_time, entry_time)) as updated_at
-            FROM positions
-            WHERE status = 'closed'
-            GROUP BY account_id, bot_id, DATE(COALESCE(exit_time, entry_time))
-        """)
-        # Create indexes for performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_bot_id ON positions(bot_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_account_status ON positions(account_id, status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_exit_time ON positions(exit_time)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_entry_time ON positions(entry_time)")
-        # Cbot Configs table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS cbot_configs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                description TEXT,
-                run_command TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-        conn.close()
-        logger.info(f"Portfolio database initialized at {self.db_path}")
+            # Cbot Configs table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cbot_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT,
+                    run_command TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            logger.info(f"Portfolio database initialized (target: {self.db_path or 'PostgreSQL'})")
+        finally:
+            conn.close()
 
     def _get_conn(self):
         """Get database connection."""
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        return get_db_connection(self.db_path)
 
     def register_position(self, bot_id: str, symbol: str, side: str, 
                          volume: float, entry_price: float, 
@@ -426,7 +412,7 @@ class PortfolioManager:
 portfolio_manager: Optional[PortfolioManager] = None
 
 
-def init_portfolio(db_path: str = "portfolio.db") -> PortfolioManager:
+def init_portfolio(db_path: Optional[str] = None) -> PortfolioManager:
     """Initialize global portfolio manager instance."""
     global portfolio_manager
     portfolio_manager = PortfolioManager(db_path)

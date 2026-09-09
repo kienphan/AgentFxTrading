@@ -7,21 +7,16 @@ Win Rate %, Profit Factor, Net PnL, Tier Badges: Tier S/A/B/C) across all cBots.
 
 from __future__ import annotations
 
-import sqlite3
 import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-
+from typing import Dict, Any, List, Optional, Union
+from app.db import get_db_connection as _get_unified_db
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "portfolio.db"
 
 
-def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    target_path = db_path or DB_PATH
-    conn = sqlite3.connect(str(target_path), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+def get_db_connection(db_path: Optional[Union[Path, str]] = None):
+    return _get_unified_db(db_path)
 
 
 def calculate_quant_score(

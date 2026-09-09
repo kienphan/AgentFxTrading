@@ -64,6 +64,9 @@ Thumbs.db
 *.bak
 *.backup*
 *.local_save
+backups/
+*.sql.gz
+*.sql
 
 # cBot build artifacts
 *.algo

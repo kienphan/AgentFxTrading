@@ -1,8 +1,8 @@
 import os
-import sqlite3
 import logging
 from contextlib import contextmanager
-from typing import List, Dict, Optional, Generator
+from typing import List, Dict, Optional, Generator, Any
+from app.db import get_db_connection
 logger = logging.getLogger(__name__)
 
 def parse_dashboard_accounts_env() -> List[Dict]:
@@ -41,20 +41,17 @@ def parse_dashboard_accounts_env() -> List[Dict]:
     return accounts
 
 class AccountRegistry:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path
         self._init_schema()
         
     @contextmanager
-    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.row_factory = sqlite3.Row
+    def _get_connection(self) -> Generator[Any, None, None]:
+        conn = get_db_connection(self.db_path)
         try:
             yield conn
         finally:
             conn.close()
-
     def _init_schema(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -166,7 +163,7 @@ class AccountRegistry:
 # Global registry accessor pattern
 _account_registry = None
 
-def init_account_registry(db_path: str) -> AccountRegistry:
+def init_account_registry(db_path: Optional[str] = None) -> AccountRegistry:
     global _account_registry
     _account_registry = AccountRegistry(db_path)
     return _account_registry
