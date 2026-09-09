@@ -402,6 +402,9 @@ namespace cAlgo.Robots
         private bool _highSwept = false;
         private bool _lowSwept = false;
         private string _activeKillzone = "Outside Killzones";
+        // One-sweep-per-Asian-boundary-per-session bookkeeping (repeat liquidity grab prevention)
+        private bool _sessionBuyTaken = false;
+        private bool _sessionSellTaken = false;
 
         private MovingAverage fastEma;
         private MovingAverage slowEma;
@@ -978,6 +981,7 @@ namespace cAlgo.Robots
                     _asianHigh = maxHigh;
                     _asianLow = minLow;
                     _asianRangePips = Symbol.PipSize > 0 ? (_asianHigh - _asianLow) / Symbol.PipSize : 0;
+                    ResetSessionSweepFlags();
                     Print($"[Asian Range Initialized] Date={targetDate:yyyy-MM-dd} High={_asianHigh:F5} Low={_asianLow:F5} Range={_asianRangePips:F1} pips");
                 }
             }
@@ -1001,6 +1005,7 @@ namespace cAlgo.Robots
                     _asianLow = Bars.LastBar.Low;
                     _highSwept = false;
                     _lowSwept = false;
+                    ResetSessionSweepFlags();
                     _asianRangePips = 0;
                 }
                 else
@@ -1016,6 +1021,24 @@ namespace cAlgo.Robots
                 Chart.DrawHorizontalLine("AsianHighLine", _asianHigh, Color.Red, 1, LineStyle.Lines);
                 Chart.DrawHorizontalLine("AsianLowLine", _asianLow, Color.DodgerBlue, 1, LineStyle.Lines);
             }
+        }
+
+        private bool IsSessionSweepSideTaken(TradeType tradeType)
+        {
+            return tradeType == TradeType.Buy ? _sessionBuyTaken : _sessionSellTaken;
+        }
+
+        private void MarkSessionSweepSideTaken(TradeType tradeType)
+        {
+            if (tradeType == TradeType.Buy) _sessionBuyTaken = true;
+            else _sessionSellTaken = true;
+            Print($"[Judas Session Sweep] {tradeType} sweep trade recorded for Asian session {_asianSessionDate:yyyy-MM-dd}. Repeat {tradeType} blocked until next session.");
+        }
+
+        private void ResetSessionSweepFlags()
+        {
+            _sessionBuyTaken = false;
+            _sessionSellTaken = false;
         }
 
         private DateTime GetNthSunday(int year, int month, int n)
@@ -3359,6 +3382,19 @@ Reply strictly with JSON object.";
                     return;
                 }
 
+                // Judas Session Sweep Dedupe: allow only ONE AI trade per Asian boundary per session.
+                // Blocks re-entering the same Asian Low/High after it was already swept & traded today.
+                if (action == "BUY" || action == "SELL")
+                {
+                    TradeType candidate = action == "BUY" ? TradeType.Buy : TradeType.Sell;
+                    if (IsSessionSweepSideTaken(candidate))
+                    {
+                        string boundaryName = candidate == TradeType.Buy ? "Asian Low" : "Asian High";
+                        Print($"[Judas Session Guard] {action} blocked: {boundaryName} sweep already traded once this Asian session ({_asianSessionDate:yyyy-MM-dd}). One Judas sweep per boundary per session.");
+                        _ = SendTelegramAlertAsync($"⚠️ <b>[Judas Session Guard]</b>\n{action} blocked on {SymbolName}: {boundaryName} sweep already traded this Asian session. Repeat sweep of same liquidity level prevented.");
+                        return;
+                    }
+                }
 
                 if (action == "CLOSE_ALL")
                 {
@@ -3401,7 +3437,41 @@ Reply strictly with JSON object.";
                                 targetTP = Math.Round(tpPrice, Symbol.Digits);
                             }
 
-                            if (targetSL.HasValue || targetTP.HasValue)
+                            // ── AI ADJUST Boundary Guard: never let a bad ADJUST force a Profit-Lock exit ──
+                            // Skip the modification (position untouched) when the proposed SL/TP sits on the
+                            // wrong side of the market - SafeModifyPosition would otherwise close the position.
+                            double minStopBuffer = Math.Max(Symbol.Spread * 3, Symbol.TickSize * 10);
+                            bool skipModify = false;
+                            string vetoReason = "";
+
+                            if (targetSL.HasValue)
+                            {
+                                bool invalidSl = pos.TradeType == TradeType.Buy
+                                    ? targetSL.Value >= (Symbol.Bid - minStopBuffer)
+                                    : targetSL.Value <= (Symbol.Ask + minStopBuffer);
+                                if (invalidSl)
+                                {
+                                    skipModify = true;
+                                    vetoReason = $"new SL {targetSL.Value:F2} on invalid side of market (Bid {Symbol.Bid:F2} / Ask {Symbol.Ask:F2}, buffer {minStopBuffer:F2}) for {pos.TradeType}";
+                                }
+                            }
+                            if (!skipModify && targetTP.HasValue)
+                            {
+                                bool invalidTp = pos.TradeType == TradeType.Buy
+                                    ? targetTP.Value <= (Symbol.Ask + minStopBuffer)
+                                    : targetTP.Value >= (Symbol.Bid - minStopBuffer);
+                                if (invalidTp)
+                                {
+                                    skipModify = true;
+                                    vetoReason = $"new TP {targetTP.Value:F2} on invalid side of market (Bid {Symbol.Bid:F2} / Ask {Symbol.Ask:F2}, buffer {minStopBuffer:F2}) for {pos.TradeType}";
+                                }
+                            }
+
+                            if (skipModify)
+                            {
+                                Print($"[AI ADJUST Guard] {pos.TradeType} #{pos.Id} modification SKIPPED: {vetoReason}. Keeping protective SL {pos.StopLoss:F2} / TP {pos.TakeProfit:F2}. Position untouched.");
+                            }
+                            else if (targetSL.HasValue || targetTP.HasValue)
                             {
                                 SafeModifyPosition(pos, targetSL, targetTP, source: "AI Agent ADJUST");
                             }
@@ -3556,6 +3626,7 @@ Reply strictly with JSON object.";
                 var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
                 if (result.IsSuccessful)
                 {
+                    MarkSessionSweepSideTaken(tradeType);
                     Print($"[AI Agent SUCCESS] Market order {tradeType} {volume / Symbol.LotSize:F2} lots placed successfully @ {result.Position.EntryPrice}! SL: {slPips} pips, TP: {tpPips} pips.");
                     _ = SendTelegramAlertAsync($"ðŸš€ <b>[AI Agent] {action} Executed</b>\nSymbol: {SymbolName}\nVolume: {volume / Symbol.LotSize:F2} lots | SL: {slPips} pips | TP: {tpPips} pips\nConfidence: {decision.confidence:F1}%\nReason: {decision.reason}");
                 }
@@ -3686,6 +3757,14 @@ Reply strictly with JSON object.";
                 return;
             }
 
+            // Judas Session Sweep Dedupe re-check before the sniper fires.
+            if (IsSessionSweepSideTaken(tradeType))
+            {
+                Print($"[Judas Session Guard] Staged {tradeType} cancelled: {tradeType} already traded once this Asian session ({_asianSessionDate:yyyy-MM-dd}). One Judas sweep per boundary per session.");
+                ResetStagedOrder();
+                return;
+            }
+
             double volume = _stagedVolumeUnits;
             double slPips = _stagedSlPips;
             double tpPips = _stagedTpPips;
@@ -3709,6 +3788,7 @@ Reply strictly with JSON object.";
             var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
             if (result.IsSuccessful)
             {
+                MarkSessionSweepSideTaken(tradeType);
                 Print($"[Anti-FOMO Sniper SUCCESS] Market order {tradeType} {volume / Symbol.LotSize:F2} lots placed @ {result.Position.EntryPrice}! SL: {slPips} pips, TP: {tpPips} pips. Sniped at candle pullback!");
             }
             else

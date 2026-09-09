@@ -4,7 +4,7 @@ Tracks positions across multiple bots and enforces portfolio-level risk limits.
 """
 
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
@@ -308,6 +308,30 @@ class PortfolioManager:
             return 0
         finally:
             conn.close()
+
+    def count_positions_opened_on(self, bot_id: str, symbol: str, side: str, account_id: str,
+                                  day: Optional[date] = None) -> int:
+        """Count positions (open or closed) opened on a given UTC date for one bot/symbol/side.
+
+        Used by the Judas sweep dedupe gate: allow at most one sweep trade per
+        Asian boundary per session (one BUY at the Asian Low, one SELL at the Asian High).
+        """
+        conn = self._get_conn()
+        try:
+            day = day or datetime.now(timezone.utc).date()
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM positions "
+                "WHERE bot_id = ? AND account_id = ? AND symbol = ? AND UPPER(side) = ? AND DATE(entry_time) = ?",
+                (bot_id, account_id, symbol, side.upper(), day.isoformat()),
+            )
+            row = cursor.fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+        except Exception as e:
+            logger.error(f"count_positions_opened_on failed: {e}")
+            return 0
+        finally:
+            conn.close()
+
     # --- Cbot Config Management ---
     
     def get_cbot_configs(self) -> List[Dict]:

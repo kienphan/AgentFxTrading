@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
+import uuid
 
 root = Path(__file__).resolve().parent.parent
 if str(root) not in sys.path:
@@ -139,9 +140,22 @@ def test_tms_orb_backward_compatibility():
         assert res_tms.json()["action"] == "BUY"
 
 def test_judas_sweep_llm_active_entry():
+    # Unique bot/account per run keeps the one-sweep-per-session dedupe gate deterministic:
+    # other tests (test_portfolio_reports) already registered same-day BUY rows for the
+    # shared demo bot, which now legitimately blocks repeat entries.
+    from app.accounts import get_account_registry
+
+    unique = uuid.uuid4().hex[:10]
+    bot_id = f"cbot-{unique}-judas"
+    acct_number = f"100{uuid.uuid4().int % 1000000000}"
+    account_id = get_account_registry().upsert_from_bot(
+        account_number=acct_number, account_type="demo", label="Test-Demo",
+        balance=10000.0, equity=10000.0,
+    )
+
     judas_active_payload = {
         "request_id": "test_req_002",
-        "bot_id": "cbot-xauusd-judas",
+        "bot_id": bot_id,
         "symbol": "XAUUSD",
         "timeframe": "Minute15",
         "ask": 2900.50,
@@ -165,9 +179,9 @@ def test_judas_sweep_llm_active_entry():
             "traditional_signal": "JUDAS_SWEEP_BUY",
             "signal_window_bars": 1
         },
-        "account_number": "123456",
+        "account_number": acct_number,
         "account_type": "demo",
-        "account_label": "ICMarkets-Demo",
+        "account_label": "Test-Demo",
         "account_balance": 10000.0,
         "account_equity": 10000.0
     }
@@ -179,6 +193,18 @@ def test_judas_sweep_llm_active_entry():
         assert data["confidence"] == 88.5
         assert data["request_id"] == "test_req_002"
         assert data["new_sl_price"] == 2880.5
+
+        # One-sweep dedupe: after a same-day BUY fill is registered, the identical
+        # Asian Low sweep must be gated to HOLD instead of re-entering.
+        assert app.server.portfolio_manager.register_position(
+            bot_id=bot_id, symbol="XAUUSD", side="Buy", volume=0.1,
+            entry_price=2886.5, sl_pips=200.0, tp_pips=450.0, account_id=account_id,
+        ) is True
+        res_second = client.post("/trade", json=judas_active_payload)
+        assert res_second.status_code == 200
+        data_second = res_second.json()
+        assert data_second["action"] == "HOLD"
+        assert "already traded" in data_second["reason"]
 
 def test_judas_sweep_low_confidence_blocked():
     payload = {

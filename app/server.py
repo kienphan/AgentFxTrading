@@ -590,7 +590,57 @@ def _resolve_account(snapshot: MarketSnapshot) -> str:
         equity=snapshot.account_equity,
     )
 
-def evaluate_judas_sweep_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
+# ---- Judas position-management guardrails ----
+# ADJUST may only lock profit (move SL past entry) after the position has progressed
+# at least this far toward TP; prevents premature break-even / panic management.
+JUDAS_ADJUST_MIN_TP_PROGRESS = 0.40
+
+
+def validate_judas_adjust_decision(snapshot: MarketSnapshot, decision_dict: Dict[str, Any]) -> Optional[str]:
+    """Validate an LLM ADJUST decision against an open Judas position.
+
+    Returns a rejection reason when the ADJUST must be downgraded to HOLD with the
+    position left untouched, or None when the ADJUST is structurally sound.
+    Guards against: SL/TP placed on the wrong side of the market (would force a
+    Profit-Lock exit or broker reject) and premature profit-locks at tiny profit.
+    """
+    pos = snapshot.position
+    if pos is None:
+        return "No open position to adjust (position is FLAT)"
+    side = pos.resolved_side
+    entry = pos.entry_price or 0.0
+    bid = snapshot.bid or 0.0
+    ask = snapshot.ask or 0.0
+    new_sl = float(decision_dict.get("new_sl_price") or 0.0)
+    new_tp = float(decision_dict.get("new_tp_price") or 0.0)
+    tp = float(pos.tp_price or pos.tp or 0.0)
+
+    if side == "BUY":
+        if new_sl > 0 and new_sl >= bid:
+            return (f"new_sl_price {new_sl:g} is at/above market bid {bid:g} on BUY - "
+                    "a stop above the market cannot protect a long")
+        if new_tp > 0 and new_tp <= ask:
+            return f"new_tp_price {new_tp:g} is at/below market ask {ask:g} on BUY"
+        if new_sl > 0 and entry > 0 and new_sl > entry and tp > entry:
+            progress = (bid - entry) / (tp - entry)
+            if progress < JUDAS_ADJUST_MIN_TP_PROGRESS:
+                return (f"premature profit-lock: new_sl_price {new_sl:g} above entry {entry:g} while only "
+                        f"+{max(bid - entry, 0.0):g} ({progress:.0%} of TP distance < {JUDAS_ADJUST_MIN_TP_PROGRESS:.0%})")
+    elif side == "SELL":
+        if new_sl > 0 and new_sl <= ask:
+            return (f"new_sl_price {new_sl:g} is at/below market ask {ask:g} on SELL - "
+                    "a stop below the market cannot protect a short")
+        if new_tp > 0 and new_tp >= bid:
+            return f"new_tp_price {new_tp:g} is at/above market bid {bid:g} on SELL"
+        if new_sl > 0 and entry > 0 and new_sl < entry and tp > 0 and entry > tp:
+            progress = (entry - ask) / (entry - tp)
+            if progress < JUDAS_ADJUST_MIN_TP_PROGRESS:
+                return (f"premature profit-lock: new_sl_price {new_sl:g} below entry {entry:g} while only "
+                        f"+{max(entry - ask, 0.0):g} ({progress:.0%} of TP distance < {JUDAS_ADJUST_MIN_TP_PROGRESS:.0%})")
+    return None
+
+
+def evaluate_judas_sweep_gate(snapshot: MarketSnapshot, account_id: Optional[str] = None) -> Optional[AgentDecision]:
     """
     Deterministic Gate for SMC / Asian Range Judas Sweep Bot.
     Filters out invalid setups before querying LLM.
@@ -676,6 +726,35 @@ def evaluate_judas_sweep_gate(snapshot: MarketSnapshot) -> Optional[AgentDecisio
                     tp_pips=0.0,
                     confidence=85.0,
                     reason=f"Judas Sweep Gate: Asian Range width abnormal ({strat.asian_range_pips:.0f} pips not in {min_asian_pips:.0f}-{max_asian_pips:.0f}p valid range)",
+                    request_id=snapshot.request_id,
+                    bot_id=snapshot.bot_id,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe
+                )
+
+        # Gate 5: One sweep trade per Asian boundary per session (repeat-liquidity-grab dedupe).
+        # Prevents re-entering the same Asian Low/High after it was already swept & traded today.
+        if strat.bias_direction in ("BUY", "SELL"):
+            side = strat.bias_direction
+            try:
+                traded = portfolio_manager.count_positions_opened_on(
+                    bot_id=snapshot.bot_id,
+                    symbol=snapshot.symbol,
+                    side=side,
+                    account_id=account_id or snapshot.account_id or "default",
+                )
+            except Exception as ex:
+                logger.warning(f"Judas sweep dedupe query failed: {ex}")
+                traded = 0
+            if traded > 0:
+                boundary = "Asian Low" if side == "BUY" else "Asian High"
+                return AgentDecision(
+                    action="HOLD",
+                    volume_lots=0.01,
+                    sl_pips=0.0,
+                    tp_pips=0.0,
+                    confidence=90.0,
+                    reason=f"Judas Sweep Gate: {boundary} sweep already traded {traded}x today ({side}); repeat sweep of the same liquidity level blocked until next session",
                     request_id=snapshot.request_id,
                     bot_id=snapshot.bot_id,
                     symbol=snapshot.symbol,
@@ -1341,7 +1420,7 @@ async def trade_decision(snapshot: MarketSnapshot):
         )
 
         # SMC Judas Sweep Gate Evaluation
-        gated_decision = evaluate_judas_sweep_gate(snapshot)
+        gated_decision = evaluate_judas_sweep_gate(snapshot, account_id=account_id)
         if gated_decision is not None:
             logger.info(f"[JUDAS GATE] GATED: {gated_decision.action} | Reason: {gated_decision.reason}")
             return gated_decision
@@ -1475,6 +1554,26 @@ async def trade_decision(snapshot: MarketSnapshot):
                             decision_dict["sl_pips"] = calc_sl_pips
                 except Exception as ex:
                     logger.warning(f"Error harmonizing Judas decision: {ex}")
+
+            # ADJUST Guard: deterministic protection against LLM position-management overreach.
+            # Downgrade to HOLD (position untouched) when the proposed SL/TP is geometrically
+            # invalid for the open side, or when locking profit before >= 40% progress to TP.
+            if action_val == "ADJUST":
+                try:
+                    adjust_reject_reason = validate_judas_adjust_decision(snapshot, decision_dict)
+                except Exception as ex:
+                    logger.warning(f"Judas ADJUST validation error: {ex}")
+                    adjust_reject_reason = None
+                if adjust_reject_reason:
+                    logger.warning(
+                        f"[{account_id}/{snapshot.bot_id}] [JUDAS ADJUST GUARD] ADJUST rejected -> HOLD: "
+                        f"{adjust_reject_reason}. Position left untouched."
+                    )
+                    decision_dict["action"] = "HOLD"
+                    decision_dict["reason"] = (
+                        f"[ADJUST Guard] {adjust_reject_reason}. Position left untouched. "
+                        f"{decision_dict.get('reason', '')}"
+                    )
 
         # Server-side Guardrail: Block BUY/SELL entries with low confidence (< 75.0%)
         min_conf_threshold = 75.0
