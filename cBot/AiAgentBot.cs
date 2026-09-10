@@ -53,6 +53,12 @@ namespace cAlgo.Robots
         [Parameter("Max Bars After Cross", Group = "Entry", DefaultValue = 5, MinValue = 1)]
         public int MaxBarsAfterCross { get; set; }
 
+        [Parameter("Min TDI Separation to Flip Bias (pts)", Group = "TMS", DefaultValue = 1.0, MinValue = 0, Step = 0.1)]
+        public double MinTdiFlipSeparation { get; set; }
+
+        [Parameter("Min Closed H1 Bars Between Bias Flips", Group = "TMS", DefaultValue = 2, MinValue = 0)]
+        public int MinBarsBetweenFlips { get; set; }
+
         // ---- TDI Bounce Trade (dnse-kash) ----
         [Parameter("Enable Bounce Trade", Group = "TMS", DefaultValue = true)]
         public bool BounceTradeEnabled { get; set; }
@@ -315,6 +321,12 @@ namespace cAlgo.Robots
         }
 
         private Bars _macroBars;
+
+        // ---- Macro TMS bias stabilisation (closed H1 bars only) ----
+        private TmsSignals _macroTmsCache;
+        private DateTime _macroTmsCacheBucket = DateTime.MinValue;
+        private string _lastConfirmedMacroBias = "NEUTRAL";
+        private DateTime _lastMacroFlipBarTime = DateTime.MinValue;
 
         // ---- Indicator Storage ----
         private IndicatorDataSeries _haOpen, _haHigh, _haLow, _haClose;
@@ -623,12 +635,20 @@ namespace cAlgo.Robots
 
         private TmsSignals GetMacroTmsSignals()
         {
-            if (_macroBars == null || _macroBars.Count < RsiPeriod + RedPeriod + 34)
+            if (_macroBars == null || _macroBars.Count < RsiPeriod + RedPeriod + 35)
             {
                 return new TmsSignals { bias = "NEUTRAL", tdi_level = "neutral", green_tf_value = 50, green_tf_slope = 0 };
             }
 
             int count = _macroBars.Count;
+
+            // Recompute only when a new H1 bucket starts (i.e. a bar just closed); the forming
+            // H1 bar is never used for the bias, so it cannot whip-saw within the hour.
+            DateTime bucket = _macroBars[count - 1].OpenTime;
+            if (_macroTmsCache != null && bucket == _macroTmsCacheBucket)
+            {
+                return _macroTmsCache;
+            }
             int lookback = Math.Min(count, 120);
             int startIdx = count - lookback;
 
@@ -754,12 +774,17 @@ namespace cAlgo.Robots
                 else stochD[k] = 50;
             }
 
-            int last = lookback - 1;
-            int prev = lookback - 2;
+            // Use the last CLOSED H1 bar only (the final element is the forming bar).
+            int last = lookback - 2;
+            int prev = lookback - 3;
+            if (prev < 1)
+            {
+                return new TmsSignals { bias = "NEUTRAL", tdi_level = "neutral", green_tf_value = 50, green_tf_slope = 0 };
+            }
 
             double g = rsi[last];
             double g1 = rsi[prev];
-            double g2 = lookback >= 3 ? rsi[lookback - 3] : g1;
+            double g2 = last >= 2 ? rsi[last - 2] : g1;
             double r = red[last];
             double r1 = red[prev];
             double y = yellow[last];
@@ -804,6 +829,39 @@ namespace cAlgo.Robots
                 if (g <= y || g <= 50) bias = "BEARISH";
             }
 
+            // ---- Bias hysteresis: no directional flip without separation + lockout ----
+            string candidateBias = bias;
+            DateTime closedMacroTime = _macroBars[count - 2].OpenTime;
+            bool separationOk = Math.Abs(g - r) >= MinTdiFlipSeparation;
+            bool lockoutOk = _lastMacroFlipBarTime == DateTime.MinValue
+                             || (closedMacroTime - _lastMacroFlipBarTime).TotalHours >= MinBarsBetweenFlips;
+
+            if (candidateBias == _lastConfirmedMacroBias)
+            {
+                // unchanged
+            }
+            else if (candidateBias == "NEUTRAL")
+            {
+                // Losing the MBL / 50 filter only downgrades to NEUTRAL - always allowed.
+                _lastConfirmedMacroBias = "NEUTRAL";
+                _lastMacroFlipBarTime = closedMacroTime;
+            }
+            else if (separationOk && lockoutOk)
+            {
+                _lastConfirmedMacroBias = candidateBias;
+                _lastMacroFlipBarTime = closedMacroTime;
+            }
+            else
+            {
+                bias = _lastConfirmedMacroBias; // premature flip ignored
+                if (ShowLogs)
+                {
+                    Print($"[TMS Hysteresis] {candidateBias} flip ignored (|G-R|={Math.Abs(g - r):F2} vs min {MinTdiFlipSeparation:F1}, " +
+                          $"last flip {(_lastMacroFlipBarTime == DateTime.MinValue ? "n/a" : _lastMacroFlipBarTime.ToString("MM-dd HH:mm"))}, " +
+                          $"lockout {MinBarsBetweenFlips}h) - holding {bias}");
+                }
+            }
+
             bool crossUpNow = g1 <= r1 && g > r;
             bool crossDnNow = g1 >= r1 && g < r;
 
@@ -816,7 +874,7 @@ namespace cAlgo.Robots
             bool macroBounceBull = BounceTradeEnabled && (g > r) && (g > g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev) && !haTurnedRed;
             bool macroBounceBear = BounceTradeEnabled && (g < r) && (g < g1) && (macroDistPrev <= BounceDistanceThreshold) && (macroDistCurr > macroDistPrev) && !haTurnedGreen;
 
-            return new TmsSignals
+            var signals = new TmsSignals
             {
                 bias = bias,
                 bars_since_cross = macroBarsSinceCross,
@@ -841,6 +899,10 @@ namespace cAlgo.Robots
                 tdi_bounce_bull = macroBounceBull,
                 tdi_bounce_bear = macroBounceBear
             };
+
+            _macroTmsCache = signals;
+            _macroTmsCacheBucket = bucket;
+            return signals;
         }
 
         // ==========================================
