@@ -254,6 +254,13 @@ def get_db_connection(db_target: Optional[Union[str, Path]] = None, timeout: flo
     Returns an active database connection (PostgreSQL wrapper or SQLite connection).
     Matches sqlite3 interface so existing queries work unchanged.
     """
+    # Test isolation: a pytest run MUST never touch the production database. When
+    # AGENTFX_TEST_DB is set, the default DB target is redirected to that throwaway SQLite
+    # file; explicitly-passed targets (e.g. tmp_path fixtures) are left untouched.
+    test_db = os.environ.get("AGENTFX_TEST_DB", "").strip()
+    if test_db and (db_target is None or str(db_target).strip() in ("portfolio.db", str(DEFAULT_SQLITE_PATH))):
+        db_target = test_db
+
     use_pg = is_postgres_target(db_target)
     
     if use_pg and HAS_PSYCOPG2:
