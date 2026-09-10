@@ -825,6 +825,10 @@ def evaluate_judas_sweep_gate(snapshot: MarketSnapshot, account_id: Optional[str
 # A genuine expansion ends chop: allow a fresh, momentum-confirmed ORB breakout to
 # bypass the choppy-regime gate instead of waiting for the regime label to catch up.
 CHOPPY_OVERRIDE_MAX_BARS_SINCE_BREAKOUT = 3
+# ...but not in an extreme chop regime (too many failed breakouts = chop trap), and
+# only when the expansion is large enough relative to volatility.
+CHOPPY_OVERRIDE_MAX_OR_FLIPS = 7
+CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR = 0.5
 
 
 def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
@@ -1105,10 +1109,13 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     if snapshot.market and snapshot.market.regime == "choppy" and snapshot.market.or_flips >= 5:
         chart = snapshot.chart_tms
         fresh_momentum_confirmed = False
+        expansion_ok = atr_ref is None or orb.breakout_distance_pips >= (CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR * atr_ref)
         if (
             chart is not None
             and orb.breakout_direction in ("up", "down")
             and orb.bars_since_breakout <= CHOPPY_OVERRIDE_MAX_BARS_SINCE_BREAKOUT
+            and snapshot.market.or_flips <= CHOPPY_OVERRIDE_MAX_OR_FLIPS
+            and expansion_ok
         ):
             if orb.breakout_direction == "up":
                 fresh_momentum_confirmed = chart.price_above_ema and chart.green_tf_slope > 0 and not chart.ha_turned_red
@@ -1123,7 +1130,10 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
                 tp_pips=0.0,
                 reason=(
                     f"Cycle gate: Market is CHOPPY ({snapshot.market.or_flips} failed OR breakouts) "
-                    f"and no fresh momentum-confirmed breakout (bars={orb.bars_since_breakout}, dir={orb.breakout_direction})"
+                    f"and no fresh momentum-confirmed expansion "
+                    f"(bars={orb.bars_since_breakout}, dir={orb.breakout_direction}, "
+                    f"dist={orb.breakout_distance_pips:.1f}p, atr={atr_ref if atr_ref else 0:.0f}p, "
+                    f"max_flips={CHOPPY_OVERRIDE_MAX_OR_FLIPS}, min_dist={CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR:.1f}x ATR)"
                 )
             )
         logger.info(

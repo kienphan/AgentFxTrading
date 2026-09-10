@@ -65,7 +65,7 @@ def test_choppy_gate_still_blocks_without_momentum_alignment():
     assert decision is not None
     assert decision.action == "HOLD"
     assert "CHOPPY" in decision.reason
-    assert "no fresh momentum-confirmed breakout" in decision.reason
+    assert "no fresh momentum-confirmed expansion" in decision.reason
 
 
 def test_choppy_gate_still_blocks_stale_breakout():
@@ -83,3 +83,25 @@ def test_choppy_gate_still_blocks_when_regime_is_choppy_and_counter_ha():
 
 def test_non_choppy_regime_unaffected():
     assert evaluate_cycle_gate(_us30_snapshot(regime="trending", or_flips=0)) is None
+
+
+def test_choppy_gate_blocks_extreme_flip_count():
+    """2026-09-10 USDJPY 14:30 case: 9 failed breakouts = chop trap, override must not fire."""
+    decision = evaluate_cycle_gate(_us30_snapshot(or_flips=9))
+    assert decision is not None
+    assert decision.action == "HOLD"
+    assert "CHOPPY" in decision.reason
+
+
+def test_choppy_override_requires_min_atr_expansion():
+    """Tiny breakout (6.9p) vs ATR (16.4p) is not an expansion -> blocked."""
+    from app.server import CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR
+
+    snap = _us30_snapshot()
+    snap.atr_pips = 16.4
+    snap.orb.breakout_distance_pips = 6.9
+    decision = evaluate_cycle_gate(snap)
+    assert decision is not None and decision.action == "HOLD"
+
+    snap.orb.breakout_distance_pips = CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR * 16.4 + 1.0
+    assert evaluate_cycle_gate(snap) is None

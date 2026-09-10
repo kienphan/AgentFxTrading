@@ -1305,7 +1305,6 @@ namespace cAlgo.Robots
                 : 10 * Symbol.PipSize;
             double atrInPips = currentAtr / Symbol.PipSize;
             double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
-            double beTriggerPips = BreakevenTriggerAtr * atrInPips;
 
             string symUp = SymbolName.ToUpperInvariant();
             bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30");
@@ -1315,26 +1314,26 @@ namespace cAlgo.Robots
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
                 double mfe = _positionMfe[pos.Id];
                 
-                // Giveback protection only activates AFTER the trade has reached meaningful profit:
-                // For Indices: >= 1.5 ATR (min 1000 pips / 100 points for US30), for Forex/Metals: >= 0.8 ATR
-                double defaultActivationAtr = isIndex ? 1.5 : 0.8;
-                double activationThreshold = beTriggerPips > 0 ? beTriggerPips : defaultActivationAtr * atrInPips;
+                // Giveback protection arms once the trade has reached meaningful profit.
+                // Tuned to the observed MFE distribution (~0.5 ATR): the previous 1.5 ATR arming
+                // (min 1000/300 pips) meant the guard never activated, so peaks were fully given back.
+                double defaultActivationAtr = 0.4;
+                double activationThreshold = defaultActivationAtr * atrInPips;
                 if (isIndex)
                 {
-                    double minIndexPips = symUp.Contains("US30") ? 1000.0 : 300.0;
-                    activationThreshold = Math.Max(1.5 * atrInPips, minIndexPips);
+                    double minIndexPips = symUp.Contains("US30") ? 300.0 : 150.0;
+                    activationThreshold = Math.Max(defaultActivationAtr * atrInPips, minIndexPips);
                 }
                 if (mfe < activationThreshold) continue;
 
                 double pnlPips = GetPnlPips(pos);
                 double giveback = mfe - pnlPips;
 
-                // 1. Percentage-based MFE Giveback Guard (For Indices: max 55% giveback; Forex/Metals: max 40%)
-                // 1. Percentage-based MFE Giveback Guard:
-                // Tier 1 (Normal profit): Indices max 55% giveback, Forex/Metals max 40%.
+                // 1. Percentage-based MFE Giveback Guard.
+                // Tier 1 (Normal profit): Indices max 45% giveback, Forex/Metals use MaxGivebackMfeRatio.
                 // Tier 2 (Large profit - MFE >= 2.5x ATR hoặc MFE >= 1200p trên US30 / 600p USTEC / 400p DE40 hoặc >= 65% TP):
-                // Tighten giveback from 55% down to 35% (Indices) and 30% (Forex/Metals) to lock in at least 65-70% of peak gains!
-                double effectiveMfeRatio = isIndex ? Math.Max(MaxGivebackMfeRatio, 0.55) : MaxGivebackMfeRatio;
+                // Tighten giveback from 45% down to 35% (Indices) and 30% (Forex/Metals) to lock in at least 65-70% of peak gains!
+                double effectiveMfeRatio = isIndex ? Math.Max(MaxGivebackMfeRatio, 0.45) : MaxGivebackMfeRatio;
 
                 double totalTpPips = 0;
                 if (pos.TakeProfit != null)
@@ -1370,7 +1369,7 @@ namespace cAlgo.Robots
                 }
 
                 // 2. ATR-based Giveback Guard
-                double effectiveGivebackAtr = isIndex ? Math.Max(MaxGivebackAtr, 1.5) * atrInPips : maxGivebackPips;
+                double effectiveGivebackAtr = isIndex ? Math.Max(MaxGivebackAtr, 1.0) * atrInPips : maxGivebackPips;
                 if (MaxGivebackAtr > 0 && giveback >= effectiveGivebackAtr)
                 {
                     pos.Close();
