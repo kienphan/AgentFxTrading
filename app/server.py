@@ -485,9 +485,10 @@ def build_system_prompt(snapshot: MarketSnapshot) -> str:
         )
     elif current_regime == "choppy":
         regime_guideline = (
-            "• CURRENT REGIME IS CHOPPY (High failed breakouts / OR flips): The market is oscillating and hunting stops. "
-            "The default and safest action is HOLD unless a fresh, extraordinary setup with strong momentum slope emerges. "
-            "Never chase extended moves in a choppy regime."
+            "• CURRENT REGIME WAS CHOPPY (High failed breakouts / OR flips): The market was oscillating and hunting stops, "
+            "but a chop label is backward-looking. A FRESH decisive ORB breakout (few bars since breakout) with aligned "
+            "momentum slope means the chop is ending - treat that Model 1 breakout as valid, do not wait for the regime "
+            "label to flip. Avoid entering stale/retest setups and never chase extended moves in a choppy regime."
         )
     else:
         regime_guideline = (
@@ -821,6 +822,11 @@ def evaluate_judas_sweep_gate(snapshot: MarketSnapshot, account_id: Optional[str
 
     return None
 
+# A genuine expansion ends chop: allow a fresh, momentum-confirmed ORB breakout to
+# bypass the choppy-regime gate instead of waiting for the regime label to catch up.
+CHOPPY_OVERRIDE_MAX_BARS_SINCE_BREAKOUT = 3
+
+
 def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     """
     Deterministic Cycle Gate (Cost Gate) for TMS + ORB Strategy.
@@ -1092,13 +1098,38 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
         )
 
     # Gate 2.6: Choppy Market Gate (Chop trap brake)
+    # The choppy label is backward-looking (it counts failed breakouts / OR flips), so
+    # requiring "not choppy" to enter structurally forbids the very breakout that ends
+    # the chop. A fresh, momentum-confirmed breakout is therefore allowed to override
+    # the block; anything else stays gated.
     if snapshot.market and snapshot.market.regime == "choppy" and snapshot.market.or_flips >= 5:
-        return AgentDecision(
-            action="HOLD",
-            volume_lots=0.01,
-            sl_pips=0.0,
-            tp_pips=0.0,
-            reason=f"Cycle gate: Market is CHOPPY ({snapshot.market.or_flips} failed OR breakouts)"
+        chart = snapshot.chart_tms
+        fresh_momentum_confirmed = False
+        if (
+            chart is not None
+            and orb.breakout_direction in ("up", "down")
+            and orb.bars_since_breakout <= CHOPPY_OVERRIDE_MAX_BARS_SINCE_BREAKOUT
+        ):
+            if orb.breakout_direction == "up":
+                fresh_momentum_confirmed = chart.price_above_ema and chart.green_tf_slope > 0 and not chart.ha_turned_red
+            else:
+                fresh_momentum_confirmed = chart.price_below_ema and chart.green_tf_slope < 0 and not chart.ha_turned_green
+
+        if not fresh_momentum_confirmed:
+            return AgentDecision(
+                action="HOLD",
+                volume_lots=0.01,
+                sl_pips=0.0,
+                tp_pips=0.0,
+                reason=(
+                    f"Cycle gate: Market is CHOPPY ({snapshot.market.or_flips} failed OR breakouts) "
+                    f"and no fresh momentum-confirmed breakout (bars={orb.bars_since_breakout}, dir={orb.breakout_direction})"
+                )
+            )
+        logger.info(
+            f"[CYCLE GATE] Choppy override: fresh {orb.breakout_direction} breakout "
+            f"(bars_since_breakout={orb.bars_since_breakout}, dist={orb.breakout_distance_pips:.1f}p, "
+            f"or_flips={snapshot.market.or_flips}) with aligned momentum -> evaluating entry"
         )
 
     # All entry criteria met! Valid candidate setup -> Invoke LLM for entry sizing & SL/TP validation
