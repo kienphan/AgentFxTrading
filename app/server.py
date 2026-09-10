@@ -640,6 +640,64 @@ def validate_judas_adjust_decision(snapshot: MarketSnapshot, decision_dict: Dict
     return None
 
 
+# ---- TMS position-management guardrails ----
+# Allow a protective exit only after this share of the SL distance is given back.
+TMS_CLOSE_MIN_ADVERSE_SL_RATIO = 0.60
+# Allow a profit-taking exit from this reward:risk ratio onwards.
+TMS_CLOSE_MIN_PROFIT_SL_RATIO = 1.00
+
+
+def validate_tms_close_decision(snapshot: MarketSnapshot, decision_dict: Dict[str, Any]) -> Optional[str]:
+    """Validate an LLM CLOSE_ALL against an open TMS/ORB position.
+
+    Returns a rejection reason when the exit must be downgraded to HOLD, or None when valid.
+    Accepts the exit only when one of these holds:
+      - the position-side exit signal is true (BUY -> exit_long, SELL -> exit_short), or
+      - adverse excursion >= 60% of the SL distance (capital protection), or
+      - profit >= 1:1 R (locking gains).
+    Blocks panic exits that cite the wrong-side flag (e.g. closing a BUY because
+    'exit_short' / TDI cross up fired) while the trade is barely in drawdown.
+    """
+    pos = snapshot.position
+    if pos is None:
+        return None
+
+    side = pos.resolved_side
+    entry = pos.entry_price or 0.0
+    bid = snapshot.bid or 0.0
+    ask = snapshot.ask or 0.0
+    sl = float(pos.sl_price or pos.sl or 0.0)
+
+    chart = snapshot.chart_tms
+    macro = snapshot.tms
+    if side == "BUY":
+        exit_flag_ok = bool((chart and chart.exit_long) or (macro and macro.exit_long))
+        flag_desc = f"exit_long={exit_flag_ok}, exit_short={bool((chart and chart.exit_short) or (macro and macro.exit_short))}"
+    elif side == "SELL":
+        exit_flag_ok = bool((chart and chart.exit_short) or (macro and macro.exit_short))
+        flag_desc = f"exit_short={exit_flag_ok}, exit_long={bool((chart and chart.exit_long) or (macro and macro.exit_long))}"
+    else:
+        return None
+
+    if exit_flag_ok:
+        return None
+
+    sl_dist = abs(entry - sl) if (entry > 0 and sl > 0) else 0.0
+    if sl_dist <= 0:
+        return None  # cannot size the excursion -> do not interfere
+
+    adverse = (entry - bid) if side == "BUY" else (ask - entry)
+    profit = (bid - entry) if side == "BUY" else (entry - ask)
+    if adverse >= TMS_CLOSE_MIN_ADVERSE_SL_RATIO * sl_dist:
+        return None
+    if profit >= TMS_CLOSE_MIN_PROFIT_SL_RATIO * sl_dist:
+        return None
+
+    return (f"no {side}-side exit signal ({flag_desc}) and only "
+            f"{adverse / sl_dist:.0%} of SL distance in drawdown "
+            f"(protective exit needs >= {TMS_CLOSE_MIN_ADVERSE_SL_RATIO:.0%} or >= 1:1 R profit)")
+
+
 def evaluate_judas_sweep_gate(snapshot: MarketSnapshot, account_id: Optional[str] = None) -> Optional[AgentDecision]:
     """
     Deterministic Gate for SMC / Asian Range Judas Sweep Bot.
@@ -1586,6 +1644,20 @@ async def trade_decision(snapshot: MarketSnapshot):
             )
             decision_dict["action"] = "HOLD"
             decision_dict["reason"] = f"[Guardrail Blocked] Confidence {conf_val:.1f}% < {min_conf_threshold:.1f}% threshold. {decision_dict.get('reason', '')}"
+
+        # TMS/ORB CLOSE_ALL Guard: block panic exits with a wrong-side or missing reversal signal.
+        if not is_judas and action_str == "CLOSE_ALL":
+            close_reject_reason = validate_tms_close_decision(snapshot, decision_dict)
+            if close_reject_reason:
+                logger.warning(
+                    f"[{account_id}/{snapshot.bot_id}] [TMS CLOSE GUARD] CLOSE_ALL rejected -> HOLD: "
+                    f"{close_reject_reason}. Position left untouched."
+                )
+                decision_dict["action"] = "HOLD"
+                decision_dict["reason"] = (
+                    f"[CLOSE Guard] {close_reject_reason}. Position left untouched. "
+                    f"{decision_dict.get('reason', '')}"
+                )
 
         logger.info(
             f"[LLM DECISION] {account_id}/{snapshot.bot_id} -> Action: {decision_dict.get('action', 'HOLD')} | "
