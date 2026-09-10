@@ -220,7 +220,7 @@ class BarData(BaseModel):
 
 class TmsSignals(BaseModel):
     # Bias
-    bias: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
+    bias: str = "NEUTRAL"  # "BULLISH"/"BEARISH" cross lock; NEUTRAL only before the first confirmed cross
     bars_since_cross: int = 0
     cross_direction: Optional[str] = None
 
@@ -508,10 +508,9 @@ You analyze market structure and propose trade actions. The deterministic execut
 ## Strategy Logic
 
 ### 1. TMS (Trend Momentum Signal) = DIRECTIONAL BIAS
-- **BULLISH**: TDI Green crossed above Red, Heikin Ashi is Green, Stochastic K > D.
-- **BEARISH**: TDI Green crossed below Red, Heikin Ashi is Red, Stochastic K < D.
-- **NEUTRAL**: Lines intertwined or consolidating. NEVER enter when bias is NEUTRAL.
-- Bias is strictly locked until the next confirmed reverse cross. Entries MUST align with current TMS bias.
+- The bias is a CROSS LOCK: the most recent confirmed cross (TDI Green/Red cross + Heikin Ashi direction + Stochastic K vs D on the same bar) sets the direction and is HELD until the next confirmed reverse cross. There is no "lines intertwined" NEUTRAL bias.
+- **NEUTRAL** is therefore reported only while no confirmed cross exists yet (insufficient history). NEVER enter when the bias is NEUTRAL.
+- Entries MUST align with the current TMS bias.
 
 ### 2. ORB (Opening Range Breakout) = ENTRY TRIGGER
 - Opening Range (OR) defines the high/low of the first 15 minutes of the active session.
@@ -925,7 +924,8 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason=f"Cycle gate: Loss streak active ({snapshot.loss_streak} consecutive losses)"
         )
 
-    # Gate 2.3: TMS Bias Gate
+    # Gate 2.3: TMS Bias Gate. The cross lock never downgrades to NEUTRAL once a confirmed
+    # cross exists, so this only fires while the bot has no confirmed macro cross yet.
     bias = snapshot.tms.bias.upper()
     if bias == "NEUTRAL":
         return AgentDecision(

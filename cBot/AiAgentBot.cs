@@ -325,8 +325,11 @@ namespace cAlgo.Robots
         // ---- Macro TMS bias stabilisation (closed H1 bars only) ----
         private TmsSignals _macroTmsCache;
         private DateTime _macroTmsCacheBucket = DateTime.MinValue;
-        private string _lastConfirmedMacroBias = "NEUTRAL";
+        private string _lastConfirmedMacroBias;          // cross-lock bias; null = chua co cross nao
         private DateTime _lastMacroFlipBarTime = DateTime.MinValue;
+        // Cross-lock source bar (absolute H1 time) so the age survives scan-window rollover
+        private string _lastMacroCrossDir;
+        private DateTime _lastMacroCrossBarTime = DateTime.MinValue;
 
         // ---- Indicator Storage ----
         private IndicatorDataSeries _haOpen, _haHigh, _haLow, _haClose;
@@ -724,24 +727,7 @@ namespace cAlgo.Robots
                 }
             }
 
-            // 4. Calculate Yellow MBL Line (Market Base Line - SMA 34 of RSI)
-            double[] yellow = new double[lookback];
-            int yellowPeriod = 34;
-            for (int k = 0; k < lookback; k++)
-            {
-                if (k < yellowPeriod)
-                {
-                    yellow[k] = 50;
-                }
-                else
-                {
-                    double sum = 0;
-                    for (int j = k - yellowPeriod + 1; j <= k; j++) sum += rsi[j];
-                    yellow[k] = sum / yellowPeriod;
-                }
-            }
-
-            // 5. Calculate Stochastic on Macro Bars
+            // 4. Calculate Stochastic on Macro Bars
             double[] stochK = new double[lookback];
             double[] stochD = new double[lookback];
             double[] rawK = new double[lookback];
@@ -787,7 +773,6 @@ namespace cAlgo.Robots
             double g2 = last >= 2 ? rsi[last - 2] : g1;
             double r = red[last];
             double r1 = red[prev];
-            double y = yellow[last];
 
             bool haGreen = haClose[last] > haOpen[last];
             bool haGreenP1 = haClose[prev] > haOpen[prev];
@@ -797,56 +782,59 @@ namespace cAlgo.Robots
             bool stochBull = stochK[last] > stochD[last];
             bool stochBear = stochK[last] < stochD[last];
 
-            // Scan backwards to find the last confirmed TDI cross on Macro timeframe
-            int macroBarsSinceCross = 999;
-            string macroCrossDir = null;
+            DateTime closedMacroTime = _macroBars[count - 2].OpenTime;
+
+            // ---- Cross-lock bias (dnse-kash port) ----
+            // Bias = the MOST RECENT CONFIRMED TDI cross (Green/Red cross confirmed on the same
+            // bar by Heikin-Ashi direction + Stochastic) and is HELD until the next confirmed
+            // reverse cross. There is no "lines intertwined" NEUTRAL bias: NEUTRAL is reported
+            // only while no confirmed cross exists at all (insufficient history).
             for (int k = last; k >= 1; k--)
             {
                 bool crossUp = rsi[k - 1] <= red[k - 1] && rsi[k] > red[k];
                 bool crossDn = rsi[k - 1] >= red[k - 1] && rsi[k] < red[k];
-                if (crossUp)
+                if (crossUp && haClose[k] > haOpen[k] && stochK[k] > stochD[k])
                 {
-                    macroBarsSinceCross = last - k;
-                    macroCrossDir = "up";
+                    _lastMacroCrossDir = "up";
+                    _lastMacroCrossBarTime = _macroBars[startIdx + k].OpenTime;
                     break;
                 }
-                if (crossDn)
+                if (crossDn && haClose[k] < haOpen[k] && stochK[k] < stochD[k])
                 {
-                    macroBarsSinceCross = last - k;
-                    macroCrossDir = "down";
+                    _lastMacroCrossDir = "down";
+                    _lastMacroCrossBarTime = _macroBars[startIdx + k].OpenTime;
                     break;
                 }
             }
 
-            // Determine Macro Bias with Yellow MBL & 50 Level filter
-            string bias = "NEUTRAL";
-            if (macroCrossDir == "up" && g > r)
-            {
-                if (g >= y || g >= 50) bias = "BULLISH";
-            }
-            else if (macroCrossDir == "down" && g < r)
-            {
-                if (g <= y || g <= 50) bias = "BEARISH";
-            }
+            // Age is measured against the locked cross bar, so it stays exact once the cross
+            // scrolls out of the scan window (the bias is still held).
+            int macroBarsSinceCross = _lastMacroCrossBarTime != DateTime.MinValue
+                ? Math.Max(0, (int)Math.Round((closedMacroTime - _lastMacroCrossBarTime).TotalHours))
+                : 999;
+            string macroCrossDir = _lastMacroCrossDir;
+
+            string bias = macroCrossDir == "up" ? "BULLISH"
+                        : macroCrossDir == "down" ? "BEARISH"
+                        : "NEUTRAL";
 
             // ---- Bias hysteresis: no directional flip without separation + lockout ----
             string candidateBias = bias;
-            DateTime closedMacroTime = _macroBars[count - 2].OpenTime;
             bool separationOk = Math.Abs(g - r) >= MinTdiFlipSeparation;
             bool lockoutOk = _lastMacroFlipBarTime == DateTime.MinValue
                              || (closedMacroTime - _lastMacroFlipBarTime).TotalHours >= MinBarsBetweenFlips;
 
-            if (candidateBias == _lastConfirmedMacroBias)
+            if (candidateBias == "NEUTRAL")
+            {
+                // No confirmed cross in the window: hold the locked bias instead of inventing a
+                // NEUTRAL state - the cross lock is held until the next confirmed reverse cross.
+                bias = _lastConfirmedMacroBias ?? "NEUTRAL";
+            }
+            else if (candidateBias == _lastConfirmedMacroBias)
             {
                 // unchanged
             }
-            else if (candidateBias == "NEUTRAL")
-            {
-                // Losing the MBL / 50 filter only downgrades to NEUTRAL - always allowed.
-                _lastConfirmedMacroBias = "NEUTRAL";
-                _lastMacroFlipBarTime = closedMacroTime;
-            }
-            else if (separationOk && lockoutOk)
+            else if (_lastConfirmedMacroBias == null || (separationOk && lockoutOk))
             {
                 _lastConfirmedMacroBias = candidateBias;
                 _lastMacroFlipBarTime = closedMacroTime;
@@ -1599,8 +1587,7 @@ namespace cAlgo.Robots
 
             // 2. Bias Flip Release
             if ((_postTpGateSide == "BUY" && macroTms.bias == "BEARISH") ||
-                (_postTpGateSide == "SELL" && macroTms.bias == "BULLISH") ||
-                macroTms.bias == "NEUTRAL")
+                (_postTpGateSide == "SELL" && macroTms.bias == "BULLISH"))
             {
                 released = true;
                 reason = "bias_flip";
