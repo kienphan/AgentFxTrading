@@ -509,6 +509,40 @@ You can run the cBot either via **cTrader Desktop GUI** or **Headless Docker CLI
        --riskFactor=0.2
      ```
 
+   * **UK100 / GB100 Judas Sweep (M15 - FTSE 100 Asian Range Judas Sweep)** *(Note: Use `UK100` or `GB100` depending on your broker; on cTrader 1 pip = 0.1 index point)*:
+     ```bash
+     docker run -d \
+       --name cbot-uk100-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=your_email@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=YOUR_ACCOUNT_ID \
+       --symbol=UK100 \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-uk100-judas" \
+       --label="cbot-uk100-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=120.0 \
+       --maxAsianRangePips=800.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=150.0 \
+       --breakEvenTrigger=200.0 \
+       --stoplossPip=150.0 \
+       --takeprofitPip=350.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=0.2
+     ```
+
    * **XAUUSD TMS+ORB (M15 - New York Session)**:
      ```bash
      docker run -d \

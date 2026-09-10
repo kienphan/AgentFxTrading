@@ -12,6 +12,8 @@ from app.server import (
     MarketSnapshot,
     PositionInfo,
     StrategyData,
+    evaluate_judas_sweep_gate,
+    format_price,
     validate_judas_adjust_decision,
     JUDAS_ADJUST_MIN_TP_PROGRESS,
 )
@@ -84,6 +86,45 @@ def test_adjust_flat_position_rejected():
     decision = {"action": "ADJUST", "new_sl_price": 29500.0, "reason": "x"}
     reason = validate_judas_adjust_decision(snap, decision)
     assert reason is not None and "FLAT" in reason
+
+
+def _uk100_snapshot(asian_range_pips: float, asian_high: float = 10658.8,
+                    asian_low: float = 10622.1) -> MarketSnapshot:
+    return MarketSnapshot(
+        bot_id="cbot-uk100-judas",
+        symbol="UK100",
+        timeframe="Minute15",
+        ask=10627.5,
+        bid=10626.6,
+        strategy=StrategyData(
+            asian_high=asian_high,
+            asian_low=asian_low,
+            asian_range_pips=asian_range_pips,
+            killzone_session="New York Overlap Killzone",
+            bias_direction="BUY",
+            traditional_signal="JUDAS_SWEEP_BUY",
+            signal_window_bars=1,
+        ),
+    )
+
+
+def test_uk100_symbol_is_classified_as_index():
+    """UK100 must format with index precision instead of the 5-decimal forex fallback."""
+    assert format_price(10626.60, "UK100") == "10626.60"
+
+
+def test_uk100_asian_range_bounds():
+    """UK100 uses its own 120-800 pip band (1 pip = 0.1 index point), not the 12-100 forex band."""
+    # 367 pips = 36.7 FTSE points: the 2026-09-10 measured session range must be accepted
+    accepted = evaluate_judas_sweep_gate(_uk100_snapshot(367.0))
+    assert accepted is None or "Asian Range width abnormal" not in accepted.reason
+
+    # 1500 pips = 150 points: abnormal panic range must be rejected
+    rejected = evaluate_judas_sweep_gate(_uk100_snapshot(1500.0))
+    assert rejected is not None
+    assert rejected.action == "HOLD"
+    assert "Asian Range width abnormal" in rejected.reason
+    assert "120-800" in rejected.reason
 
 
 def test_count_positions_opened_on(tmp_path, caplog):

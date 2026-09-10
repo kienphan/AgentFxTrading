@@ -201,7 +201,7 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
             elif "XAU" in symbol or "GOLD" in symbol:
                 pip_size = 0.1
                 multiplier = 10.0
-            elif any(k in symbol for k in ("US30", "USTEC", "DE40", "GER40", "NAS100")):
+            elif any(k in symbol for k in ("US30", "USTEC", "DE40", "GER40", "NAS100", "UK100", "GB100")):
                 pip_size = 1.0
                 multiplier = 1.0
             else:
@@ -396,7 +396,7 @@ def get_asset_exposure(account_id: str = "all") -> Dict:
             by_asset_class["Crypto"] += vol
         elif "XAU" in sym or "GOLD" in sym:
             by_asset_class["Gold/Metals"] += vol
-        elif "US30" in sym or "USTEC" in sym or "DE40" in sym or "NAS" in sym:
+        elif "US30" in sym or "USTEC" in sym or "DE40" in sym or "NAS" in sym or "UK100" in sym:
             by_asset_class["Indices"] += vol
         else:
             by_asset_class["Forex"] += vol

@@ -507,6 +507,40 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
        --riskFactor=0.2
      ```
 
+   * **UK100 / GB100 Judas Sweep (M15 - Săn Thanh Khoản Phiên Á FTSE 100)** *(Lưu ý: Dùng mã `UK100` hoặc `GB100` tùy sàn cTrader; trên cTrader 1 pip = 0.1 điểm chỉ số)*:
+     ```bash
+     docker run -d \
+       --name cbot-uk100-judas \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AsianRangeJudasSweepBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=UK100 \
+       --period=m15 \
+       --full-access \
+       --BotId="cbot-uk100-judas" \
+       --label="cbot-uk100-judas" \
+       --DashboardServerUrl="http://127.0.0.1:8000" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --UseDirectAiApi=false \
+       --UseAiGateMode=true \
+       --minAsianRangePips=120.0 \
+       --maxAsianRangePips=800.0 \
+       --sweepBufferPips=30.0 \
+       --AiSlMinFloorPips=150.0 \
+       --breakEvenTrigger=200.0 \
+       --stoplossPip=150.0 \
+       --takeprofitPip=350.0 \
+       --enableBreakEvenPrice=true \
+       --riskFactor=0.2
+     ```
+
    * **XAUUSD TMS+ORB (M15 - Phiên New York)**:
      ```bash
      docker run -d \

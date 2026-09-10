@@ -1140,7 +1140,7 @@
                 totalVol += vol;
                 if (sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL')) byClass['Crypto'] += vol;
                 else if (sym.includes('XAU') || sym.includes('GOLD')) byClass['Gold/Metals'] += vol;
-                else if (sym.includes('US30') || sym.includes('USTEC') || sym.includes('DE40')) byClass['Indices'] += vol;
+                else if (sym.includes('US30') || sym.includes('USTEC') || sym.includes('DE40') || sym.includes('UK100')) byClass['Indices'] += vol;
                 else byClass['Forex'] += vol;
             });
             const filtered = Object.entries(byClass).filter(([_, v]) => v > 0);
