@@ -85,24 +85,32 @@ def calculate_quant_score(
 
 def compute_bot_leaderboard(
     account_id: str = "all",
-    db_path: Optional[Path] = None
+    db_path: Optional[Path] = None,
+    account_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes historical trade outcomes and active positions across all cBots
     to compute ranking scores, win rates, profit factors, and tier badges.
+
+    ``account_type`` scopes the ranking to the trading mode ("live" or "demo" = the
+    configured accounts of that mode; None = every configured account). ``account_id``
+    narrows further to a single account and "all" ranks everything; passing "live" or
+    "demo" as the account_id stays supported as shorthand for the type filter.
     """
+    if account_type not in ("live", "demo"):
+        account_type = account_id if account_id in ("live", "demo") else None
     conn = get_db_connection(db_path)
     try:
-        # Build account filter clause
-        account_filter = ""
+        # Build account filter clause(s): mode scope first, then optional account narrowing
+        filters: List[str] = []
         params: List[Any] = []
-        if account_id and account_id != "all":
-            if account_id in ("demo", "live"):
-                account_filter = " AND account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)"
-                params.append(account_id)
-            else:
-                account_filter = " AND account_id = ?"
-                params.append(account_id)
+        if account_type:
+            filters.append("account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)")
+            params.append(account_type)
+        if account_id and account_id not in ("all", "live", "demo"):
+            filters.append("account_id = ?")
+            params.append(account_id)
+        account_filter = "".join(f" AND {clause}" for clause in filters)
 
         # 1. Fetch closed trades
         query_closed = f"""
@@ -224,6 +232,7 @@ def compute_bot_leaderboard(
         return {
             "calculated_at": datetime.datetime.now().isoformat(),
             "account_id": account_id,
+            "account_type": account_type,
             "total_bots": len(bot_rankings),
             "fleet_total_trades": fleet_total_trades,
             "fleet_win_rate": fleet_win_rate,

@@ -1468,7 +1468,12 @@
         async function fetchLeaderboard() {
             try {
                 const accId = typeof selectedAccountId !== 'undefined' ? selectedAccountId : 'all';
-                const res = await fetch(`/api/leaderboard?account_id=${accId}`);
+                // Rank strictly inside the active mode: take the type from the selected
+                // option (data-type) and fall back to the page mode itself.
+                const accSel = document.getElementById('account-selector');
+                const accType = (accSel && accSel.selectedOptions[0] && accSel.selectedOptions[0].dataset.type)
+                    || ((currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo');
+                const res = await fetch(`/api/leaderboard?account_id=${encodeURIComponent(accId)}&account_type=${accType}`);
                 if (!res.ok) return;
                 const data = await res.json();
                 renderLeaderboard(data);

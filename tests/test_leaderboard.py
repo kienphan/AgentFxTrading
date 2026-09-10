@@ -158,6 +158,48 @@ def test_compute_bot_leaderboard_with_data(temp_db):
     assert bot2["win_rate"] == 50.0
     assert bot2["closed_pnl_usd"] == -20.0
 
+def test_leaderboard_account_type_filter(temp_db):
+    """The ranking is scoped to the active mode and never mixes live with demo."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    conn.execute("INSERT INTO accounts VALUES ('acc_live_1', 'live', 'Live 1', 1)")
+    conn.execute("INSERT INTO accounts VALUES ('acc_live_2', 'live', 'Live 2', 1)")
+
+    def add(bot_id, account_id, pnl):
+        conn.execute("""
+            INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, exit_time, entry_time, account_id)
+            VALUES (?, 'XAUUSD', 'BUY', 0.05, 2500.0, ?, 'closed', '2026-09-01 10:00:00', '2026-09-01 08:00:00', ?)
+        """, (bot_id, pnl, account_id))
+
+    add("DemoBot", "acc_demo_1", 100.0)
+    add("LiveBot", "acc_live_1", 30.0)
+    add("LiveBot2", "acc_live_2", -10.0)
+    conn.commit()
+    conn.close()
+
+    # account_type scopes the ranking to a single mode
+    live = compute_bot_leaderboard(account_id="all", db_path=temp_db, account_type="live")
+    assert live["account_type"] == "live"
+    assert live["fleet_total_trades"] == 2
+    assert {r["bot_id"] for r in live["rankings"]} == {"LiveBot", "LiveBot2"}
+    assert live["fleet_total_pnl_usd"] == 20.0
+
+    demo = compute_bot_leaderboard(account_id="all", db_path=temp_db, account_type="demo")
+    assert demo["account_type"] == "demo"
+    assert demo["fleet_total_trades"] == 1
+    assert {r["bot_id"] for r in demo["rankings"]} == {"DemoBot"}
+
+    # Without a type the ranking covers every configured account
+    every = compute_bot_leaderboard(account_id="all", db_path=temp_db)
+    assert every["account_type"] is None
+    assert every["fleet_total_trades"] == 3
+
+    # One account narrows inside its mode; "live"/"demo" stay valid shorthand
+    one = compute_bot_leaderboard(account_id="acc_live_2", db_path=temp_db, account_type="live")
+    assert {r["bot_id"] for r in one["rankings"]} == {"LiveBot2"}
+    shorthand = compute_bot_leaderboard(account_id="live", db_path=temp_db)
+    assert shorthand["account_type"] == "live"
+    assert shorthand["fleet_total_trades"] == 2
 
 def test_api_leaderboard_endpoints():
     """Test FastAPI REST endpoints for leaderboard."""
