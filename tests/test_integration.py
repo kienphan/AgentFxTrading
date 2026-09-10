@@ -334,7 +334,7 @@ def test_eth_crypto_classification():
         )
     )
     decision = evaluate_cycle_gate(snap_eth)
-    # With ETH in crypto, 1200 pips is well within max 15000.0p limit (unlike Forex 60p limit)
+    # With ETH in crypto, 1200 pips is well within max 35000.0p limit (unlike Forex 60p limit)
     # It should not be blocked by overextension
     if decision is not None:
         assert "Breakout overextended" not in decision.reason
@@ -344,7 +344,7 @@ def test_exhaustion_breakout_guard_ustec():
 
     # Case 1: USTEC on 2026-09-04 scenario:
     # Breakout distance = 695p, decisive, in entry window, but NO bounce.
-    # 695p > max_direct_breakout_dist (450p) -> Must be BLOCKED as exhaustion breakout!
+    # 695p > max_direct_breakout_dist (min(1.3 x ATR, 700p) = 650p) -> Must be BLOCKED as exhaustion breakout!
     snap_ustec_exhausted = MarketSnapshot(
         symbol="USTEC",
         timeframe="Minute15",
@@ -409,7 +409,7 @@ def test_exhaustion_breakout_guard_ustec():
     decision3 = evaluate_cycle_gate(snap_ustec_bounce)
     assert decision3 is None  # Model 2 Bounce allowed!
 
-    # Case 4: Extreme overextension (> 1200p) even with bounce -> Blocked!
+    # Case 4: Extreme overextension (> 1600p absolute USTEC ceiling) even with bounce -> Blocked!
     snap_ustec_overextended = MarketSnapshot(
         symbol="USTEC",
         timeframe="Minute15",
@@ -421,7 +421,7 @@ def test_exhaustion_breakout_guard_ustec():
         orb=OrbData(
             or_complete=True,
             breakout_direction="down",
-            breakout_distance_pips=1350.0,
+            breakout_distance_pips=1750.0,
             is_decisive=True,
             in_entry_window=True,
             bars_since_breakout=3
@@ -455,6 +455,24 @@ def test_chart_tms_exit_signal_cycle_gate():
     decision = evaluate_cycle_gate(snap_pos)
     # Open position is delegated to AI rather than hard-cut by cycle gate
     assert decision is None
+def test_breakout_distance_limits_resolver():
+    """Ceilings scale with ATR, are bounded by the per-class caps, and never cross classes."""
+    from app.server import (
+        resolve_breakout_limits,
+        MODEL1_ENTRY_WINDOW_BARS,
+        MAX_BARS_SINCE_BREAKOUT_MODEL2,
+    )
+
+    # ATR-scaled inside the cap, clamped to the cap once ATR is large
+    assert resolve_breakout_limits("USTEC", 200.0) == (260.0, 640.0)
+    assert resolve_breakout_limits("USTEC", 5000.0) == (700.0, 2100.0)
+    # Unknown symbol falls back to the Forex majors class - never to an index ceiling
+    assert resolve_breakout_limits("EURUSD", 10.0) == (15.0, 34.0)
+    assert resolve_breakout_limits("EURGBP", 10.0) == (15.0, 34.0)
+    # BTC must be matched by the crypto class, not by the ETH/SOL/XRP class
+    assert resolve_breakout_limits("BTCUSD", None) == (37500.0, 130000.0)
+    # Model 1 window must stay tighter than the Model 2 (retest) window
+    assert MODEL1_ENTRY_WINDOW_BARS < MAX_BARS_SINCE_BREAKOUT_MODEL2
 def test_format_price_and_prompt_precision():
     from app.server import format_price, build_judas_sweep_user_prompt, MarketSnapshot, BarData, StrategyData
     assert format_price(1.35034, "GBPUSD") == "1.35034"

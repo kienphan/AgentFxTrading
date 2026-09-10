@@ -106,7 +106,8 @@ namespace cAlgo.Robots
 
         [Parameter("ORB Buffer (pips)", Group = "ORB", DefaultValue = 3.0, MinValue = 0, Step = 0.5)]
         public double OrbBufferPips { get; set; }
-        [Parameter("Max Bars After Breakout", Group = "ORB", DefaultValue = 5, MinValue = 1)]
+        // Keep in sync with MODEL1_ENTRY_WINDOW_BARS in app/server.py
+        [Parameter("Max Bars After Breakout", Group = "ORB", DefaultValue = 8, MinValue = 1)]
         public int MaxBarsAfterBreakout { get; set; }
         // ---- Session / EOD ----
         [Parameter("DST Rule (Auto-adjust UTC)", Group = "Session", DefaultValue = DstRule.US)]
@@ -160,7 +161,9 @@ namespace cAlgo.Robots
         [Parameter("Max Giveback % of MFE (0-1, 0=off)", Group = "Guardrails", DefaultValue = 0.40, MinValue = 0, MaxValue = 1.0, Step = 0.05)]
         public double MaxGivebackMfeRatio { get; set; }
 
-        [Parameter("Max Breakout Dist (x ATR, 0=off)", Group = "Guardrails", DefaultValue = 2.5, MinValue = 0, Step = 0.1)]
+        // Keep the absolute breakout ceiling aligned with the per-class caps in
+        // app/server.py BREAKOUT_DISTANCE_LIMITS (absolute ATR x = 3.2 - 3.6).
+        [Parameter("Max Breakout Dist (x ATR, 0=off)", Group = "Guardrails", DefaultValue = 3.5, MinValue = 0, Step = 0.1)]
         public double MaxBreakoutDistanceAtr { get; set; }
 
         [Parameter("Max Dollar Risk Per Trade ($)", Group = "Guardrails", DefaultValue = 12.0, MinValue = 1.0, Step = 1.0)]

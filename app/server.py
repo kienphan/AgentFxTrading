@@ -515,24 +515,24 @@ You analyze market structure and propose trade actions. The deterministic execut
 ### 2. ORB (Opening Range Breakout) = ENTRY TRIGGER
 - Opening Range (OR) defines the high/low of the first 15 minutes of the active session.
 - Valid entry requires price closing beyond OR boundary in the direction of TMS bias.
-- Breakout must be DECISIVE (breakout_distance_pips >= threshold) and within entry window (bars_since_breakout <= 5).
+- Breakout must be DECISIVE (breakout_distance_pips >= threshold) and within entry window (bars_since_breakout <= {MODEL1_ENTRY_WINDOW_BARS}).
 - A breakout that has re-entered the range is reported as NO breakout (direction = none) — never trade a failed breakout.
 
 ### 3. ENTRY MODELS (DIRECT BREAKOUT vs RETEST + TDI BOUNCE)
-- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= 5`) AND distance is within fresh direct breakout threshold (`breakout_distance <= 1.0x - 1.5x ATR` or symbol direct cap). If the breakout candle is already oversized/exhausted (`> direct breakout limit`), Model 1 direct entry is strictly PROHIBITED; you MUST wait for Model 2 (Retest + TDI Bounce).
+- **Model 1: Direct Momentum Breakout**: Price closes decisively beyond OR boundary with steep TDI slope in bias direction. Valid when in entry window (`bars_since_breakout <= {MODEL1_ENTRY_WINDOW_BARS}`) AND distance is within fresh direct breakout threshold (`breakout_distance <= 1.0x - 1.5x ATR` or symbol direct cap). If the breakout candle is already oversized/exhausted (`> direct breakout limit`), Model 1 direct entry is strictly PROHIBITED; you MUST wait for Model 2 (Retest + TDI Bounce).
 - **Model 2: Breakout Retest / Continuation (High R:R Continuation)**:
   - Price broke out of OR, pulled back toward OR boundary / EMA5 without breaking opposite structure.
   - **Continuation Triggers**: Verified TDI Bounce (`tdi_bounce_bull` / `tdi_bounce_bear`) OR Dynamic EMA Retest Continuation (price holds EMA5 with momentum re-accelerating in trend direction).
-  - **Strict Price Action Verification**: Only valid when price is properly positioned relative to the 5 EMA (`price_above_ema = true` for BUY, `price_below_ema = true` for SELL), `bars_since_breakout <= 12`, and distance is NOT overextended beyond max ceiling. NEVER enter a trade when price is overextended far from EMA5 or floating at extreme exhaustion levels.
+  - **Strict Price Action Verification**: Only valid when price is properly positioned relative to the 5 EMA (`price_above_ema = true` for BUY, `price_below_ema = true` for SELL), `bars_since_breakout <= {MAX_BARS_SINCE_BREAKOUT_MODEL2}`, and distance is NOT overextended beyond max ceiling. NEVER enter a trade when price is overextended far from EMA5 or floating at extreme exhaustion levels.
 ### 4. Market Regime (Kaufman Efficiency Ratio & Chop Detection)
 - **er_session / er_recent**: Kaufman Efficiency Ratio (|net move| / total path, 1.0 = pure directional trend, ~0 = pure oscillation).
 - **or_flips**: Number of times price broke outside OR and closed back inside (flips >= 5 indicates chop trap day).
 {regime_guideline}
 
 ### 5. Quantitative Edge-Case Rules (Battle-Tested Discipline)
-- **EXHAUSTION BREAKOUT GUARD & ANTI-OVEREXTENSION**: NEVER chase extended breakouts. Direct entry (Model 1) requires price to be close to the OR boundary (breakout distance <= 450p on USTEC, <= 650p on US30, <= 450p on DE40, <= 600p on Gold, <= 20p on Forex Majors, <= 35p on JPY Crosses). If the breakout candle exceeded this threshold, it is an Exhaustion Breakout -> declare HOLD. Entering on an exhausted breakout without a retest is strictly forbidden, even if the TMS bias cross just occurred.
+- **EXHAUSTION BREAKOUT GUARD & ANTI-OVEREXTENSION**: NEVER chase extended breakouts. Direct entry (Model 1) requires price to be close to the OR boundary (breakout distance {breakout_distance_prompt()}). If the breakout candle exceeded this threshold, it is an Exhaustion Breakout -> declare HOLD. Entering on an exhausted breakout without a retest is strictly forbidden, even if the TMS bias cross just occurred.
 - **BIAS-FRESH Rule**: A fresh TMS cross (`bars_since_cross <= 1`) validates trend initiation, but does NOT override the Exhaustion Breakout Guard. If the initial breakout candle traveled too far, wait for the first pullback and TDI Bounce / EMA Retest (Model 2) to enter with favorable Risk:Reward.
-- **TDI BOUNCE / RETEST EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce / Dynamic EMA Retest** is confirmed AND `bars_since_breakout <= 12` AND price is near EMA5, the pullback has occurred and resolved in favor of the trend -> Enter on the bounce/retest.
+- **TDI BOUNCE / RETEST EXCEPTION TO ANTI-CHASE**: Standard Anti-Chase blocks entry when `bars_since_breakout >= 4` without a pullback. However, if a valid **TDI Bounce / Dynamic EMA Retest** is confirmed AND `bars_since_breakout <= {MAX_BARS_SINCE_BREAKOUT_MODEL2}` AND price is near EMA5, the pullback has occurred and resolved in favor of the trend -> Enter on the bounce/retest.
 - **ANTI-CHASE Rule**: When bars_since_breakout >= 4 under an OLD bias (bars_since_cross >= 5) without a pullback/bounce, DO NOT chase at extremes. Declare HOLD.
 - **POST-TP GATE (Anti-FOMO)**: Once a trade hits Take Profit or closes after a major win, the deterministic engine ARMS a blocker (`post_tp_gate_active = true`) preventing immediate re-entry in the same direction (`post_tp_gate_side`). It unlocks automatically only when a real Pullback (>= 0.5x ATR), OR Touch, or Bias Flip occurs. Never re-enter immediately at the peak of a move without a structural pullback.
 - **POSITION BREATHING ROOM & PATIENCE**:
@@ -831,6 +831,48 @@ CHOPPY_OVERRIDE_MAX_BARS_SINCE_BREAKOUT = 3
 CHOPPY_OVERRIDE_MAX_OR_FLIPS = 7
 CHOPPY_OVERRIDE_MIN_BREAKOUT_ATR = 0.5
 
+# ---- Calibrated breakout-distance limits per asset class (pips) ----
+# direct_*: Model 1 (direct breakout entry) ceiling. Beyond it the breakout candle is
+#           exhausted and only a qualified Model 2 retest + TDI bounce may enter.
+# absolute_*: hard ceiling that ALSO blocks Model 2, i.e. price is at an extreme far from
+#             the OR boundary. Both scale with ATR and are bounded by the per-class cap.
+BREAKOUT_DISTANCE_LIMITS = (
+    # (symbol tokens, prompt label, direct ATR x, direct cap, absolute ATR x, absolute cap)
+    (("USTEC", "NAS100"), "USTEC/NAS100", 1.3, 700.0, 3.2, 2100.0),
+    (("US30", "DJ30"), "US30/DJ30", 1.5, 950.0, 3.4, 2800.0),
+    (("DE40", "GER40"), "DE40/GER40", 1.5, 700.0, 3.4, 1900.0),
+    (("UK100", "GB100"), "UK100/GB100", 1.5, 550.0, 3.4, 1600.0),
+    (("XAU", "GOLD"), "Gold", 1.8, 900.0, 3.6, 2600.0),
+    (("BTC", "CRYPTO"), "BTC/Crypto", 1.5, 37500.0, 3.5, 130000.0),
+    (("ETH", "SOL", "XRP"), "ETH/SOL/XRP", 1.5, 5250.0, 3.5, 35000.0),
+    (("JPY",), "JPY Crosses", 1.6, 55.0, 3.6, 120.0),
+    (("EURUSD", "GBPUSD", "USDCAD", "AUDUSD", "NZDUSD", "USDCHF"), "Forex Majors", 1.5, 30.0, 3.4, 70.0),
+)
+
+# Model 1 direct-entry window in M15 bars after the ORB breakout. MUST match the cBot
+# parameter AiAgentBot.MaxBarsAfterBreakout, which decides `in_entry_window`.
+MODEL1_ENTRY_WINDOW_BARS = 8
+
+# Model 2 (retest + TDI bounce) stays valid this many M15 bars after the ORB breakout.
+MAX_BARS_SINCE_BREAKOUT_MODEL2 = 20
+
+
+def resolve_breakout_limits(symbol: str, atr_pips: Optional[float]) -> tuple:
+    """(direct ceiling, absolute ceiling) in pips for a symbol, scaled by ATR."""
+    sym = (symbol or "").upper()
+    for tokens, _label, direct_atr, direct_cap, absolute_atr, absolute_cap in BREAKOUT_DISTANCE_LIMITS:
+        if any(token in sym for token in tokens):
+            break
+    else:
+        _tokens, _label, direct_atr, direct_cap, absolute_atr, absolute_cap = BREAKOUT_DISTANCE_LIMITS[-1]
+    if atr_pips and atr_pips > 0:
+        return min(atr_pips * direct_atr, direct_cap), min(atr_pips * absolute_atr, absolute_cap)
+    return direct_cap, absolute_cap
+
+
+def breakout_distance_prompt() -> str:
+    """Per-class Model 1 ceilings for the LLM prompt (single source: BREAKOUT_DISTANCE_LIMITS)."""
+    return ", ".join(f"<= {cap:.0f}p on {label}" for _tokens, label, _da, cap, _aa, _acap in BREAKOUT_DISTANCE_LIMITS)
 
 def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     """
@@ -992,35 +1034,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
     atr_ref = snapshot.atr_pips if snapshot.atr_pips and snapshot.atr_pips > 0 else None
     sym_upper = snapshot.symbol.upper()
 
-    if "USTEC" in sym_upper or "NAS100" in sym_upper:
-        max_direct_breakout_dist = min(atr_ref * 1.0, 450.0) if atr_ref else 450.0
-        max_breakout_dist = min(atr_ref * 2.5, 1200.0) if atr_ref else 1200.0
-    elif "US30" in sym_upper or "DJ30" in sym_upper:
-        max_direct_breakout_dist = min(atr_ref * 1.2, 650.0) if atr_ref else 650.0
-        max_breakout_dist = min(atr_ref * 2.8, 1600.0) if atr_ref else 1600.0
-    elif "DE40" in sym_upper or "GER40" in sym_upper:
-        max_direct_breakout_dist = min(atr_ref * 1.25, 450.0) if atr_ref else 450.0
-        max_breakout_dist = min(atr_ref * 2.8, 1100.0) if atr_ref else 1100.0
-    elif "UK100" in sym_upper or "GB100" in sym_upper:
-        max_direct_breakout_dist = min(atr_ref * 1.2, 350.0) if atr_ref else 350.0
-        max_breakout_dist = min(atr_ref * 2.8, 900.0) if atr_ref else 900.0
-    elif "XAU" in sym_upper or "GOLD" in sym_upper:
-        max_direct_breakout_dist = min(atr_ref * 1.5, 600.0) if atr_ref else 600.0
-        max_breakout_dist = min(atr_ref * 3.2, 1500.0) if atr_ref else 1500.0
-    elif any(cr in sym_upper for cr in ["BTC", "CRYPTO"]):
-        max_direct_breakout_dist = min(atr_ref * 1.2, 25000.0) if atr_ref else 25000.0
-        max_breakout_dist = min(atr_ref * 3.0, 75000.0) if atr_ref else 75000.0
-    elif any(cr in sym_upper for cr in ["ETH", "SOL", "XRP"]):
-        max_direct_breakout_dist = min(atr_ref * 1.2, 3500.0) if atr_ref else 3500.0
-        max_breakout_dist = min(atr_ref * 3.0, 20000.0) if atr_ref else 20000.0
-    elif any(jpy in sym_upper for jpy in ["JPY"]):
-        # Forex JPY Crosses (GBPJPY, EURJPY) - relaxed for high intraday momentum
-        max_direct_breakout_dist = min(atr_ref * 1.3, 35.0) if atr_ref else 35.0
-        max_breakout_dist = min(atr_ref * 3.2, 85.0) if atr_ref else 85.0
-    else:
-        # Forex Majors (EURUSD, GBPUSD, etc.) - relaxed direct entry and overextension ceiling
-        max_direct_breakout_dist = min(atr_ref * 1.2, 20.0) if atr_ref else 20.0
-        max_breakout_dist = min(atr_ref * 2.8, 50.0) if atr_ref else 50.0
+    max_direct_breakout_dist, max_breakout_dist = resolve_breakout_limits(snapshot.symbol, atr_ref)
 
     # 1. Absolute overextension check (applies to both Model 1 and Model 2)
     if orb.breakout_distance_pips > max_breakout_dist:
@@ -1068,15 +1082,15 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot) -> Optional[AgentDecision]:
             reason=f"Cycle gate: Breakout not decisive ({orb.breakout_distance_pips:.1f}p < threshold)"
         )
 
-    # Model 2 Bounce / Retest is capped at bars_since_breakout <= 12 (expanded from 10)
+    # Model 2 Bounce / Retest stays valid until MAX_BARS_SINCE_BREAKOUT_MODEL2 bars
     if not orb.in_entry_window:
-        if orb.bars_since_breakout > 12:
+        if orb.bars_since_breakout > MAX_BARS_SINCE_BREAKOUT_MODEL2:
             return AgentDecision(
                 action="HOLD",
                 volume_lots=0.01,
                 sl_pips=0.0,
                 tp_pips=0.0,
-                reason=f"Cycle gate: Breakout is stale (bars_since_breakout={orb.bars_since_breakout} > 12). Re-entry prohibited."
+                reason=f"Cycle gate: Breakout is stale (bars_since_breakout={orb.bars_since_breakout} > {MAX_BARS_SINCE_BREAKOUT_MODEL2}). Re-entry prohibited."
             )
         if not has_bounce:
             return AgentDecision(
