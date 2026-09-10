@@ -149,6 +149,9 @@ namespace cAlgo.Robots
 
         [Parameter("Draw Asian Range Visuals", Group = "Asian Range & Judas Sweep", DefaultValue = true)]
         public bool drawAsianRangeVisuals { get; set; }
+
+        [Parameter("Max Entry Extension (% of Asian Range)", Group = "Asian Range & Judas Sweep", DefaultValue = 25.0, MinValue = 0.0, MaxValue = 100.0)]
+        public double maxEntryExtensionRangePct { get; set; }
         [Parameter("Require Rejection Wick (Pinbar)?", Group = "Asian Range & Judas Sweep", DefaultValue = true)]
         public bool requireRejectionWick { get; set; }
 
@@ -405,6 +408,10 @@ namespace cAlgo.Robots
         // One-sweep-per-Asian-boundary-per-session bookkeeping (repeat liquidity grab prevention)
         private bool _sessionBuyTaken = false;
         private bool _sessionSellTaken = false;
+        // Structural invalidation: Asian boundary broken by a decisive close (breakout day)
+        private bool _asianLowBroken = false;
+        private bool _asianHighBroken = false;
+        private DateTime _lastStructCheckBarTime = DateTime.MinValue;
 
         private MovingAverage fastEma;
         private MovingAverage slowEma;
@@ -626,6 +633,7 @@ namespace cAlgo.Robots
         protected override void OnTick()
         {
             if (_isExpired) return;
+            CheckStructuralInvalidation();
             ProcessStagedOrderExecution();
 
 
@@ -1039,6 +1047,77 @@ namespace cAlgo.Robots
         {
             _sessionBuyTaken = false;
             _sessionSellTaken = false;
+            _asianLowBroken = false;
+            _asianHighBroken = false;
+            _lastStructCheckBarTime = DateTime.MinValue;
+        }
+
+        private bool IsSweepSideLocked(TradeType tradeType)
+        {
+            return tradeType == TradeType.Buy ? _asianLowBroken : _asianHighBroken;
+        }
+
+        private bool IsEntryTooExtended(TradeType tradeType, out string detail)
+        {
+            detail = "";
+            if (_asianLow <= 0 || _asianHigh <= 0 || _asianHigh <= _asianLow) return false;
+            double range = _asianHigh - _asianLow;
+            double maxDist = range * (maxEntryExtensionRangePct / 100.0);
+            if (maxDist <= 0) return false;
+            double dist = tradeType == TradeType.Buy ? (Symbol.Ask - _asianLow) : (_asianHigh - Symbol.Bid);
+            if (dist > maxDist)
+            {
+                string level = tradeType == TradeType.Buy ? "Asian Low" : "Asian High";
+                detail = $"{dist / Symbol.PipSize:F0} pips away from {level} > {maxDist / Symbol.PipSize:F0} pips allowed ({maxEntryExtensionRangePct:F0}% of {range / Symbol.PipSize:F0}p range)";
+                return true;
+            }
+            return false;
+        }
+
+        private void CheckStructuralInvalidation()
+        {
+            if (_asianLow <= 0 || _asianHigh <= 0 || Bars.Count < 2) return;
+
+            var closedBar = Bars[Bars.Count - 2];
+            if (closedBar.OpenTime == _lastStructCheckBarTime) return;
+            _lastStructCheckBarTime = closedBar.OpenTime;
+
+            double buffer = sweepBufferPips * Symbol.PipSize;
+            var openPositions = Positions.FindAll(label, SymbolName);
+
+            // Decisive close below Asian Low - buffer => bullish sweep thesis is dead (real breakdown, not a wick).
+            if (!_asianLowBroken && closedBar.Close < (_asianLow - buffer))
+            {
+                _asianLowBroken = true;
+                Print($"[Judas Structural Guard] Asian Low {_asianLow:F2} broken by decisive close {closedBar.Close:F2} (< {_asianLow - buffer:F2}). BUY sweep side locked for this session.");
+                _ = SendTelegramAlertAsync($"🛑 <b>[Judas Structural Guard]</b>\n{SymbolName}: Asian Low {_asianLow:F2} broken by decisive M15 close ({closedBar.Close:F2}).\nBUY sweep entries locked for the session.");
+                foreach (var pos in openPositions)
+                {
+                    if (pos.TradeType == TradeType.Buy)
+                    {
+                        Print($"[Judas Structural Guard] Closing BUY #{pos.Id} on Asian Low breakdown (broken sweep). PnL=${pos.NetProfit:F2}");
+                        _lastAgentReason = "SweepBreakoutExit";
+                        ClosePosition(pos);
+                    }
+                }
+            }
+
+            // Decisive close above Asian High + buffer => bearish sweep thesis is dead.
+            if (!_asianHighBroken && closedBar.Close > (_asianHigh + buffer))
+            {
+                _asianHighBroken = true;
+                Print($"[Judas Structural Guard] Asian High {_asianHigh:F2} broken by decisive close {closedBar.Close:F2} (> {_asianHigh + buffer:F2}). SELL sweep side locked for this session.");
+                _ = SendTelegramAlertAsync($"🛑 <b>[Judas Structural Guard]</b>\n{SymbolName}: Asian High {_asianHigh:F2} broken by decisive M15 close ({closedBar.Close:F2}).\nSELL sweep entries locked for the session.");
+                foreach (var pos in openPositions)
+                {
+                    if (pos.TradeType == TradeType.Sell)
+                    {
+                        Print($"[Judas Structural Guard] Closing SELL #{pos.Id} on Asian High breakout (broken sweep). PnL=${pos.NetProfit:F2}");
+                        _lastAgentReason = "SweepBreakoutExit";
+                        ClosePosition(pos);
+                    }
+                }
+            }
         }
 
         private DateTime GetNthSunday(int year, int month, int n)
@@ -3387,11 +3466,23 @@ Reply strictly with JSON object.";
                 if (action == "BUY" || action == "SELL")
                 {
                     TradeType candidate = action == "BUY" ? TradeType.Buy : TradeType.Sell;
+                    string boundaryName = candidate == TradeType.Buy ? "Asian Low" : "Asian High";
                     if (IsSessionSweepSideTaken(candidate))
                     {
-                        string boundaryName = candidate == TradeType.Buy ? "Asian Low" : "Asian High";
                         Print($"[Judas Session Guard] {action} blocked: {boundaryName} sweep already traded once this Asian session ({_asianSessionDate:yyyy-MM-dd}). One Judas sweep per boundary per session.");
                         _ = SendTelegramAlertAsync($"⚠️ <b>[Judas Session Guard]</b>\n{action} blocked on {SymbolName}: {boundaryName} sweep already traded this Asian session. Repeat sweep of same liquidity level prevented.");
+                        return;
+                    }
+                    if (IsSweepSideLocked(candidate))
+                    {
+                        Print($"[Judas Structural Guard] {action} blocked: {boundaryName} was broken by a decisive close this session (breakout day, mean-reversion invalidated).");
+                        _ = SendTelegramAlertAsync($"🛑 <b>[Judas Structural Guard]</b>\n{action} blocked on {SymbolName}: {boundaryName} already broken this session. No counter-trend sweep entry.");
+                        return;
+                    }
+                    if (IsEntryTooExtended(candidate, out string extDetail))
+                    {
+                        Print($"[Judas Entry Guard] {action} blocked: entry too extended from swept level - {extDetail}. Wait for a pullback closer to {boundaryName}.");
+                        _ = SendTelegramAlertAsync($"⚠️ <b>[Judas Entry Guard]</b>\n{action} blocked on {SymbolName}: {extDetail}.\nEntry skipped to avoid chasing the rejection bounce.");
                         return;
                     }
                 }
@@ -3761,6 +3852,20 @@ Reply strictly with JSON object.";
             if (IsSessionSweepSideTaken(tradeType))
             {
                 Print($"[Judas Session Guard] Staged {tradeType} cancelled: {tradeType} already traded once this Asian session ({_asianSessionDate:yyyy-MM-dd}). One Judas sweep per boundary per session.");
+                ResetStagedOrder();
+                return;
+            }
+
+            if (IsSweepSideLocked(tradeType))
+            {
+                Print($"[Judas Structural Guard] Staged {tradeType} cancelled: {(tradeType == TradeType.Buy ? "Asian Low" : "Asian High")} broken by a decisive close this session.");
+                ResetStagedOrder();
+                return;
+            }
+
+            if (IsEntryTooExtended(tradeType, out string stagedExtDetail))
+            {
+                Print($"[Judas Entry Guard] Staged {tradeType} cancelled: {stagedExtDetail}.");
                 ResetStagedOrder();
                 return;
             }
