@@ -1255,7 +1255,7 @@ namespace cAlgo.Robots
             double trailTriggerPips = TrailTriggerAtr * atrInPips;
             double trailDistancePips = TrailDistanceAtr * atrInPips;
             string symUp = SymbolName.ToUpperInvariant();
-            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30");
+            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30") || symUp.Contains("UK100") || symUp.Contains("GB100");
 
             foreach (var pos in GetBotPositions())
             {
@@ -1360,7 +1360,7 @@ namespace cAlgo.Robots
             double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
 
             string symUp = SymbolName.ToUpperInvariant();
-            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30");
+            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30") || symUp.Contains("UK100") || symUp.Contains("GB100");
 
             foreach (var pos in GetBotPositions())
             {
@@ -1872,7 +1872,7 @@ namespace cAlgo.Robots
                         double minBeProfitPips = 20.0;
                         string symUpper = SymbolName.ToUpperInvariant();
                         if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 300.0;
-                        else if (symUpper.Contains("US30") || symUpper.Contains("USTEC") || symUpper.Contains("DE40") || symUpper.Contains("NAS100")) minBeProfitPips = 50.0;
+                        else if (symUpper.Contains("US30") || symUpper.Contains("USTEC") || symUpper.Contains("DE40") || symUpper.Contains("NAS100") || symUpper.Contains("UK100") || symUpper.Contains("GB100")) minBeProfitPips = 50.0;
                         else if (symUpper.Contains("BTC")) minBeProfitPips = 6000.0;
                         else if (symUpper.Contains("ETH")) minBeProfitPips = 600.0;
 

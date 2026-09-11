@@ -1046,6 +1046,52 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
      ```
 
    * **AUDJPY (M15 - Phiên Châu Á/Tokyo / Cặp Đo Tâm Lý Rủi Ro)**:
+   * **UK100 / GB100 (M15 - Phiên London / FTSE 100)** *(Lưu ý: pip của UK100 = 0.1 điểm chỉ số, nên các tham số pips chỉ bằng ~0.36x của DE40)*:
+     ```bash
+     docker run -d \
+       --name cbot-uk100 \
+       --restart unless-stopped \
+       --network host \
+       -v $(pwd):/workspace \
+       -v /root:/root \
+       ghcr.io/spotware/ctrader-console:latest \
+       run /workspace/cBot/AiAgentBot.algo \
+       --ctid=email_cua_ban@example.com \
+       --pwd-file=/root/ctrader_data/ctid_pwd \
+       --account=SO_TAI_KHOAN \
+       --symbol=UK100 \
+       --period=m15 \
+       --full-access \
+       --BotId="uk100_m15" \
+       --ApiUrl="http://127.0.0.1:8000/trade" \
+       --AccountLabel="demo" \
+       --TmsTimeFrame="Hour" \
+       --EmaPeriod=5 \
+       --SessionName="london" \
+       --OrbStartHour=8 \
+       --SessionEndHour=16 \
+       --SessionDstRule="Europe" \
+       --MinDecisiveBreakoutPips=25.0 \
+       --MinOrWidthPips=120.0 \
+       --OrbBufferPips=15.0 \
+       --BreakevenTriggerAtr=0.8 \
+       --BreakevenOffsetAtr=0.1 \
+       --TrailTriggerAtr=1.2 \
+       --TrailDistanceAtr=0.7 \
+       --PartialCloseRatio=0.5 \
+       --MinSlAtr=1.5 \
+       --MaxSlAtr=4.5 \
+       --MinTpAtr=2.0 \
+       --MaxTpAtr=8.0 \
+       --MaxGivebackAtr=0.6 \
+       --EnablePostTpGate=true \
+       --PostTpPullbackAtr=0.5 \
+       --BounceTradeEnabled=true \
+       --BounceDistanceThreshold=1.5 \
+       --RiskPerTradePercent=0.2 \
+       --TrendTpDisabled=true
+     ```
+
      ```bash
      docker run -d \
        --name cbot-audjpy \
