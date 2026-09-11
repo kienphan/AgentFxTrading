@@ -372,6 +372,11 @@ namespace cAlgo.Robots
         private Dictionary<int, int> _positionEntryBar = new Dictionary<int, int>();
 
         private HashSet<int> _breakevenApplied = new HashSet<int>();
+        // ---- Giveback / Post-TP Gate tuning ----
+        // Arming floors and the minimum captured move; see CheckMaxGiveback() / OnPositionClosed().
+        private const double GivebackArmAtrFraction = 0.4;
+        private const double GivebackArmRiskFraction = 0.5;
+        private const double PostTpGateMinExitAtr = 0.5;
         #endregion
 
         private object GetAccountPayload()
@@ -1213,6 +1218,13 @@ namespace cAlgo.Robots
             else
                 return (pos.EntryPrice - Symbol.Ask) / Symbol.PipSize;
         }
+        private double GetAtrPips()
+        {
+            double currentAtr = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0
+                ? _atr.Result.LastValue
+                : 10 * Symbol.PipSize;
+            return currentAtr / Symbol.PipSize;
+        }
 
         private PositionInfo GetPositionInfo(int index)
         {
@@ -1353,10 +1365,7 @@ namespace cAlgo.Robots
 
         private void CheckMaxGiveback()
         {
-            double currentAtr = _atr != null && !double.IsNaN(_atr.Result.LastValue) && _atr.Result.LastValue > 0 
-                ? _atr.Result.LastValue 
-                : 10 * Symbol.PipSize;
-            double atrInPips = currentAtr / Symbol.PipSize;
+            double atrInPips = GetAtrPips();
             double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
 
             string symUp = SymbolName.ToUpperInvariant();
@@ -1368,14 +1377,26 @@ namespace cAlgo.Robots
                 double mfe = _positionMfe[pos.Id];
                 
                 // Giveback protection arms once the trade has reached meaningful profit.
-                // Tuned to the observed MFE distribution (~0.5 ATR): the previous 1.5 ATR arming
-                // (min 1000/300 pips) meant the guard never activated, so peaks were fully given back.
-                double defaultActivationAtr = 0.4;
-                double activationThreshold = defaultActivationAtr * atrInPips;
+                // 1.5 ATR arming (min 1000/300 pips) meant the guard never activated, but 0.4 ATR
+                // alone armed inside tick noise. Arm only after the peak has cleared the Break-Even
+                // trigger AND half of the real risk (the SL is OR-boundary based, routinely 1.5-3x
+                // ATR), so a scratch exit in the noise band cannot fire.
+                // GBPUSD 2026-09-11 08:16Z: MFE 2.0p on a 14p SL closed +0.6p after 58s; with these
+                // floors the guard arms at 7.0p and the trade is left to BE / Trail / TP.
+                double activationThreshold = GivebackArmAtrFraction * atrInPips;
+                if (BreakevenTriggerAtr > 0)
+                {
+                    activationThreshold = Math.Max(activationThreshold, BreakevenTriggerAtr * atrInPips);
+                }
+                if (pos.StopLoss != null && pos.StopLoss.Value > 0)
+                {
+                    double riskPips = Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize;
+                    activationThreshold = Math.Max(activationThreshold, riskPips * GivebackArmRiskFraction);
+                }
                 if (isIndex)
                 {
                     double minIndexPips = symUp.Contains("US30") ? 300.0 : 150.0;
-                    activationThreshold = Math.Max(defaultActivationAtr * atrInPips, minIndexPips);
+                    activationThreshold = Math.Max(activationThreshold, minIndexPips);
                 }
                 if (mfe < activationThreshold) continue;
 
@@ -1526,17 +1547,27 @@ namespace cAlgo.Robots
             }
 
             
-            // Arm Post-TP Gate if profitable (Take Profit or Trailing SL hit)
-            if (EnablePostTpGate && pnl > 0)
+            double exitPrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+
+            // Arm Post-TP Gate only when the exit captured a real move. A scratch exit inside the
+            // tick-noise band (GBPUSD 2026-09-11: +0.6p net on a 14p-risk trade) must not lock the
+            // side out for the next 45 minutes.
+            double exitPips = (args.Position.TradeType == TradeType.Buy
+                ? exitPrice - args.Position.EntryPrice
+                : args.Position.EntryPrice - exitPrice) / Symbol.PipSize;
+            if (EnablePostTpGate && pnl > 0 && exitPips >= PostTpGateMinExitAtr * GetAtrPips())
             {
                 _postTpGateActive = true;
                 _postTpGateSide = args.Position.TradeType == TradeType.Buy ? "BUY" : "SELL";
                 _postTpExtremePrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
                 if (ShowLogs) Print($"[Post-TP Gate] ARMED blocking {_postTpGateSide} entries.");
             }
+            else if (EnablePostTpGate && pnl > 0)
+            {
+                if (ShowLogs) Print($"[Post-TP Gate] Not armed: exit captured only {exitPips:F1}p (< {PostTpGateMinExitAtr * GetAtrPips():F1}p). Scratch exit does not lock the side.");
+            }
 
             // Report to portfolio manager
-            double exitPrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
             _ = ReportPositionClosed(args.Position, pnl, exitPrice);
         }
 
