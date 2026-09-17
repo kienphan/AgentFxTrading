@@ -394,6 +394,7 @@ class MarketSnapshot(BaseModel):
     ask: float
     bid: float
     atr_pips: Optional[float] = None
+    spread_pips: Optional[float] = None
     bars: List[BarData] = []
     tms: Optional[TmsSignals] = None
     chart_tms: Optional[TmsSignals] = None
@@ -402,6 +403,20 @@ class MarketSnapshot(BaseModel):
     position: Optional[PositionInfo] = None
     session: Optional[SessionInfo] = None
     strategy: Optional[StrategyData] = None
+    # FlowRSI / Nested RSI SMC Engine fields
+    fast_rsi: Optional[float] = None
+    slow_rsi: Optional[float] = None
+    rsi_cross_signal: Optional[str] = None
+    in_fvg_zone: Optional[bool] = None
+    fvg_type: Optional[str] = None
+    is_discount: Optional[bool] = None
+    is_premium: Optional[bool] = None
+    liquidity_swept: Optional[bool] = None
+    swept_liquidity_type: Optional[str] = None
+    technical_sl_price: Optional[float] = None
+    technical_tp_price: Optional[float] = None
+    technical_risk_reward: Optional[float] = None
+    candidate_action: Optional[str] = None
     multi_timeframe: Optional[MultiTimeframeData] = None
     active_positions: Optional[List[ActivePosition]] = None
     recent_history: Optional[List[HistoricalTrade]] = None
@@ -452,6 +467,15 @@ def is_judas_sweep_bot(snapshot: MarketSnapshot) -> bool:
         return True
     bot_name = (snapshot.bot_id or "").lower()
     return "judas" in bot_name or "asian" in bot_name or "sweep" in bot_name
+
+def is_flow_rsi_bot(snapshot: MarketSnapshot) -> bool:
+    """Detect whether snapshot belongs to a FlowRSI / Nested RSI SMC bot."""
+    bot_name = (snapshot.bot_id or "").lower()
+    if "flowrsi" in bot_name or "flow_rsi" in bot_name or "nestedrsi" in bot_name:
+        return True
+    if snapshot.fast_rsi is not None and snapshot.slow_rsi is not None:
+        return True
+    return False
 
 def _pip_size_for_symbol(sym_up: str) -> float:
     """
@@ -1647,7 +1671,8 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
 @app.post("/trade", response_model=AgentDecision)
 async def trade_decision(snapshot: MarketSnapshot):
     account_id = _resolve_account(snapshot)
-    is_judas = is_judas_sweep_bot(snapshot)
+    is_flowrsi = is_flow_rsi_bot(snapshot)
+    is_judas = False if is_flowrsi else is_judas_sweep_bot(snapshot)
     # Heartbeat for the watchdog's stale-bar-feed check: it compares this against the
     # bot's own session window to catch a cBot that is up but no longer processing bars.
     record_bot_snapshot(f"{account_id}/{snapshot.bot_id}")
@@ -1665,8 +1690,38 @@ async def trade_decision(snapshot: MarketSnapshot):
             "tp_price": snapshot.position.tp or snapshot.position.tp_price,
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data, account_id=account_id)
+    if is_flowrsi:
+        pos_str = f"{snapshot.position.resolved_side} pnl=${snapshot.position.resolved_pnl:.2f}" if snapshot.position else "FLAT"
+        rsi_cross = snapshot.rsi_cross_signal or "None"
+        fvg_str = f"FVG={snapshot.fvg_type}" if snapshot.in_fvg_zone else "FVG=None"
+        zone_str = "Discount" if snapshot.is_discount else ("Premium" if snapshot.is_premium else "Eq")
+        cand_str = snapshot.candidate_action or "NONE"
 
-    if is_judas:
+        logger.info(
+            f"[SNAPSHOT FLOW_RSI] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
+            f"Bid={snapshot.bid:g} Ask={snapshot.ask:g} | RSI_Cross={rsi_cross} (F={snapshot.fast_rsi} S={snapshot.slow_rsi}) | "
+            f"{fvg_str} | Zone={zone_str} | Candidate={cand_str} | Pos={pos_str}"
+        )
+
+        # Build specialized FlowRSI system & user prompt
+        system_prompt = (
+            "You are an elite Quantitative FX Co-Pilot specializing in Nested RSI momentum and SMC market structure.\n"
+            "Analyze the real-time market snapshot and output strictly valid JSON format with keys:\n"
+            '{"action": "BUY"|"SELL"|"HOLD"|"ADJUST"|"CLOSE_ALL", "volume_lots": 0.0, "sl_pips": 0.0, "tp_pips": 0.0, '
+            '"new_sl_price": null, "new_tp_price": null, "confidence": 0-100, "reason": "concise rationale"}\n'
+            "Rule: Volume is 100% managed by cBot risk engine; keep volume_lots=0.0. "
+            "If candidate_action is BUY/SELL, confirm or reject (HOLD) based on bar momentum and structure."
+        )
+        user_prompt = (
+            f"Symbol: {snapshot.symbol} ({snapshot.timeframe})\n"
+            f"Current Bid={snapshot.bid:g}, Ask={snapshot.ask:g}, Spread={snapshot.spread_pips or 0:.1f}p\n"
+            f"Nested RSI: Fast={snapshot.fast_rsi}, Slow={snapshot.slow_rsi}, Signal={snapshot.rsi_cross_signal}\n"
+            f"SMC: Zone={zone_str}, InFVG={snapshot.in_fvg_zone} ({snapshot.fvg_type}), LiquiditySwept={snapshot.liquidity_swept} ({snapshot.swept_liquidity_type})\n"
+            f"Proposed Technical Setup: Candidate={cand_str}, SL={snapshot.technical_sl_price}, TP={snapshot.technical_tp_price}, RR={snapshot.technical_risk_reward}\n"
+            f"Open Position: {pos_str}\n"
+            f"Decide action (BUY/SELL/HOLD/ADJUST/CLOSE_ALL) with confidence."
+        )
+    elif is_judas:
         strat = snapshot.strategy
         asian_str = f"Asian=[{strat.asian_low:g}...{strat.asian_high:g}] ({strat.asian_range_pips:.0f}p)" if strat else "Asian=N/A"
         kz_str = strat.killzone_session if strat else "N/A"
@@ -1919,7 +1974,7 @@ async def trade_decision(snapshot: MarketSnapshot):
                 decision_dict["reason"] = f"[Risk Guard] {risk_reason}. {decision_dict.get('reason', '')}"
 
         # TMS/ORB CLOSE_ALL Guard: block panic exits with a wrong-side or missing reversal signal.
-        if not is_judas and action_str == "CLOSE_ALL":
+        if not is_judas and not is_flowrsi and action_str == "CLOSE_ALL":
             close_reject_reason = validate_tms_close_decision(snapshot, decision_dict)
             if close_reject_reason:
                 logger.warning(

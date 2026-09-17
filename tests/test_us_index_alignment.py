@@ -19,6 +19,7 @@ from app.server import (
     SessionInfo,
     evaluate_cycle_gate,
     check_us_index_conflict,
+    BarData,
 )
 
 @pytest.fixture
@@ -144,7 +145,8 @@ def test_evaluate_cycle_gate_us_index_alignment(clean_pm, monkeypatch):
         orb=OrbData(breakout_direction="down", is_decisive=True, bars_since_breakout=0),
         session=SessionInfo(is_trading_time=True, phase="mid", session_name="newyork_index"),
         market=MarketRegimeInfo(regime="trending", or_flips=0),
-    )
+        bars=[BarData(time="2026-09-17 15:00:00")]
+     )
     decision = evaluate_cycle_gate(us30_bear_snap, account_id="test-acc")
     assert decision is not None
     assert decision.action == "HOLD"
@@ -164,7 +166,8 @@ def test_evaluate_cycle_gate_us_index_alignment(clean_pm, monkeypatch):
         orb=OrbData(breakout_direction="up", is_decisive=True, bars_since_breakout=0),
         session=SessionInfo(is_trading_time=True, phase="mid", session_name="newyork_index"),
         market=MarketRegimeInfo(regime="trending", or_flips=0),
-    )
+        bars=[BarData(time="2026-09-17 15:00:00")]
+     )
 
     # Should not be gated by US Index Alignment Guard
     decision_bull = evaluate_cycle_gate(us30_bull_snap, account_id="test-acc")
