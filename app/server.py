@@ -395,6 +395,10 @@ class MarketSnapshot(BaseModel):
     bid: float
     atr_pips: Optional[float] = None
     spread_pips: Optional[float] = None
+    # Exact Symbol.PipSize from the cBot. FlowRsiBot has always sent this at the top
+    # level; without the field Pydantic dropped it and the server fell back to the
+    # per-asset-class table, which cannot know a broker's digit convention.
+    pip_size: float = 0.0
     bars: List[BarData] = []
     tms: Optional[TmsSignals] = None
     chart_tms: Optional[TmsSignals] = None
@@ -1741,6 +1745,13 @@ async def trade_decision(snapshot: MarketSnapshot):
             '{"action": "BUY"|"SELL"|"HOLD"|"ADJUST"|"CLOSE_ALL", "volume_lots": 0.0, "sl_pips": 0.0, "tp_pips": 0.0, '
             '"new_sl_price": null, "new_tp_price": null, "confidence": 0-100, "reason": "concise rationale"}\n'
             "Rule: Volume is 100% managed by cBot risk engine; keep volume_lots=0.0.\n"
+            "Rule: ENTRY STOPS AND TARGETS ARE THE ENGINE'S, NOT YOURS. For BUY/SELL return "
+            "sl_pips=0, tp_pips=0, new_sl_price=null, new_tp_price=null — the cBot's ATR/structural "
+            "engine sizes them (it is the 'Proposed Technical Setup' shown below, given as context "
+            "for your confidence, not as a number to restate or improve). Anything you return on a "
+            "BUY/SELL is discarded. Your job there is DIRECTION and TIMING only.\n"
+            "Rule: On ADJUST you DO own the stop, but express it as new_sl_price / new_tp_price in "
+            "absolute price. Never as pips: your pip scale is not the broker's.\n"
             "=== POSITION MANAGEMENT DISCIPLINE ===\n"
             "1. GIVE POSITIONS BREATHING ROOM (HOLD): Allow open positions breathing room for normal pullbacks and market noise. "
             "Do NOT panic-close or micro-manage positions that are flat, slightly underwater (e.g. within normal spread/minor pullback), or in early development.\n"
@@ -1899,6 +1910,58 @@ async def trade_decision(snapshot: MarketSnapshot):
             decision_dict["timeframe"] = snapshot.timeframe
         if "confidence" not in decision_dict:
             decision_dict["confidence"] = 80.0
+        if is_flowrsi:
+            action_val = str(decision_dict.get("action", "HOLD")).upper()
+            pip_size = (
+                snapshot.pip_size if snapshot.pip_size > 0
+                else _pip_size_for_symbol((snapshot.symbol or "").upper())
+            )
+
+            if action_val in ("BUY", "SELL"):
+                # "LLM proposes, Code disposes": on an entry the ATR/structural engine owns
+                # the stop and the target. FlowRsiBot prefers decision.new_sl_price over its
+                # own fallbackSL, so leaving the model's levels in place hands it the whole
+                # risk leg -- and it prices them on its own pip scale (ETHUSD 295.4p against
+                # the 2891.3p actually placed, BTCUSD 731.02p against 76042.4p). Clear them
+                # and the bot falls back to the technicalSL/technicalTP it computed.
+                proposed = [decision_dict.get(k) for k in ("sl_pips", "tp_pips", "new_sl_price", "new_tp_price")]
+                if any(proposed):
+                    logger.info(
+                        f"[{account_id}/{snapshot.bot_id}] [FLOW_RSI SL/TP AUTHORITY] Discarded model levels "
+                        f"(sl={proposed[0]} tp={proposed[1]} sl_price={proposed[2]} tp_price={proposed[3]}); "
+                        f"engine stop {snapshot.technical_sl_price} / target {snapshot.technical_tp_price} stands."
+                    )
+                decision_dict["sl_pips"] = 0.0
+                decision_dict["tp_pips"] = 0.0
+                decision_dict["new_sl_price"] = 0.0
+                decision_dict["new_tp_price"] = 0.0
+
+            elif action_val == "ADJUST":
+                # Managing an open position is the model's call, but only against a price.
+                # A bare sl_pips carries no scale: FlowRsiBot multiplies it by Symbol.PipSize,
+                # which would turn BTCUSD's 731.02 into a $7.31 stop. Re-derive the pips from
+                # the price the model gave, measured where the bot measures them (a long is
+                # closed at the bid, a short at the ask), and refuse an adjustment with no price.
+                try:
+                    new_sl = float(decision_dict.get("new_sl_price") or 0.0)
+                    new_tp = float(decision_dict.get("new_tp_price") or 0.0)
+                except (TypeError, ValueError):
+                    new_sl = new_tp = 0.0
+                pos_side = snapshot.position.resolved_side if snapshot.position else "BUY"
+                exit_ref = snapshot.bid if pos_side == "BUY" else snapshot.ask
+
+                decision_dict["sl_pips"] = round(abs(new_sl - exit_ref) / pip_size, 1) if new_sl > 0 else 0.0
+                decision_dict["tp_pips"] = round(abs(new_tp - exit_ref) / pip_size, 1) if new_tp > 0 else 0.0
+
+                if new_sl <= 0 and new_tp <= 0:
+                    logger.warning(
+                        f"[{account_id}/{snapshot.bot_id}] [FLOW_RSI ADJUST GUARD] ADJUST -> HOLD: no "
+                        f"new_sl_price/new_tp_price to anchor the move; bare pips carry no reliable scale."
+                    )
+                    decision_dict["action"] = "HOLD"
+                    decision_dict["reason"] = (
+                        f"[ADJUST Guard] No target price supplied. {decision_dict.get('reason', '')}"
+                    )
         if is_judas:
             action_val = str(decision_dict.get("action", "HOLD")).upper()
             sym_up = (snapshot.symbol or "").upper()
