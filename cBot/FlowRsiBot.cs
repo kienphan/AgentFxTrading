@@ -170,7 +170,10 @@ namespace cAlgo.Robots
         [Parameter("Enable Gated Trailing Stop", Group = "Position Protection", DefaultValue = true)]
         public bool EnableTrailingStop { get; set; }
 
-        [Parameter("Trailing Stop Trigger (R:R)", Group = "Position Protection", DefaultValue = 1.8, MinValue = 0.5)]
+        // Must stay BELOW TargetRiskReward (1.5): with TpMode = Risk_Reward_Ratio the take
+        // profit sits at that ratio, and lower still once the spread on the stop is paid, so
+        // a trigger at the old 1.8 could never be reached before the trade closed at TP.
+        [Parameter("Trailing Stop Trigger (R:R)", Group = "Position Protection", DefaultValue = 1.2, MinValue = 0.5)]
         public double TrailingStopTriggerRr { get; set; }
 
         [Parameter("Trailing Stop Distance (pips)", Group = "Position Protection", DefaultValue = 25.0, MinValue = 5.0)]
@@ -1492,12 +1495,28 @@ namespace cAlgo.Robots
                     }
                 }
 
-                // ── 2. Gated Trailing Stop (Activates ONLY when profit >= TrailingStopTriggerRr, e.g. 1.8R) ──
+                // ── 2. Gated Trailing Stop (Activates ONLY when profit >= TrailingStopTriggerRr) ──
                 // CRITICAL FIX: Decouple from isBeAchieved!
                 // At 1.0R, Break-Even moves SL to Entry + buffer to secure Zero-Loss.
-                // The position MUST be granted breathing room to run and ride the trend between 1.0R and 1.8R!
-                // Trailing Stop only activates when profit reaches at least TrailingStopTriggerRr (1.8R).
-                if (EnableTrailingStop && currentRr >= TrailingStopTriggerRr)
+                // The position MUST be granted breathing room to run and ride the trend above 1.0R.
+                //
+                // The trigger is clamped against THIS position's take profit first. With
+                // TpMode = Risk_Reward_Ratio the target sits at TargetRiskReward, and lower once
+                // the spread on the stop is paid (the ETHUSD entry of 2026-09-22 reported
+                // 2891.3p / 4239.9p = 1.47R; BTCUSD 1.40R). A trigger at or above that is
+                // unreachable -- the trade closes at TP before currentRr ever arrives -- which
+                // silently turned every TrailingStopDistancePips in the preset table into dead
+                // config. Arm partway to the target instead, still clear of the 1.0R BE move.
+                const double armFractionOfTp = 0.8;
+                double effectiveTrailTriggerRr = TrailingStopTriggerRr;
+                if (pos.TakeProfit.HasValue && initialSlDist > 0)
+                {
+                    double tpRr = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize / initialSlDist;
+                    if (tpRr > 0 && effectiveTrailTriggerRr >= tpRr)
+                        effectiveTrailTriggerRr = tpRr * armFractionOfTp;
+                }
+
+                if (EnableTrailingStop && currentRr >= effectiveTrailTriggerRr)
                 {
                     string symUp = SymbolName.ToUpperInvariant();
                     double minTrailDistPips = TrailingStopDistancePips;
