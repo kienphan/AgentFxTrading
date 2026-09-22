@@ -1,13 +1,14 @@
 """
 Strategy × symbol presets for the dashboard's "Setup Instances" screen.
 
-Every strategy has a cell on every symbol (15 × 3 = 45). 22 cells mirror a
-`docker run` block in README.md (section 4, "Run Multi-Instance Docker
-Containers") and keep its flags verbatim; the other 23 are derived from the
-nearest README cell, scaled by pip size (index 0.1, XAU/BTC/ETH/JPY 0.01,
-forex 0.0001) — see README "Derived presets". `params` holds only the
-strategy-tuned flags. Infrastructure flags (credentials, symbol, period,
-BotId, ApiUrl, AccountLabel, Judas' label/DashboardServerUrl) are emitted by
+Every strategy has a cell on every symbol (15 × 3 = 45). 22 cells are tuned
+per symbol; the other 23 are derived from the nearest tuned cell, scaled by
+pip size (index 0.1, XAU/BTC/ETH/JPY 0.01, forex 0.0001) — see README
+"Derived presets". All 45 are written out as `docker run` commands in
+docs/docker-instances.md, which tests/test_cbot_presets.py keeps in sync
+with this module. `params` holds only the strategy-tuned flags.
+Infrastructure flags (credentials, symbol, period, BotId, ApiUrl,
+AccountLabel, Judas' label/DashboardServerUrl) are emitted by
 `build_run_command`, so a preset never knows which account runs it.
 """
 from typing import Collection, Dict, Iterable, List, Tuple

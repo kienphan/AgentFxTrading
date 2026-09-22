@@ -74,6 +74,8 @@ backups/
 # Superpowers SDD scratch workspace
 .superpowers/
 
-# Local docs (specs/plans); screenshots stay tracked because README embeds them
+# Local docs (specs/plans); screenshots stay tracked because README embeds them,
+# and the instance catalog because the READMEs link to it instead of listing the commands
 docs/*
 !docs/screenshots/
+!docs/docker-instances.md

@@ -267,12 +267,15 @@ def test_installed_cells_is_empty_without_accounts_or_configs():
     assert installed_cells([DEMO, LIVE], set()) == []
 
 
-# --- README ↔ preset drift guard -------------------------------------------------
-# 22 of the 45 cells mirror a `docker run` block in the READMEs. Those blocks are what a user
-# copies by hand, so a preset edit that forgets them (or forgets 5 of the 6 translations) ships
-# docs that silently disagree with what the dashboard generates. Compare the strategy flags only:
-# the READMEs use placeholder credentials and their own BotId/AccountLabel.
+# --- docs ↔ preset drift guard ---------------------------------------------------
+# docs/docker-instances.md spells out all 45 cells as `docker run` commands. Those blocks are what a
+# user copies by hand, so a preset edit that forgets them ships docs that silently disagree with what
+# the dashboard generates. Compare the strategy flags only: the doc uses placeholder credentials and a
+# `demo` account slug. The six READMEs must not re-document cells — they link to the catalog instead,
+# so there is exactly one place to keep in sync (the README quick-start example is the one exception).
+INSTANCES_DOC = root / "docs" / "docker-instances.md"
 README_FILES = sorted(root.glob("README*.md"))
+README_EXAMPLE = ("tms_orb", "XAUUSD")
 _INFRA_FLAGS = {"ctid", "pwd-file", "account", "symbol", "period", "full-access",
                 "BotId", "ApiUrl", "AccountLabel", "label", "DashboardServerUrl"}
 _ALGO_TO_STRATEGY = {spec["algo"]: name for name, spec in STRATEGIES.items()}
@@ -285,18 +288,37 @@ def _strategy_flags(command: str) -> dict:
             if key not in _INFRA_FLAGS}
 
 
-def _readme_cells(readme: Path) -> dict:
-    """(strategy, symbol) -> strategy flags, for every cBot `docker run` block in one README."""
+def _documented_cells(path: Path) -> dict:
+    """(strategy, symbol) -> strategy flags, for every cBot `docker run` block in one markdown file."""
     cells = {}
-    for block in re.findall(r"```bash\n(.*?)```", readme.read_text(), re.S):
+    for block in re.findall(r"```bash\n(.*?)```", path.read_text(), re.S):
         algo = re.search(r"/workspace/cBot/(\S+\.algo)", block)
         symbol = re.search(r"--symbol=(\S+)", block)
         if not (algo and symbol) or algo.group(1) not in _ALGO_TO_STRATEGY:
             continue
         key = (_ALGO_TO_STRATEGY[algo.group(1)], symbol.group(1))
-        assert key not in cells, f"{readme.name} documents {key} twice"
+        assert key not in cells, f"{path.name} documents {key} twice"
         cells[key] = _strategy_flags(block)
     return cells
+
+
+def test_instances_doc_exists():
+    assert INSTANCES_DOC.is_file(), "docs/docker-instances.md is the instance catalog; it must exist"
+
+
+def test_instances_doc_covers_every_cell():
+    assert set(_documented_cells(INSTANCES_DOC)) == set(PRESETS), (
+        "docs/docker-instances.md must document all 45 preset cells, no more and no fewer")
+
+
+@pytest.mark.parametrize(("strategy", "symbol"), sorted(PRESETS), ids=lambda v: v)
+def test_instances_doc_matches_the_presets(strategy, symbol):
+    documented = _documented_cells(INSTANCES_DOC)[(strategy, symbol)]
+    generated = _strategy_flags(build_run_command(DEMO, strategy, symbol, ROOT, HOME))
+    assert documented == generated, (
+        f"docs/docker-instances.md disagrees with app/cbot_presets.py for {strategy} {symbol}: "
+        f"{ {k: (generated.get(k), documented.get(k)) for k in set(generated) | set(documented) if generated.get(k) != documented.get(k)} }"
+    )
 
 
 def test_readme_files_are_discovered():
@@ -305,13 +327,17 @@ def test_readme_files_are_discovered():
 
 
 @pytest.mark.parametrize("readme", README_FILES, ids=lambda p: p.name)
-def test_readme_docker_blocks_match_the_presets(readme):
-    cells = _readme_cells(readme)
-    assert len(cells) == 22, f"{readme.name} documents {len(cells)} cells, expected 22"
-    for (strategy, symbol), documented in cells.items():
-        assert (strategy, symbol) in PRESETS, f"{readme.name} documents an unknown cell"
-        generated = _strategy_flags(build_run_command(DEMO, strategy, symbol, ROOT, HOME))
-        assert documented == generated, (
-            f"{readme.name} disagrees with app/cbot_presets.py for {strategy} {symbol}: "
-            f"{ {k: (generated.get(k), documented.get(k)) for k in set(generated) | set(documented) if generated.get(k) != documented.get(k)} }"
-        )
+def test_readmes_keep_only_the_quick_start_example(readme):
+    """A README carries one worked example and links to the catalog; anything more is a second copy to drift."""
+    cells = _documented_cells(readme)
+    assert set(cells) == {README_EXAMPLE}, (
+        f"{readme.name} should document only {README_EXAMPLE} and link to docs/docker-instances.md "
+        f"for the rest, but documents {sorted(cells)}")
+    generated = _strategy_flags(build_run_command(DEMO, *README_EXAMPLE, ROOT, HOME))
+    assert cells[README_EXAMPLE] == generated, f"{readme.name}'s example disagrees with app/cbot_presets.py"
+
+
+@pytest.mark.parametrize("readme", README_FILES, ids=lambda p: p.name)
+def test_readmes_link_to_the_instance_catalog(readme):
+    assert "docs/docker-instances.md" in readme.read_text(), (
+        f"{readme.name} must link to the instance catalog now that it no longer lists the commands")
