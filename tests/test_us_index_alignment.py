@@ -231,3 +231,52 @@ async def test_post_decision_risk_guard_blocks_opposing_us_index(clean_pm, monke
     assert "US Index alignment conflict" in decision.reason
     assert "USTEC" in decision.reason
     assert "BUY" in decision.reason
+
+
+@pytest.mark.anyio
+async def test_pre_llm_risk_check_does_not_assume_buy(tmp_path, monkeypatch):
+    """
+    The capacity check before the LLM call passed side="BUY" for every bot. With USTEC
+    SELL open, an aligned FlowRSI SELL candidate on US30 was refused as "cannot open BUY
+    US30" and never reached the model.
+    """
+    import json
+    from unittest.mock import AsyncMock
+    import app.server as server_mod
+    import app.news_service as news_mod
+
+    pm = PortfolioManager(db_path=str(tmp_path / "pre_llm.db"))
+    monkeypatch.setattr(server_mod, "portfolio_manager", pm)
+    monkeypatch.setattr(news_mod, "is_news_blackout_active", AsyncMock(return_value=(False, None, 0)))
+    chat = AsyncMock(return_value=json.dumps({"action": "SELL", "confidence": 85.0, "reason": "aligned"}))
+    monkeypatch.setattr(server_mod.llm_client, "chat", chat)
+
+    snap = MarketSnapshot(
+        bot_id="cbot-demo-demo-us30-all-flowrsi",
+        symbol="US30",
+        timeframe="Minute15",
+        ask=51946.2,
+        bid=51945.0,
+        account_number="12345",
+        account_label="demo",
+        account_balance=2000.0,
+        account_margin=40.0,
+        fast_rsi=40.0,
+        slow_rsi=51.04,
+        rsi_cross_signal="Bearish_Cross",
+        is_premium=True,
+        candidate_action="SELL",
+        technical_sl_price=52020.0,
+        technical_tp_price=51830.0,
+        technical_risk_reward=1.5,
+    )
+    pm.register_position(
+        bot_id="cbot-demo-demo-ustec-all-flowrsi", symbol="USTEC", side="Sell", volume=0.1,
+        entry_price=30730.0, sl_pips=400.0, tp_pips=600.0,
+        account_id=server_mod._resolve_account(snap),
+    )
+
+    decision = await server_mod.trade_decision(snap)
+
+    assert chat.await_count == 1, "an aligned SELL was refused before the model was asked"
+    assert decision.action == "SELL"

@@ -155,6 +155,47 @@ def test_partial_close_with_ctrader_id_matches_open_position_having_null_ctrader
         conn.close()
 
 
+def _rows(manager):
+    conn = manager._get_conn()
+    try:
+        return [
+            tuple(r) for r in conn.execute(
+                "SELECT id, ctrader_id, status, volume, pnl FROM positions ORDER BY id"
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def test_replayed_close_does_not_close_the_next_position(pm):
+    """
+    A close report whose id has no open row -- replayed, or sent for a position whose
+    open report never reached the server -- must not fall back to "any open position of
+    the pair". That closed position 222 with 111's exit and P&L, and rewrote its
+    ctrader_id to 111.
+    """
+    assert pm.close_position(
+        bot_id="eurusd-bot", symbol="EURUSD", exit_price=1.0980, pnl=-9.7,
+        account_id="acct-1", ctrader_id=111,
+    )
+    before = _rows(pm)
+
+    assert not pm.close_position(
+        bot_id="eurusd-bot", symbol="EURUSD", exit_price=1.0980, pnl=-9.7,
+        account_id="acct-1", ctrader_id=111,
+    )
+    assert _rows(pm) == before, "a replayed close for 111 changed another position"
+
+
+def test_partial_close_for_an_unknown_id_touches_no_position(pm):
+    before = _rows(pm)
+    assert not pm.record_partial_close(
+        bot_id="eurusd-bot", symbol="EURUSD", remaining_volume=0.05,
+        realized_pnl=4.0, account_id="acct-1", ctrader_id=999,
+    )
+    assert _rows(pm) == before, "a partial close for an unknown id shrank another position"
+
+
 def test_close_and_partial_close_return_false_when_no_position_matched(tmp_path):
     """Unmatched closes must return False and not silently succeed."""
     manager = PortfolioManager(db_path=str(tmp_path / "empty.db"))
