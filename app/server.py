@@ -1447,8 +1447,15 @@ def build_judas_sweep_user_prompt(snapshot: MarketSnapshot) -> str:
                 sw_str = ""
                 if tf_ctx.swing_structure:
                     sw = tf_ctx.swing_structure
-                    sw_str = f" | Swings: High={format_price(sw.last_swing_high, snapshot.symbol)} ({sw.swing_high_type}), Low={format_price(sw.last_swing_low, snapshot.symbol)} ({sw.swing_low_type}), PrevH={format_price(sw.prev_swing_high, snapshot.symbol)}, PrevL={format_price(sw.prev_swing_low, snapshot.symbol)} [Struct: {sw.market_structure}]"
-                lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{sw_str}")
+                    sw_str = (
+                        f" | Swings: High={format_price(sw.last_swing_high, snapshot.symbol)} ({sw.swing_high_type or 'N/A'}), "
+                        f"Low={format_price(sw.last_swing_low, snapshot.symbol)} ({sw.swing_low_type or 'N/A'}), "
+                        f"PrevH={format_price(sw.prev_swing_high, snapshot.symbol)}, "
+                        f"PrevL={format_price(sw.prev_swing_low, snapshot.symbol)} "
+                        f"[Struct: {sw.market_structure or 'SIDEWAYS'}]"
+                    )
+                adx_str = f" | ADX={tf_ctx.adx:.1f}" if hasattr(tf_ctx, "adx") and tf_ctx.adx > 0 else ""
+                lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{adx_str}{sw_str}")
         if lines:
             mtf_summary = "\n".join(lines)
 
@@ -1488,15 +1495,15 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
   - A LOCKED sweep side -> The boundary was already broken on a decisive M15 close. The Judas mean-reversion thesis is dead for this session; output 'HOLD'. NEVER propose an entry against a locked side.
   - volume_lots -> Always output 0. Volume is controlled by the cBot risk engine.
 
-=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+=== 3. MULTI-TIMEFRAME SMC SWING STRUCTURE (HH, HL, LH, LL) & BIAS ===
 {mtf_summary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
 - Fast EMA: {format_price(strat.tema1, snapshot.symbol)} | Slow EMA: {format_price(strat.tema2, snapshot.symbol)}
-- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.1f} pips
+- RSI (14): {strat.rsi:.1f}{f' | ADX: {strat.adx:.1f}' if strat.adx > 0 else ''}
+- ATR (14 Volatility): {atr_pips:.1f} pips{f' ({format_price(strat.atr, snapshot.symbol)} price move)' if strat.atr > 0 else ''}
 - Major Swing High (BSL / Resistance): {format_price(strat.recent_high, snapshot.symbol)}
 - Major Swing Low (SSL / Support): {format_price(strat.recent_low, snapshot.symbol)}
-
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
 {bars_formatted}
 
@@ -1573,15 +1580,15 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
   - Gate=MANAGE_ONLY → Focus on managing existing positions. Do NOT open new ones.
   - volume_lots → Always output 0. Volume is controlled by the cBot risk engine.
 
-=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+=== 3. MULTI-TIMEFRAME SMC SWING STRUCTURE (HH, HL, LH, LL) & BIAS ===
 {mtf_summary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
 - Fast EMA: {format_price(strat.tema1, snapshot.symbol)} | Slow EMA: {format_price(strat.tema2, snapshot.symbol)}
-- RSI (14): {strat.rsi:.1f} | ATR (14 Volatility): {atr_pips:.1f} pips
+- RSI (14): {strat.rsi:.1f}{f' | ADX: {strat.adx:.1f}' if strat.adx > 0 else ''}
+- ATR (14 Volatility): {atr_pips:.1f} pips{f' ({format_price(strat.atr, snapshot.symbol)} price move)' if strat.atr > 0 else ''}
 - Major Swing High (Resistance): {format_price(strat.recent_high, snapshot.symbol)}
 - Major Swing Low (Support): {format_price(strat.recent_low, snapshot.symbol)}
-
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {len(bar_lines)} bars, chronological) ===
 {bars_formatted}
 

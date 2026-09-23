@@ -3039,9 +3039,9 @@ namespace cAlgo.Robots
                         if (tfCtx.swing_structure != null)
                         {
                             var sw = tfCtx.swing_structure;
-                            swStr = $" | Swings: High={sw.last_swing_high} ({sw.swing_high_type}), Low={sw.last_swing_low} ({sw.swing_low_type}), PrevH={sw.prev_swing_high}, PrevL={sw.prev_swing_low} [Struct: {sw.market_structure}]";
+                            swStr = $" | Swings: High={sw.last_swing_high} ({sw.swing_high_type ?? "N/A"}), Low={sw.last_swing_low} ({sw.swing_low_type ?? "N/A"}), PrevH={sw.prev_swing_high}, PrevL={sw.prev_swing_low} [Struct: {sw.market_structure ?? "SIDEWAYS"}]";
                         }
-                        lines.Add($"- {label}: Bias={tfCtx.trend_bias} | FastMA={tfCtx.fast_tema} | SlowMA={tfCtx.slow_tema} | RSI={tfCtx.rsi}{swStr}");
+                        lines.Add($"- {label}: Bias={tfCtx.trend_bias} | FastMA={tfCtx.fast_tema} | SlowMA={tfCtx.slow_tema} | RSI={tfCtx.rsi:F1}{swStr}");
                     }
                 }
                 if (lines.Count > 0) mtfSummary = string.Join("\n", lines);
@@ -3072,15 +3072,14 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
   - Bars Since Sweep > 3 -> Signal is STALE. Strongly prefer 'HOLD'.
   - volume_lots -> Always output 0. Volume is controlled by the cBot risk engine.
 
-=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+=== 3. MULTI-TIMEFRAME SMC SWING STRUCTURE (HH, HL, LH, LL) & BIAS ===
 {mtfSummary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
 - Fast EMA: {stratData.tema1:F2} | Slow EMA: {stratData.tema2:F2}
-- RSI (14): {stratData.rsi:F1} | ATR (14 Volatility): {atrPips:F0} pips
+- RSI (14): {stratData.rsi:F1} | ATR (14 Volatility): {atrPips:F0} pips ({Math.Round(atrPips * Symbol.PipSize, Symbol.Digits)} price move)
 - Major Swing High (BSL / Resistance): {stratData.recent_high:F2}
 - Major Swing Low (SSL / Support): {stratData.recent_low:F2}
-
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {barCount} bars, chronological) ===
 {barsFormatted}
 
@@ -3136,15 +3135,14 @@ The cBot currently HAS OPEN POSITIONS in the order book. Your PRIMARY MISSION is
   - Gate=MANAGE_ONLY â†’ Focus on managing existing positions. Do NOT open new ones.
   - volume_lots â†’ Always output 0. Volume is controlled by the cBot risk engine.
 
-=== 3. MULTI-TIMEFRAME TREND BIAS (M15 + H1 + H4) ===
+=== 3. MULTI-TIMEFRAME SMC SWING STRUCTURE (HH, HL, LH, LL) & BIAS ===
 {mtfSummary}
 
 === 4. TECHNICAL INDICATORS & SWINGS ===
 - Fast EMA: {stratData.tema1:F2} | Slow EMA: {stratData.tema2:F2}
-- RSI (14): {stratData.rsi:F1} | ATR (14 Volatility): {atrPips:F0} pips
+- RSI (14): {stratData.rsi:F1} | ATR (14 Volatility): {atrPips:F0} pips ({Math.Round(atrPips * Symbol.PipSize, Symbol.Digits)} price move)
 - Major Swing High (Resistance): {stratData.recent_high:F2}
 - Major Swing Low (Support): {stratData.recent_low:F2}
-
 === 5. RECENT OHLCV CANDLE SEQUENCE (Last {barCount} bars, chronological) ===
 {barsFormatted}
 
