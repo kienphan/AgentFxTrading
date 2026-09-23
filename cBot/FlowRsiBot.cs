@@ -376,6 +376,7 @@ namespace cAlgo.Robots
             public string account_label { get; set; }
             public double account_balance { get; set; }
             public double account_equity { get; set; }
+            public double account_margin { get; set; }
             public double fast_rsi { get; set; }
             public double slow_rsi { get; set; }
             public string rsi_cross_signal { get; set; } // Bullish_Cross, Bearish_Cross, None
@@ -936,6 +937,7 @@ namespace cAlgo.Robots
                     account_label = AccountLabel,
                     account_balance = Math.Round(Account.Balance, 2),
                     account_equity = Math.Round(Account.Equity, 2),
+                    account_margin = Math.Round(Account.Margin, 2),
                     fast_rsi = Math.Round(fastRsiCurr, 2),
                     slow_rsi = Math.Round(slowRsiCurr, 2),
                     rsi_cross_signal = rsiCrossSignal,
@@ -1549,12 +1551,18 @@ namespace cAlgo.Robots
                     double trailMultiplier = currentRr >= 2.5 ? 0.6 : 1.0;
                     double effectiveTrailDistPips = Math.Max(minTrailDistPips, initialSlDist * trailMultiplier);
 
+                    // Trail in steps, not on every tick. Without a step the stop chased each tick a
+                    // pip at a time: ETHUSD #674939909 on 2026-09-23 sent seven modifies in three
+                    // seconds, the last rejected with InvalidStopLossTakeProfit as price reached TP.
+                    const double trailStepFraction = 0.1;
+                    double trailStepPrice = Math.Max(1.0, effectiveTrailDistPips * trailStepFraction) * Symbol.PipSize;
+
                     double candidateTrailSL;
                     if (pos.TradeType == TradeType.Buy)
                     {
                         candidateTrailSL = Symbol.Bid - (effectiveTrailDistPips * Symbol.PipSize);
                         candidateTrailSL = GetZeroLossStopLossPrice(pos, candidateTrailSL, extraBufferPips: BreakEvenExtraPips);
-                        if ((!pos.StopLoss.HasValue || candidateTrailSL > pos.StopLoss.Value) && candidateTrailSL < Symbol.Bid)
+                        if ((!pos.StopLoss.HasValue || candidateTrailSL >= pos.StopLoss.Value + trailStepPrice) && candidateTrailSL < Symbol.Bid)
                         {
                             SafeModifyPosition(pos, candidateTrailSL, pos.TakeProfit, source: "Trailing Stop");
                         }
@@ -1563,7 +1571,7 @@ namespace cAlgo.Robots
                     {
                         candidateTrailSL = Symbol.Ask + (effectiveTrailDistPips * Symbol.PipSize);
                         candidateTrailSL = GetZeroLossStopLossPrice(pos, candidateTrailSL, extraBufferPips: BreakEvenExtraPips);
-                        if ((!pos.StopLoss.HasValue || candidateTrailSL < pos.StopLoss.Value) && candidateTrailSL > Symbol.Ask)
+                        if ((!pos.StopLoss.HasValue || candidateTrailSL <= pos.StopLoss.Value - trailStepPrice) && candidateTrailSL > Symbol.Ask)
                         {
                             SafeModifyPosition(pos, candidateTrailSL, pos.TakeProfit, source: "Trailing Stop");
                         }
@@ -2225,6 +2233,30 @@ namespace cAlgo.Robots
             }
         }
 
+        /// <summary>The price the position's final close traded at, or null when History has not
+        /// booked that deal yet. History holds one deal per close, so a position that was partially
+        /// closed has several: the first is the partial, not the exit (GBPJPY #674942756 on
+        /// 2026-09-23 reported 210.09, the Break-Even partial, for a stop hit at 209.92). The final
+        /// deal is the one that just closed the remaining volume.</summary>
+        private double? FinalClosingPrice(Position pos)
+        {
+            try
+            {
+                var cutoff = Server.Time.AddSeconds(-60);
+                double tolerance = Symbol.VolumeInUnitsMin / 2.0;
+                var deal = History
+                    .Where(h => h.PositionId == pos.Id
+                                && h.ClosingTime >= cutoff
+                                && Math.Abs(h.VolumeInUnits - pos.VolumeInUnits) <= tolerance)
+                    .OrderByDescending(h => h.ClosingTime)
+                    .FirstOrDefault();
+                if (deal != null && deal.ClosingPrice > 0)
+                    return deal.ClosingPrice;
+            }
+            catch { }
+            return null;
+        }
+
         private void OnPositionClosed(PositionClosedEventArgs args)
         {
             BeginInvokeOnMainThread(() =>
@@ -2245,13 +2277,9 @@ namespace cAlgo.Robots
                     else if (args.Reason == PositionCloseReason.StopLoss && pos.StopLoss.HasValue)
                         exitPrice = pos.StopLoss.Value;
 
-                    try
-                    {
-                        var hist = History.FirstOrDefault(h => h.PositionId == pos.Id);
-                        if (hist != null && hist.ClosingPrice > 0)
-                            exitPrice = hist.ClosingPrice;
-                    }
-                    catch { }
+                    double? bookedExit = FinalClosingPrice(pos);
+                    if (bookedExit.HasValue)
+                        exitPrice = bookedExit.Value;
 
                     double pnl = pos.NetProfit;
                     string reason = args.Reason.ToString();

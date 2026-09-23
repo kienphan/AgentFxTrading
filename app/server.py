@@ -462,6 +462,9 @@ class MarketSnapshot(BaseModel):
     account_label: Optional[str] = None
     account_balance: float = 10000.0
     account_equity: float = 10000.0
+    # Used margin as cTrader reports it (Account.Margin). None from a cBot build that predates
+    # the field, in which case check_risk falls back to its per-lot estimate.
+    account_margin: Optional[float] = None
 
     @field_validator("bot_id", mode="before")
     @classmethod
@@ -1898,7 +1901,8 @@ async def trade_decision(snapshot: MarketSnapshot):
             side="BUY",  # Will be determined by LLM, checking capacity
             volume=0.01,
             account_balance=snapshot.account_balance,
-            account_id=account_id
+            account_id=account_id,
+            used_margin=snapshot.account_margin
         )
         
         if not can_trade:
@@ -2117,7 +2121,8 @@ async def trade_decision(snapshot: MarketSnapshot):
                 side=action_str,
                 volume=float(decision_dict.get("volume_lots") or 0.01),
                 account_balance=snapshot.account_balance,
-                account_id=account_id
+                account_id=account_id,
+                used_margin=snapshot.account_margin
             )
             if not can_trade:
                 logger.warning(

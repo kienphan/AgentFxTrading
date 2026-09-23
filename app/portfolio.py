@@ -104,11 +104,41 @@ class PortfolioManager:
                 "ALTER TABLE positions ADD COLUMN sl_price DOUBLE PRECISION",
                 "ALTER TABLE positions ADD COLUMN tp_price DOUBLE PRECISION",
                 "ALTER TABLE positions ADD COLUMN close_reason TEXT",
+                # The volume the position opened with. record_partial_close shrinks `volume` to
+                # what is still open, which the margin check needs, but a closed row carries the
+                # P&L of every slice, so on close `volume` is restored from this.
+                "ALTER TABLE positions ADD COLUMN initial_volume DOUBLE PRECISION",
             ]:
                 try:
                     conn.execute(col_sql)
                 except Exception:
                     pass  # already present
+
+            # The original columns were declared REAL, which PostgreSQL stores as float4: seven
+            # significant digits, so a BTC price above 100000 loses its cents. Widen them once.
+            # Cast through text: float4 -> numeric keeps only six digits (86759.45 -> 86759.4),
+            # while float4 -> text is the shortest exact form. `pnl` stays: the daily_stats view
+            # depends on it and PostgreSQL refuses to retype a column a view reads. On SQLite
+            # REAL is already a double and information_schema does not exist.
+            try:
+                cur = conn.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'positions' AND data_type = 'real'
+                      AND column_name IN ('volume', 'entry_price', 'exit_price', 'sl_pips', 'tp_pips')
+                """)
+                float4_cols = [r[0] for r in cur.fetchall()]
+            except Exception:
+                float4_cols = []
+            for col in float4_cols:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE positions ALTER COLUMN {col} TYPE DOUBLE PRECISION "
+                        f"USING {col}::text::double precision"
+                    )
+                    conn.commit()
+                    logger.info(f"positions.{col} widened from float4 to double precision")
+                except Exception as e:
+                    logger.warning(f"Could not widen positions.{col}: {e}")
 
             for idx_sql in [
                 "CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)",
@@ -153,12 +183,12 @@ class PortfolioManager:
         conn = self._get_conn()
         try:
             conn.execute("""
-                INSERT INTO positions (bot_id, symbol, side, volume, entry_price, 
+                INSERT INTO positions (bot_id, symbol, side, volume, entry_price,
                                      sl_pips, tp_pips, entry_time, status, account_id, ctrader_id,
-                                     sl_price, tp_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?, ?, ?, ?)
+                                     sl_price, tp_price, initial_volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?, ?, ?, ?, ?)
             """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, account_id, ctrader_id,
-                  sl_price, tp_price))
+                  sl_price, tp_price, volume))
             conn.commit()
             logger.info(f"Position registered: {symbol} {side} {volume} lots by {bot_id} for account {account_id}")
             return True
@@ -218,7 +248,8 @@ class PortfolioManager:
         try:
             sql = """
                 UPDATE positions
-                SET volume = ?, pnl = COALESCE(pnl, 0) + ?
+                SET initial_volume = COALESCE(initial_volume, volume),
+                    volume = ?, pnl = COALESCE(pnl, 0) + ?
                 WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
             """
             args = [remaining_volume, realized_pnl, bot_id, symbol, account_id]
@@ -259,9 +290,12 @@ class PortfolioManager:
             # the update would hit every open row for this (bot_id, symbol).
             # sl_price / tp_price keep the value recorded at entry when the bot did not report
             # the final levels (an older cBot build), hence COALESCE rather than a plain set.
+            # volume goes back to what the position opened with, so that it matches the pnl
+            # summed over every partial slice.
             sql = """
-                UPDATE positions 
+                UPDATE positions
                 SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                    volume = COALESCE(initial_volume, volume),
                     close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price)
                 WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
             """
@@ -280,10 +314,13 @@ class PortfolioManager:
         finally:
             conn.close()
     def check_risk(self, symbol: str, side: str, volume: float,
-                   account_balance: float = 10000.0, account_id: str = "default") -> Tuple[bool, str]:
+                   account_balance: float = 10000.0, account_id: str = "default",
+                   used_margin: Optional[float] = None) -> Tuple[bool, str]:
         """
         Check if new trade is safe at portfolio level.
         Returns (allowed: bool, reason: str)
+
+        used_margin is the broker's own figure (cTrader Account.Margin) when the cBot sends it.
         """
         conn = self._get_conn()
         try:
@@ -314,13 +351,19 @@ class PortfolioManager:
                 daily_pnl = row[0]
                 if daily_pnl <= self.config.MAX_DAILY_LOSS:
                     return False, f"Daily loss limit reached ({daily_pnl:.2f})"
-            # 5. Margin usage estimate (simplified)
-            cursor = conn.execute("""
-                SELECT SUM(volume) FROM positions WHERE status = 'open' AND account_id = ?
-            """, (account_id,))
-            total_volume = cursor.fetchone()[0] or 0
-            estimated_margin = (total_volume + volume) * 1000  # rough estimate
-            margin_pct = (estimated_margin / account_balance) * 100
+            # 5. Margin usage. Prefer the margin the broker reports. The fallback prices every
+            # lot at $1000 whatever the instrument, so 0.4 lots of ETHUSD and 0.3 of DE40 counted
+            # like forex lots and blocked US30/USTEC/XAUUSD entries on 2026-09-23 at a "64.4%"
+            # the account never used.
+            if used_margin is not None and used_margin >= 0:
+                margin_pct = (used_margin / account_balance) * 100 if account_balance > 0 else 0.0
+            else:
+                cursor = conn.execute("""
+                    SELECT SUM(volume) FROM positions WHERE status = 'open' AND account_id = ?
+                """, (account_id,))
+                total_volume = cursor.fetchone()[0] or 0
+                estimated_margin = (total_volume + volume) * 1000  # rough estimate
+                margin_pct = (estimated_margin / account_balance) * 100
             if margin_pct > self.config.MAX_MARGIN_USAGE_PCT:
                 return False, f"Margin usage too high ({margin_pct:.1f}%)"
             
