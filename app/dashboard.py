@@ -73,6 +73,17 @@ def _attach_live_metrics(pos: Dict, bot_report: Optional[Dict], price_info: Opti
     pos["current_price"] = current_price if current_price is not None else entry_price
     pos["price_age_seconds"] = _age_seconds(price_info.get("ts")) if price_info else None
 
+    # The bot's report carries the stop as it stands now (break-even and trailing moves); the
+    # DB row only has the level recorded at entry. The P&L at each level exists only in reports.
+    # A P&L figure is shown only next to the level it was computed for.
+    report = bot_report or {}
+    for price_key, pnl_key in (("sl_price", "sl_pnl"), ("tp_price", "tp_pnl")):
+        if report.get(price_key):
+            pos[price_key] = report[price_key]
+            pos[pnl_key] = report.get(pnl_key)
+        else:
+            pos[pnl_key] = None
+
     if bot_report and bot_report.get("unrealized_pnl") is not None:
         pos["unrealized_pnl"] = round(bot_report["unrealized_pnl"], 2)
         pos["unrealized_pnl_pips"] = round(bot_report.get("unrealized_pnl_pips", 0.0), 1)
@@ -81,6 +92,41 @@ def _attach_live_metrics(pos: Dict, bot_report: Optional[Dict], price_info: Opti
         pos["unrealized_pnl"] = None
         pos["unrealized_pnl_pips"] = None
         pos["pnl_age_seconds"] = None
+
+def tick_levels(payload: Any) -> Optional[Dict]:
+    """SL/TP prices and the bot's P&L estimate at each, from a tick or a tick's position entry.
+
+    Returns None when the payload carries none of these keys (a cBot build that predates them),
+    so the caller leaves the cached levels alone. A present-but-null key means the position has
+    no stop / no target. The P&L-at-level figures are computed by the bot from cTrader's own pip
+    value and volume - see the note in _attach_live_metrics on why the server never does that.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if not any(k in payload for k in ("sl", "tp", "sl_price", "tp_price", "sl_pnl", "tp_pnl")):
+        return None
+
+    def number(*keys: str, positive: bool = False) -> Optional[float]:
+        for key in keys:
+            value = payload.get(key)
+            if value is None:
+                continue
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                continue
+            if positive and num <= 0:
+                return None  # older bots send 0 for "no level"
+            return round(num, 2) if not positive else num
+        return None
+
+    return {
+        "sl_price": number("sl_price", "sl", positive=True),
+        "tp_price": number("tp_price", "tp", positive=True),
+        "sl_pnl": number("sl_pnl"),
+        "tp_pnl": number("tp_pnl"),
+    }
+
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +261,7 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
     try:
         query = """
             SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
-                   p.account_id, a.account_type, a.label as account_label
+                   p.sl_price, p.tp_price, p.account_id, a.account_type, a.label as account_label
             FROM positions p
             LEFT JOIN accounts a ON p.account_id = a.account_id
             WHERE p.status = 'open'
@@ -273,6 +319,7 @@ def get_trade_history(account_id: str = "all", page: int = 1, page_size: int = 1
         cursor = conn.execute(
             f"""
             SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.exit_price, p.pnl, p.entry_time, p.exit_time,
+                   p.sl_pips, p.tp_pips, p.sl_price, p.tp_price, p.close_reason,
                    p.account_id, a.account_type, a.label as account_label
             FROM positions p
             LEFT JOIN accounts a ON p.account_id = a.account_id{where}
@@ -873,15 +920,18 @@ async def cbot_websocket_endpoint(websocket: WebSocket):
                             pips = float(payload["pips"]) if payload.get("pips") is not None else None
                         except (TypeError, ValueError):
                             pnl = pips = None
+                        levels = tick_levels(payload)
                         if pnl is not None:
-                            pm.update_position_metrics(bot_id, pnl, pips or 0.0, account_id=account_id)
+                            pm.update_position_metrics(bot_id, pnl, pips or 0.0, account_id=account_id,
+                                                       levels=levels)
 
                         # Acknowledge before fanning out: the bot paces its next tick on this reply,
                         # so its cadence must not depend on the health of dashboard clients.
                         await websocket.send_json({"type": "ack", "status": "ok"})
                         try:
                             await broadcast_tick(symbol, bid, ask, account_id,
-                                                 bot_id=bot_id, pnl=pnl, pips=pips)
+                                                 bot_id=bot_id, pnl=pnl, pips=pips,
+                                                 levels=levels if pnl is not None else None)
                         except Exception:
                             pass
                     else:
@@ -914,7 +964,7 @@ async def broadcast_update(account_id: Optional[str] = None):
 
 async def broadcast_tick(symbol: str, bid: float, ask: float, account_id: Optional[str] = None,
                          bot_id: Optional[str] = None, pnl: Optional[float] = None,
-                         pips: Optional[float] = None):
+                         pips: Optional[float] = None, levels: Optional[Dict] = None):
     """Broadcast a live tick price update.
 
     When a bot has a position open it also reports its own P&L sample (broker net profit and
@@ -930,6 +980,8 @@ async def broadcast_tick(symbol: str, bid: float, ask: float, account_id: Option
         "bot_id": bot_id,
         "pnl": pnl,
         "pips": pips,
+        # SL/TP prices and P&L at each (tick_levels); None when this bot sends no levels
+        "levels": levels,
         "timestamp": datetime.now().isoformat()
     })
 

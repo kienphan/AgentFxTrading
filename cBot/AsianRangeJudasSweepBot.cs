@@ -492,6 +492,7 @@ namespace cAlgo.Robots
         private CancellationTokenSource _tickStreamCts;
         private readonly object _tickFrameLock = new object();
         private double _tickFrameBid, _tickFrameAsk, _tickFramePnl, _tickFramePips;
+        private double? _tickFrameSl, _tickFrameTp, _tickFrameSlPnl, _tickFrameTpPnl;
         private bool _tickFrameHasPnl;
         private long _tickFrameStamp;
         private DateTime _lastTickFrameAt = DateTime.MinValue;
@@ -629,12 +630,12 @@ namespace cAlgo.Robots
 
                     if (rawCloseBuy && buyPositions(label).Length > 0)
                     {
-                        ClosePositions(label, TradeType.Buy);
+                        ClosePositions(label, TradeType.Buy, "Indicator Close Signal");
                         _waitingForCloseSignalBuy = false;
                     }
                     if (rawCloseSell && sellPositions(label).Length > 0)
                     {
-                        ClosePositions(label, TradeType.Sell);
+                        ClosePositions(label, TradeType.Sell, "Indicator Close Signal");
                         _waitingForCloseSignalSell = false;
                     }
                 }
@@ -735,13 +736,13 @@ namespace cAlgo.Robots
         {
             if (_closeBuyCondition && buyPositions(label).Length > 0)
             {
-                ClosePositions(label, TradeType.Buy);
+                ClosePositions(label, TradeType.Buy, "Indicator Close Signal");
                 _waitingForCloseSignalBuy = false;
             }
 
             if (_closeSellCondition && sellPositions(label).Length > 0)
             {
-                ClosePositions(label, TradeType.Sell);
+                ClosePositions(label, TradeType.Sell, "Indicator Close Signal");
                 _waitingForCloseSignalSell = false;
             }
 
@@ -801,13 +802,13 @@ namespace cAlgo.Robots
             return Positions.FindAll(label, SymbolName, TradeType.Sell);
         }
 
-        private void ClosePositions(string label, TradeType tradeType)
+        private void ClosePositions(string label, TradeType tradeType, string reason)
         {
             foreach (var position in Positions.FindAll(label, SymbolName))
             {
                 if (position.TradeType == tradeType)
                 {
-                    ClosePosition(position);
+                    CloseWithReason(position, reason);
                 }
             }
         }
@@ -832,6 +833,56 @@ namespace cAlgo.Robots
             resetFlagsforManualClosed();
         }
 
+        // ==========================================
+        // CLOSE REASON + P&L AT SL/TP (dashboard reporting)
+        // ==========================================
+        // cTrader's own reason wins for broker-side exits (StopLoss, TakeProfit, StopOut). A plain
+        // "Closed" means this bot (or a human) closed it, so the rule that called the close is
+        // recorded here just before the call and reported instead.
+        private readonly Dictionary<int, string> _closeReasons = new Dictionary<int, string>();
+
+        private void CloseWithReason(Position pos, string reason)
+        {
+            _closeReasons[pos.Id] = reason;
+            ClosePosition(pos);
+        }
+
+        private string ResolveCloseReason(PositionClosedEventArgs args)
+        {
+            var pos = args.Position;
+            string botReason;
+            bool hasBotReason = _closeReasons.TryGetValue(pos.Id, out botReason);
+            _closeReasons.Remove(pos.Id);
+
+            switch (args.Reason)
+            {
+                case PositionCloseReason.TakeProfit:
+                    return "Take Profit";
+                case PositionCloseReason.StopLoss:
+                    // A stop at or beyond entry was moved there by break-even / trailing.
+                    bool lockedIn = pos.StopLoss.HasValue && (pos.TradeType == TradeType.Buy
+                        ? pos.StopLoss.Value >= pos.EntryPrice
+                        : pos.StopLoss.Value <= pos.EntryPrice);
+                    return lockedIn ? "Stop Loss (Trailing / Break-Even)" : "Stop Loss";
+                case PositionCloseReason.StopOut:
+                    return "Stop Out (margin)";
+                default:
+                    return hasBotReason ? botReason : "Closed (manual / external)";
+            }
+        }
+
+        /// <summary>The position's net P&L if it closed at `level`: the gross move at cTrader's own
+        /// pip value, less the round-trip commission, plus swap so far (same fee model as
+        /// FlowRsiBot.CalculateEstimatedNetProfitAtSL).</summary>
+        private double? PnlAtLevel(Position pos, double? level)
+        {
+            if (!level.HasValue || level.Value <= 0 || Symbol.PipSize <= 0) return null;
+            double pips = (pos.TradeType == TradeType.Buy
+                ? level.Value - pos.EntryPrice
+                : pos.EntryPrice - level.Value) / Symbol.PipSize;
+            return Math.Round(pips * Symbol.PipValue * pos.VolumeInUnits - Math.Abs(pos.Commissions) * 2.0 + pos.Swap, 2);
+        }
+
         private void OnPositionsClosed(PositionClosedEventArgs args)
         {
             Position closedPosition = args.Position;
@@ -851,7 +902,7 @@ namespace cAlgo.Robots
 
             if (_httpClient != null)
             {
-                _ = ReportPositionClosed(closedPosition, closedPosition.NetProfit, exitPrice);
+                _ = ReportPositionClosed(closedPosition, closedPosition.NetProfit, exitPrice, ResolveCloseReason(args));
                 SendLiveTickTelemetry(force: true);
             }
 
@@ -1157,7 +1208,7 @@ namespace cAlgo.Robots
                     {
                         Print($"[Judas Structural Guard] Closing BUY #{pos.Id} on Asian Low breakdown (broken sweep). PnL=${pos.NetProfit:F2}");
                         _lastAgentReason = "SweepBreakoutExit";
-                        ClosePosition(pos);
+                        CloseWithReason(pos, "Sweep Invalidated (Asian range broken)");
                     }
                 }
             }
@@ -1174,7 +1225,7 @@ namespace cAlgo.Robots
                     {
                         Print($"[Judas Structural Guard] Closing SELL #{pos.Id} on Asian High breakout (broken sweep). PnL=${pos.NetProfit:F2}");
                         _lastAgentReason = "SweepBreakoutExit";
-                        ClosePosition(pos);
+                        CloseWithReason(pos, "Sweep Invalidated (Asian range broken)");
                     }
                 }
             }
@@ -1858,7 +1909,7 @@ namespace cAlgo.Robots
 
             if (dca_enableProfittoClose && totalNetProfit >= profittoClose)
             {
-                CloseAllPositions();
+                CloseAllPositions("Profit Target ($)");
                 return;
             }
 
@@ -1867,17 +1918,17 @@ namespace cAlgo.Robots
                 double targetProfit = Account.Equity * (dcaProfitPercent / 100.0);
                 if (totalNetProfit >= targetProfit)
                 {
-                    CloseAllPositions();
+                    CloseAllPositions("Profit Target (% equity)");
                     return;
                 }
             }
         }
 
-        private void CloseAllPositions()
+        private void CloseAllPositions(string reason)
         {
             foreach (var pos in Positions.FindAll(label, SymbolName))
             {
-                ClosePosition(pos);
+                CloseWithReason(pos, reason);
             }
             resetFlagsforManualClosed();
         }
@@ -1932,7 +1983,7 @@ namespace cAlgo.Robots
                 {
                     if (closePositionsBeforeNews)
                     {
-                        CloseAllPositions();
+                        CloseAllPositions($"News Shield ({item.Title})");
                     }
                 }
             }
@@ -3447,6 +3498,8 @@ Reply strictly with JSON object.";
                     side = position.TradeType.ToString(),
                     volume = position.VolumeInUnits / Symbol.LotSize,
                     entry_price = position.EntryPrice,
+                    sl_price = position.StopLoss,
+                    tp_price = position.TakeProfit,
                     sl_pips = slPips,
                     tp_pips = tpPips,
                     reason = reason,
@@ -3467,7 +3520,7 @@ Reply strictly with JSON object.";
             }
         }
 
-        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice)
+        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice, string closeReason)
         {
             try
             {
@@ -3485,6 +3538,9 @@ Reply strictly with JSON object.";
                     symbol = SymbolName,
                     exit_price = exitPrice,
                     pnl = pnl,
+                    close_reason = closeReason,
+                    sl_price = position.StopLoss,
+                    tp_price = position.TakeProfit,
                     account_number = Account.Number.ToString(),
                     account_type = Account.IsLive ? "live" : "demo",
                     account_label = string.IsNullOrWhiteSpace(AccountLabel) ? Account.BrokerName : $"{Account.BrokerName} ({AccountLabel.Trim()})",
@@ -3544,6 +3600,11 @@ Reply strictly with JSON object.";
             public double ask { get; set; }
             public double? pnl { get; set; }
             public double? pips { get; set; }
+            // SL/TP prices and the P&L at each; sent only with a position (null = no level)
+            public double? sl { get; set; }
+            public double? tp { get; set; }
+            public double? sl_pnl { get; set; }
+            public double? tp_pnl { get; set; }
         }
 
         private void StartTickStream()
@@ -3590,12 +3651,17 @@ Reply strictly with JSON object.";
             _lastTickFrameAt = now;
 
             double pnl = 0, pips = 0;
+            double? sl = null, tp = null, slPnl = null, tpPnl = null;
             bool hasPnl = false;
             var positions = Positions.FindAll(label, SymbolName);
             if (positions.Length > 0)
             {
                 var pos = positions[0];
                 pnl = Math.Round(pos.NetProfit, 2);
+                sl = pos.StopLoss;
+                tp = pos.TakeProfit;
+                slPnl = PnlAtLevel(pos, pos.StopLoss);
+                tpPnl = PnlAtLevel(pos, pos.TakeProfit);
                 pips = Math.Round(pos.Pips, 1);
                 hasPnl = true;
             }
@@ -3607,6 +3673,8 @@ Reply strictly with JSON object.";
                 _tickFramePnl = pnl;
                 _tickFramePips = pips;
                 _tickFrameHasPnl = hasPnl;
+                _tickFrameSl = sl; _tickFrameTp = tp;
+                _tickFrameSlPnl = slPnl; _tickFrameTpPnl = tpPnl;
                 _tickFrameStamp++;
             }
         }
@@ -3636,6 +3704,7 @@ Reply strictly with JSON object.";
                         await Task.Delay(Math.Min(250, TickStreamMs), token);
 
                         double bid, ask, pnl, pips;
+                        double? sl, tp, slPnl, tpPnl;
                         bool hasPnl;
                         long stamp;
                         lock (_tickFrameLock)
@@ -3643,6 +3712,8 @@ Reply strictly with JSON object.";
                             bid = _tickFrameBid; ask = _tickFrameAsk;
                             pnl = _tickFramePnl; pips = _tickFramePips;
                             hasPnl = _tickFrameHasPnl; stamp = _tickFrameStamp;
+                            sl = _tickFrameSl; tp = _tickFrameTp;
+                            slPnl = _tickFrameSlPnl; tpPnl = _tickFrameTpPnl;
                         }
 
                         bool isNewTick = (stamp != sentStamp && (bid > 0 || ask > 0));
@@ -3660,7 +3731,11 @@ Reply strictly with JSON object.";
                                 bid = bid,
                                 ask = ask,
                                 pnl = hasPnl ? (double?)pnl : null,
-                                pips = hasPnl ? (double?)pips : null
+                                pips = hasPnl ? (double?)pips : null,
+                                sl = hasPnl ? sl : null,
+                                tp = hasPnl ? tp : null,
+                                sl_pnl = hasPnl ? slPnl : null,
+                                tp_pnl = hasPnl ? tpPnl : null
                             });
                             sentStamp = stamp;
                         }
@@ -3859,7 +3934,7 @@ Reply strictly with JSON object.";
                 if (action == "CLOSE_ALL")
                 {
                     Print($"[AI Agent Action] Executing CLOSE_ALL on all positions. Reason: {decision.reason}");
-                    CloseAllPositions();
+                    CloseAllPositions($"AI Close: {decision.reason}");
                     _ = SendTelegramAlertAsync($"🚨 <b>[AI Agent] CLOSE_ALL Executed</b>\nReason: {decision.reason}\nConfidence: {decision.confidence:F1}%");
                     return;
                 }

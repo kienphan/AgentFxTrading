@@ -96,6 +96,20 @@ class PortfolioManager:
             except Exception:
                 pass  # already present
 
+            # SL/TP as prices (the pip distances above are fixed at entry and cannot show a
+            # trailed stop) plus why the position closed, for the dashboard. On close the prices
+            # are overwritten with the levels the broker held at that moment. DOUBLE PRECISION,
+            # not REAL: on PostgreSQL REAL is float4 and would round a BTC price.
+            for col_sql in [
+                "ALTER TABLE positions ADD COLUMN sl_price DOUBLE PRECISION",
+                "ALTER TABLE positions ADD COLUMN tp_price DOUBLE PRECISION",
+                "ALTER TABLE positions ADD COLUMN close_reason TEXT",
+            ]:
+                try:
+                    conn.execute(col_sql)
+                except Exception:
+                    pass  # already present
+
             for idx_sql in [
                 "CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)",
                 "CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)",
@@ -133,15 +147,18 @@ class PortfolioManager:
     def register_position(self, bot_id: str, symbol: str, side: str, 
                          volume: float, entry_price: float, 
                          sl_pips: float, tp_pips: float, account_id: str,
-                         ctrader_id: Optional[int] = None) -> bool:
+                         ctrader_id: Optional[int] = None,
+                         sl_price: Optional[float] = None, tp_price: Optional[float] = None) -> bool:
         """Register new position after trade execution."""
         conn = self._get_conn()
         try:
             conn.execute("""
                 INSERT INTO positions (bot_id, symbol, side, volume, entry_price, 
-                                     sl_pips, tp_pips, entry_time, status, account_id, ctrader_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?, ?)
-            """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, account_id, ctrader_id))
+                                     sl_pips, tp_pips, entry_time, status, account_id, ctrader_id,
+                                     sl_price, tp_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 'open', ?, ?, ?, ?)
+            """, (bot_id, symbol, side, volume, entry_price, sl_pips, tp_pips, account_id, ctrader_id,
+                  sl_price, tp_price))
             conn.commit()
             logger.info(f"Position registered: {symbol} {side} {volume} lots by {bot_id} for account {account_id}")
             return True
@@ -229,7 +246,9 @@ class PortfolioManager:
             conn.close()
 
     def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float,
-                       account_id: str, ctrader_id: Optional[int] = None) -> bool:
+                       account_id: str, ctrader_id: Optional[int] = None,
+                       close_reason: Optional[str] = None,
+                       sl_price: Optional[float] = None, tp_price: Optional[float] = None) -> bool:
         """Mark position as closed (single source of truth)."""
         conn = self._get_conn()
         try:
@@ -238,12 +257,15 @@ class PortfolioManager:
             # and `pnl` is NULL for positions that never had one, so COALESCE covers both.
             # ctrader_id narrows this to the one position when the bot supplies it; without it
             # the update would hit every open row for this (bot_id, symbol).
+            # sl_price / tp_price keep the value recorded at entry when the bot did not report
+            # the final levels (an older cBot build), hence COALESCE rather than a plain set.
             sql = """
                 UPDATE positions 
-                SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now')
+                SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                    close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price)
                 WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
             """
-            args = [exit_price, pnl, bot_id, symbol, account_id]
+            args = [exit_price, pnl, close_reason, sl_price, tp_price, bot_id, symbol, account_id]
             if ctrader_id is not None:
                 sql += " AND ctrader_id = ?"
                 args.append(ctrader_id)
@@ -551,12 +573,19 @@ class PortfolioManager:
             # Stamp the report: price and P&L only arrive with a bot snapshot, so consumers
             # need the age to avoid presenting a stale figure as a live one.
             reported = dict(position_data, _reported_at=datetime.now(timezone.utc).timestamp())
+            # The P&L-at-SL/TP estimate rides on ticks, not snapshots. Carry it over while the
+            # level it was computed for has not moved, so each bar close does not blank it.
+            prev = self._bot_positions_cache.get(f"{account_id}:{bot_id}" if account_id else bot_id) or {}
+            for price_key, pnl_key in (("sl_price", "sl_pnl"), ("tp_price", "tp_pnl")):
+                if pnl_key not in reported and prev.get(price_key) == reported.get(price_key):
+                    reported[pnl_key] = prev.get(pnl_key)
             self._bot_positions_cache[bot_id] = reported
             if account_id:
                 self._bot_positions_cache[f"{account_id}:{bot_id}"] = reported
 
     def update_position_metrics(self, bot_id: str, unrealized_pnl: float, unrealized_pnl_pips: float,
-                                account_id: Optional[str] = None) -> None:
+                                account_id: Optional[str] = None,
+                                levels: Optional[Dict] = None) -> None:
         """Merge a live P&L sample from a bot tick into the cached position report.
 
         The bot owns these numbers (net profit in the account currency, pips from cTrader's own
@@ -583,6 +612,12 @@ class PortfolioManager:
             entry = dict(self._bot_positions_cache.get(key) or {})
             entry["unrealized_pnl"] = unrealized_pnl
             entry["unrealized_pnl_pips"] = unrealized_pnl_pips
+            # SL/TP prices and the bot's P&L estimate at each (sl_price, tp_price, sl_pnl,
+            # tp_pnl). None means "no stop / no target", so it replaces the old value; a tick
+            # from a bot that does not send levels at all passes levels=None and keeps whatever
+            # its last snapshot reported.
+            if levels is not None:
+                entry.update(levels)
             entry["_reported_at"] = reported_at
             self._bot_positions_cache[key] = entry
 

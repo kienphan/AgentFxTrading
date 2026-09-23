@@ -2174,6 +2174,8 @@ namespace cAlgo.Robots
                         pips = p.Pips,
                         sl_price = p.StopLoss,
                         tp_price = p.TakeProfit,
+                        sl_pnl = p.StopLoss.HasValue ? (double?)Math.Round(CalculateEstimatedNetProfitAtSL(p, p.StopLoss.Value), 2) : null,
+                        tp_pnl = p.TakeProfit.HasValue ? (double?)Math.Round(CalculateEstimatedNetProfitAtSL(p, p.TakeProfit.Value), 2) : null,
                         label = p.Label
                     });
                 }
@@ -2512,6 +2514,8 @@ namespace cAlgo.Robots
                 double entryPrice = position.EntryPrice;
                 double resolvedExitPrice = exitPrice ?? (position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask);
                 double resolvedPips = pips ?? position.Pips;
+                double? slPrice = position.StopLoss;
+                double? tpPrice = position.TakeProfit;
                 string entryTimeStr = position.EntryTime.ToUniversalTime().ToString("o");
                 string exitTimeStr = DateTime.UtcNow.ToString("o");
 
@@ -2531,6 +2535,8 @@ namespace cAlgo.Robots
                     volume = posLots,
                     entry_price = entryPrice,
                     exit_price = resolvedExitPrice,
+                    sl_price = slPrice,
+                    tp_price = tpPrice,
                     pnl = pnl,
                     pips = Math.Round(resolvedPips, 1),
                     reason = string.IsNullOrWhiteSpace(reason) ? "Closed" : reason,
