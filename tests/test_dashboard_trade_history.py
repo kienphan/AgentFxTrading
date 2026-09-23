@@ -38,6 +38,29 @@ def test_format_vn_time_leaves_unparseable_or_missing_values_alone():
     assert format_vn_time("not a timestamp") == "not a timestamp"
 
 
+# --- format_duration ------------------------------------------------------------------------
+
+@pytest.mark.parametrize("entry, exit_, expected", [
+    ("2026-09-22 03:00:00", "2026-09-22 03:00:42", "42s"),
+    ("2026-09-22 03:00:00", "2026-09-22 03:04:12", "4m 12s"),
+    ("2026-09-22 03:00:00", "2026-09-22 05:28:30", "2h 28m"),
+    ("2026-09-20 03:00:00", "2026-09-22 07:10:00", "2d 4h"),
+])
+def test_format_duration_picks_the_two_most_useful_units(entry, exit_, expected):
+    from app.dashboard import format_duration
+
+    assert format_duration(entry, exit_) == expected
+
+
+def test_format_duration_is_none_when_a_time_is_missing_unparseable_or_reversed():
+    from app.dashboard import format_duration
+
+    assert format_duration(None, "2026-09-22 03:00:00") is None
+    assert format_duration("2026-09-22 03:00:00", None) is None
+    assert format_duration("garbage", "2026-09-22 03:00:00") is None
+    assert format_duration("2026-09-22 04:00:00", "2026-09-22 03:00:00") is None
+
+
 # --- Recent Trades pagination ----------------------------------------------------------------
 
 SEED_ACCOUNT = "test-pager-acc"
@@ -109,6 +132,7 @@ def test_trade_history_times_are_rendered_in_vietnam_time(seeded_closed_trades):
 
     assert newest["entry_time"] == "06:00:00 02/09/2026"   # 2026-09-01 23:00 UTC -> next day in VN
     assert newest["exit_time"] == "06:00:00 03/09/2026"
+    assert newest["duration"] == "1d 0h"
 
 
 def test_history_endpoint_exposes_pagination(seeded_closed_trades):
@@ -168,3 +192,4 @@ def test_dashboard_page_renders_recent_trades_pager():
     assert 'id="history-prev"' in html
     assert 'id="history-next"' in html
     assert 'id="history-page-label"' in html
+    assert "<th>Open / Close</th>" in html

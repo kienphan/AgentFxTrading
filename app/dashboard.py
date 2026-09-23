@@ -40,6 +40,32 @@ def format_vn_time(ts: Optional[str]) -> Optional[str]:
     return dt.astimezone(VN_TZ).strftime("%H:%M:%S %d/%m/%Y")
 
 
+def format_duration(entry_ts: Optional[str], exit_ts: Optional[str]) -> Optional[str]:
+    """How long a trade stayed open, as its two largest units ('4m 12s', '2h 28m', '2d 4h').
+
+    Takes the raw UTC timestamps from the positions table; returns None when either side is
+    missing, unparseable, or the exit precedes the entry.
+    """
+    if not entry_ts or not exit_ts:
+        return None
+    try:
+        secs = int((datetime.fromisoformat(str(exit_ts)) - datetime.fromisoformat(str(entry_ts))).total_seconds())
+    except (ValueError, TypeError):
+        return None
+    if secs < 0:
+        return None
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
 def _age_seconds(ts: Optional[float]) -> Optional[float]:
     """Seconds elapsed since `ts` (epoch), for surfacing how stale a bot figure is."""
     if ts is None:
@@ -330,6 +356,7 @@ def get_trade_history(account_id: str = "all", page: int = 1, page_size: int = 1
         for row in cursor.fetchall():
             d = dict(row)
             d["pnl"] = round(d["pnl"], 2) if d["pnl"] is not None else 0
+            d["duration"] = format_duration(d["entry_time"], d["exit_time"])
             d["entry_time"] = format_vn_time(d["entry_time"])
             d["exit_time"] = format_vn_time(d["exit_time"])
             items.append(d)
