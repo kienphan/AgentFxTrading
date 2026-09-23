@@ -872,11 +872,15 @@ docker run -d \
 ICT Smart Money Concepts: build the Asian range (00:00–06:00 UTC), wait for the London or New York killzone to
 sweep it, then trade the reversal. All 15 cells run `m15` with `--UseAiGateMode=true`.
 
+`breakEvenTrigger` is deliberately not shipped: `breakEvenMode` defaults to `Risk_Reward_Ratio` and the bot reads
+that pip value only in its `Fixed_Pips` branch, so the per-symbol numbers the README listed never did anything —
+`breakEvenRrTrigger` is what gates the move. Break-even stays on via `--enableBreakEvenPrice=true`.
+
 ### XAUUSD — Judas Sweep
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the README flags, minus `breakEvenTrigger`, with the sweep buffer raised 30 → 500 pips ($5.00) to match the auto-scale the bot itself wants for gold.
 
 ```bash
 docker run -d \
@@ -902,9 +906,8 @@ docker run -d \
   --UseAiGateMode=true \
   --minAsianRangePips=200.0 \
   --maxAsianRangePips=8000.0 \
-  --sweepBufferPips=30.0 \
+  --sweepBufferPips=500.0 \
   --AiSlMinFloorPips=200.0 \
-  --breakEvenTrigger=250.0 \
   --stoplossPip=200.0 \
   --takeprofitPip=450.0 \
   --enableBreakEvenPrice=true
@@ -914,7 +917,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -942,7 +945,6 @@ docker run -d \
   --maxAsianRangePips=45.0 \
   --sweepBufferPips=3.5 \
   --AiSlMinFloorPips=15.0 \
-  --breakEvenTrigger=20.0 \
   --stoplossPip=15.0 \
   --takeprofitPip=35.0 \
   --enableBreakEvenPrice=true
@@ -952,7 +954,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -980,7 +982,6 @@ docker run -d \
   --maxAsianRangePips=45.0 \
   --sweepBufferPips=3.5 \
   --AiSlMinFloorPips=15.0 \
-  --breakEvenTrigger=20.0 \
   --stoplossPip=15.0 \
   --takeprofitPip=35.0 \
   --enableBreakEvenPrice=true
@@ -1018,7 +1019,6 @@ docker run -d \
   --maxAsianRangePips=45.0 \
   --sweepBufferPips=3.5 \
   --AiSlMinFloorPips=15.0 \
-  --breakEvenTrigger=20.0 \
   --stoplossPip=15.0 \
   --takeprofitPip=35.0 \
   --enableBreakEvenPrice=true
@@ -1028,7 +1028,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -1056,7 +1056,6 @@ docker run -d \
   --maxAsianRangePips=70.0 \
   --sweepBufferPips=5.0 \
   --AiSlMinFloorPips=25.0 \
-  --breakEvenTrigger=30.0 \
   --stoplossPip=25.0 \
   --takeprofitPip=50.0 \
   --enableBreakEvenPrice=true
@@ -1066,7 +1065,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -1094,7 +1093,6 @@ docker run -d \
   --maxAsianRangePips=70.0 \
   --sweepBufferPips=5.0 \
   --AiSlMinFloorPips=25.0 \
-  --breakEvenTrigger=30.0 \
   --stoplossPip=25.0 \
   --takeprofitPip=50.0 \
   --enableBreakEvenPrice=true
@@ -1132,7 +1130,6 @@ docker run -d \
   --maxAsianRangePips=45.0 \
   --sweepBufferPips=3.5 \
   --AiSlMinFloorPips=15.0 \
-  --breakEvenTrigger=20.0 \
   --stoplossPip=15.0 \
   --takeprofitPip=35.0 \
   --enableBreakEvenPrice=true
@@ -1170,7 +1167,6 @@ docker run -d \
   --maxAsianRangePips=45.0 \
   --sweepBufferPips=3.5 \
   --AiSlMinFloorPips=15.0 \
-  --breakEvenTrigger=20.0 \
   --stoplossPip=15.0 \
   --takeprofitPip=35.0 \
   --enableBreakEvenPrice=true
@@ -1208,7 +1204,6 @@ docker run -d \
   --maxAsianRangePips=70.0 \
   --sweepBufferPips=5.0 \
   --AiSlMinFloorPips=25.0 \
-  --breakEvenTrigger=30.0 \
   --stoplossPip=25.0 \
   --takeprofitPip=50.0 \
   --enableBreakEvenPrice=true
@@ -1248,7 +1243,6 @@ docker run -d \
   --maxAsianRangePips=4000.0 \
   --sweepBufferPips=150.0 \
   --AiSlMinFloorPips=750.0 \
-  --breakEvenTrigger=1000.0 \
   --stoplossPip=750.0 \
   --takeprofitPip=1750.0 \
   --enableBreakEvenPrice=true \
@@ -1289,7 +1283,6 @@ docker run -d \
   --maxAsianRangePips=3000.0 \
   --sweepBufferPips=120.0 \
   --AiSlMinFloorPips=600.0 \
-  --breakEvenTrigger=800.0 \
   --stoplossPip=600.0 \
   --takeprofitPip=1400.0 \
   --enableBreakEvenPrice=true \
@@ -1330,7 +1323,6 @@ docker run -d \
   --maxAsianRangePips=2500.0 \
   --sweepBufferPips=90.0 \
   --AiSlMinFloorPips=450.0 \
-  --breakEvenTrigger=600.0 \
   --stoplossPip=450.0 \
   --takeprofitPip=1000.0 \
   --enableBreakEvenPrice=true \
@@ -1341,7 +1333,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 *Broker alias: some brokers name this symbol `GB100`. On cTrader 1 pip = 0.1 index point.*
 
@@ -1371,7 +1363,6 @@ docker run -d \
   --maxAsianRangePips=800.0 \
   --sweepBufferPips=30.0 \
   --AiSlMinFloorPips=150.0 \
-  --breakEvenTrigger=200.0 \
   --stoplossPip=150.0 \
   --takeprofitPip=350.0 \
   --enableBreakEvenPrice=true \
@@ -1382,7 +1373,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -1410,7 +1401,6 @@ docker run -d \
   --maxAsianRangePips=400000.0 \
   --sweepBufferPips=1500.0 \
   --AiSlMinFloorPips=20000.0 \
-  --breakEvenTrigger=25000.0 \
   --stoplossPip=25000.0 \
   --takeprofitPip=60000.0 \
   --enableBreakEvenPrice=true \
@@ -1421,7 +1411,7 @@ docker run -d \
 
 `m15` · London + NY killzones
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, minus `breakEvenTrigger`.
 
 ```bash
 docker run -d \
@@ -1449,7 +1439,6 @@ docker run -d \
   --maxAsianRangePips=35000.0 \
   --sweepBufferPips=150.0 \
   --AiSlMinFloorPips=1500.0 \
-  --breakEvenTrigger=2000.0 \
   --stoplossPip=2000.0 \
   --takeprofitPip=5000.0 \
   --enableBreakEvenPrice=true \

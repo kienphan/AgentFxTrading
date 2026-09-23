@@ -17,10 +17,17 @@ Whenever you add a feature, fix a bug, or adjust configurations:
    - Run unit tests: `/root/AgentFxTrading/.venv/bin/pytest`.
    - Ensure all tests pass.
 
-2. **Commit & Push to GitHub**:
-   - Stage modified files: `git add <files>`
-   - Commit: `git commit -m "feat/fix/style: <concise message>"`
-   - Push to main: `git push origin main`
+2. **Commit & Push to GitHub — only when the user asks**:
+   - **Never commit or push on your own.** Finish with the changes left in the working
+     tree, report what changed and the test result, and wait for the user to say
+     "commit" / "push". An approval covers that one commit or push, not later ones.
+   - Several agent sessions may be editing this checkout at once: stage only the files
+     (or hunks) you changed yourself — never `git add -A`, `git add .`, or a whole file
+     that also carries another session's edits.
+   - When asked:
+     - Stage: `git add <files>`
+     - Commit: `git commit -m "feat/fix/style: <concise message>"`
+     - Push to main: `git push origin main`
 
 3. **Restart Service**:
    - If `app/`, `templates/`, or `static/` files changed:

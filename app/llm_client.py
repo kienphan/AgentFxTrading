@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import json
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
@@ -47,6 +48,25 @@ def _clean_env_int(key: str, default: int) -> int:
         return default
 
 
+def describe_llm_error(exc: BaseException) -> str:
+    """One-line account of an LLM failure for the logs.
+
+    An API that answered with a non-2xx status gets its status code and request id up
+    front, so a 401 (bad key), a 429 (rate limit) and a 500 (provider outage) read as
+    what they are instead of disappearing into a generic exception string.
+    """
+    name = type(exc).__name__
+    msg = " ".join(str(exc).split())[:300]
+    status = getattr(exc, "status_code", None)
+    if status is not None:
+        request_id = getattr(exc, "request_id", None)
+        rid = f" req_id={request_id}" if request_id else ""
+        return f"HTTP {status} {name}{rid}: {msg}"
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or "Timeout" in name:
+        return f"timeout ({name}){': ' + msg if msg else ''}"
+    return f"{name}: {msg}" if msg else name
+
+
 class OpenAICompatibleClient(LLMClient):
     """Client for OpenAI and OpenAI-compatible APIs (Qwen, DeepSeek, etc.)."""
 
@@ -80,15 +100,17 @@ class OpenAICompatibleClient(LLMClient):
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         merged = {**self.default_kwargs, **kwargs}
+        max_retries = merged.pop("max_retries", None)
+        client = self.client if max_retries is None else self.client.with_options(max_retries=max_retries)
         try:
-            response = await self.client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 **merged
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.warning(f"LLM chat error ({self.model} @ {getattr(self.client, 'base_url', '')}): {e}")
+            logger.warning(f"LLM chat error ({self.model} @ {getattr(self.client, 'base_url', '')}): {describe_llm_error(e)}")
             raise
 
 
@@ -134,9 +156,11 @@ class AnthropicClient(LLMClient):
                 user_msgs.append(msg)
 
         merged = {**self.default_kwargs, **kwargs}
+        max_retries = merged.pop("max_retries", None)
+        client = self.client if max_retries is None else self.client.with_options(max_retries=max_retries)
 
         try:
-            response = await self.client.messages.create(
+            response = await client.messages.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 system=system_msg if system_msg else None,
@@ -145,7 +169,7 @@ class AnthropicClient(LLMClient):
             )
             return response.content[0].text
         except Exception as e:
-            logger.warning(f"Anthropic chat error ({self.model}): {e}")
+            logger.warning(f"Anthropic chat error ({self.model}): {describe_llm_error(e)}")
             raise
 
 
@@ -187,13 +211,17 @@ class GeminiClient(LLMClient):
         
         merged = {**self.default_kwargs, **kwargs}
         request_options = merged.pop("request_options", {})
-        if "timeout" not in request_options and self.timeout_val is not None:
-            request_options["timeout"] = self.timeout_val
+        merged.pop("max_retries", None)  # the Gemini SDK has no retry knob to hand this to
+        call_timeout = merged.pop("timeout", None)
+        if "timeout" not in request_options:
+            timeout_val = call_timeout if call_timeout is not None else self.timeout_val
+            if timeout_val is not None:
+                request_options["timeout"] = timeout_val
         try:
             response = await self.model.generate_content_async(prompt, request_options=request_options, **merged)
             return response.text
         except Exception as e:
-            logger.warning(f"Gemini chat error: {e}")
+            logger.warning(f"Gemini chat error: {describe_llm_error(e)}")
             raise
 
 def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:

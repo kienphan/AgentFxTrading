@@ -523,7 +523,9 @@ ELSE:
 | `closePositionsBeforeNews` | `false` | Đóng toàn bộ lệnh đang chạy trước khi tin Đỏ diễn ra |
 | `riskFactor` | `1.0` | Tỷ lệ rủi ro (%) tài khoản phân bổ cho mỗi lệnh (Khuyến nghị: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Tự động dời SL về hòa vốn khi đạt mục tiêu |
-| `breakEvenTrigger` | `250.0 pips` | Điểm kích hoạt hòa vốn ($2.50 trên Vàng) |
+| `breakEvenMode` | `Risk_Reward_Ratio` | Chọn ngưỡng được đọc: `Risk_Reward_Ratio` (mặc định) hoặc `Fixed_Pips` |
+| `breakEvenRrTrigger` | `1.5 R` | Dời SL về hòa vốn khi lợi nhuận đạt 1.5 lần khoảng SL ban đầu — **đây mới là ngưỡng thực sự có hiệu lực** |
+| `breakEvenTrigger` | `250.0 pips` | Ngưỡng theo pip, **chỉ** được đọc khi `breakEvenMode = Fixed_Pips`; bị bỏ qua ở mode R:R mặc định |
 ### 🏹 Bảng Cấu Hình Preset Cho Asian Range Judas Sweep
 
 | Tham Số | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY | BTCUSD | ETHUSD |
@@ -532,13 +534,13 @@ ELSE:
 | **Phiên Á (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Khung Giờ Killzones** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
 | **Biên Độ Phiên Á (Min / Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
-| **Độ Sâu Râu Quét (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **Độ Sâu Râu Quét (Buffer)** | `500.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
 | **Sàn SL Tối Thiểu (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
-| **Stop Loss Mặc Định** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
-| **Take Profit Mặc Định** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
-| **Điểm Kích Hoạt Hòa Vốn (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Stop Loss Mặc Định** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Take Profit Mặc Định** | `450.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **Điểm Kích Hoạt Hòa Vốn (R:R)** | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` |
 | **Điểm Tin Cậy AI Tối Thiểu** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Tỷ Lệ Rủi Ro / Lệnh** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| **Tỷ Lệ Rủi Ro / Lệnh** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `0.2%` | `0.2%` |
 
 ### 📊 Bảng Cấu Hình Preset Cho TMS + ORB (Theo Từng Mã)
 #### Metals & Indices

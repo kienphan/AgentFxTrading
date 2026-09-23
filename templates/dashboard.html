@@ -171,6 +171,21 @@
                     </div>
                 </div>
 
+                {# SL/TP cell: price plus the bot's P&L estimate at that level; falls back to the
+                   entry-time pip distance for rows written before prices were recorded. #}
+                {% macro sltp_line(tag, price, pnl, pips) %}
+                <div class="sltp-line"><span class="sltp-tag">{{ tag }}</span>
+                    {% if price %}<span class="td-mono">{{ price }}</span>{% if pnl is not none %} <span class="{% if pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">{% if pnl > 0 %}+{% elif pnl < 0 %}-{% endif %}${{ '%.2f' | format(pnl | abs) }}</span>{% endif %}
+                    {% elif pips %}<span class="td-dim">{{ pips }}p</span>
+                    {% else %}<span class="td-dim">—</span>{% endif %}
+                </div>
+                {% endmacro %}
+                {% macro close_reason_chip(reason) %}
+                {% set r = (reason or '') | lower %}
+                {% if not reason %}<span class="td-dim">—</span>
+                {% else %}<span class="reason-chip {% if 'stop out' in r or 'stopout' in r %}reason-chip--loss{% elif 'trailing' in r or 'break-even' in r or 'breakeven' in r %}reason-chip--lock{% elif 'takeprofit' in r or 'take profit' in r %}reason-chip--profit{% elif 'stoploss' in r or 'stop loss' in r %}reason-chip--loss{% endif %}" title="{{ reason }}">{{ reason }}</span>{% endif %}
+                {% endmacro %}
+
                 <!-- Active Positions Panel (Full-Width, Complete Info) -->
                 <section class="panel active-positions-panel">
                     <div class="panel-header">
@@ -198,7 +213,7 @@
                                 </thead>
                                 <tbody id="positions-table">
                                     {% for pos in positions %}
-                                    <tr>
+                                    <tr data-bot="{{ pos.bot_id }}">
                                         <td class="col-account account-cell">
                                             {% if pos.account_type == 'live' %}
                                             <span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>
@@ -239,7 +254,7 @@
                                         <td>{{ pos.volume }}L</td>
                                         <td class="td-mono">{{ pos.entry_price }}</td>
                                         <td class="td-mono td-current-price">{{ pos.current_price or pos.entry_price }}{% if pos.price_age_seconds is not none %}<span class="td-dim" title="price from the bot's last snapshot"> ·{{ (pos.price_age_seconds // 60) | int }}m</span>{% endif %}</td>
-                                        <td class="td-dim td-sltp">{{ pos.sl_pips }}p / {{ pos.tp_pips }}p</td>
+                                        <td class="td-sltp">{{ sltp_line('SL', pos.sl_price, pos.sl_pnl, pos.sl_pips) }}{{ sltp_line('TP', pos.tp_price, pos.tp_pnl, pos.tp_pips) }}</td>
                                         <td class="td-pnl-live">
                                             {% if pos.unrealized_pnl is none %}
                                             <span class="td-dim" title="broker-reported P&L arrives with the bot's next snapshot">—</span>
@@ -284,7 +299,9 @@
                                         <th>Vol</th>
                                         <th>Entry</th>
                                         <th>Exit</th>
+                                        <th>SL / TP</th>
                                         <th>Net P&amp;L</th>
+                                        <th>Close Reason</th>
                                         <th>Closed Time</th>
                                     </tr>
                                 </thead>
@@ -331,13 +348,15 @@
                                         <td>{{ trade.volume }}L</td>
                                         <td class="td-mono">{{ trade.entry_price }}</td>
                                         <td class="td-mono">{{ trade.exit_price }}</td>
+                                        <td class="td-sltp">{{ sltp_line('SL', trade.sl_price, none, trade.sl_pips) }}{{ sltp_line('TP', trade.tp_price, none, trade.tp_pips) }}</td>
                                         <td class="{% if trade.pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %} font-bold">
                                             {% if trade.pnl > 0 %}+{% endif %}${{ trade.pnl }}
                                         </td>
+                                        <td class="td-reason">{{ close_reason_chip(trade.close_reason) }}</td>
                                         <td class="td-dim">{{ trade.exit_time }}</td>
                                     </tr>
                                     {% else %}
-                                    <tr><td colspan="9" class="empty-state">No trade history</td></tr>
+                                    <tr><td colspan="11" class="empty-state">No trade history</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -1233,6 +1252,40 @@
             const cls=v>=0?'pnl-chip--profit':'pnl-chip--loss';
             return `<span class="pnl-chip ${cls}">${v>0?'+':''}$${v.toFixed(2)} (${p>0?'+':''}${p.toFixed(1)}p)</span>`;
         }
+        function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+        // One SL or TP line: the price plus the bot's P&L estimate at it. Rows written before
+        // prices were recorded fall back to the entry-time pip distance. Mirrors the sltp_line macro.
+        function sltpLineHtml(tag, price, pnl, pips){
+            let body;
+            if(price){
+                body=`<span class="td-mono">${price}</span>`;
+                if(pnl!==null&&pnl!==undefined){
+                    const v=Number(pnl)||0;
+                    body+=` <span class="${v>=0?'pnl-positive':'pnl-negative'}">${v>0?'+':(v<0?'-':'')}$${Math.abs(v).toFixed(2)}</span>`;
+                }
+            } else if(pips){
+                body=`<span class="td-dim">${pips}p</span>`;
+            } else {
+                body='<span class="td-dim">—</span>';
+            }
+            return `<div class="sltp-line"><span class="sltp-tag">${tag}</span>${body}</div>`;
+        }
+        function sltpCellHtml(o, withPnl){
+            return sltpLineHtml('SL', o.sl_price, withPnl?o.sl_pnl:null, o.sl_pips)
+                 + sltpLineHtml('TP', o.tp_price, withPnl?o.tp_pnl:null, o.tp_pips);
+        }
+        // Mirrors the close_reason_chip macro.
+        function closeReasonHtml(reason){
+            if(!reason) return '<span class="td-dim">—</span>';
+            const r=String(reason).toLowerCase();
+            let cls='';
+            if(r.includes('stop out')||r.includes('stopout')) cls='reason-chip--loss';
+            else if(r.includes('trailing')||r.includes('break-even')||r.includes('breakeven')) cls='reason-chip--lock';
+            else if(r.includes('takeprofit')||r.includes('take profit')) cls='reason-chip--profit';
+            else if(r.includes('stoploss')||r.includes('stop loss')) cls='reason-chip--loss';
+            const safe=escapeHtml(reason);
+            return `<span class="reason-chip ${cls}" title="${safe}">${safe}</span>`;
+        }
         function botBadge(b){
             if(!b)return '<span class="bot-badge bot-badge--default"><span class="bot-dot"></span>N/A</span>';
             const bl=String(b).toLowerCase();
@@ -1544,11 +1597,20 @@
                             curPriceCell.classList.add(newPrice >= oldPrice ? 'price-flash-up' : 'price-flash-down');
                         }
                     }
+                    // P&L and SL/TP belong to one bot's position; two bots can trade the same
+                    // symbol (cbot-xauusd and cbot-xauusd-judas), so match the bot as well.
+                    const rowBot = tr.dataset.bot;
+                    if (tick.bot_id && rowBot && rowBot !== tick.bot_id) return;
                     // The bot sends its own broker P&L sample with the tick when a position is
                     // open, so the chip stays live without the server rebuilding positions.
                     if (tick.pnl !== undefined && tick.pnl !== null) {
                         const pnlCell = tr.querySelector('.td-pnl-live');
                         if (pnlCell) pnlCell.innerHTML = pnlCellHtml(tick.pnl, tick.pips);
+                    }
+                    // Trailing / break-even stop moves show up here between bar snapshots.
+                    if (tick.levels) {
+                        const sltpCell = tr.querySelector('.td-sltp');
+                        if (sltpCell) sltpCell.innerHTML = sltpCellHtml(tick.levels, true);
                     }
                 }
             });
@@ -1625,7 +1687,7 @@
                     const priceAge = (typeof p.price_age_seconds === 'number') ? `<span class="td-dim" title="price from the bot's last snapshot"> ·${Math.floor(p.price_age_seconds/60)}m</span>` : '';
                     const pnlCell = pnlCellHtml(p.unrealized_pnl, p.unrealized_pnl_pips);
                     
-                    return `<tr>
+                    return `<tr data-bot="${escapeHtml(p.bot_id||'')}">
                         <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td>
                         <td>${botBadge(p.bot_id)}</td>
                         <td class="td-mono font-bold">${p.symbol}</td>
@@ -1633,7 +1695,7 @@
                         <td>${p.volume}L</td>
                         <td class="td-mono">${p.entry_price}</td>
                         <td class="td-mono td-current-price">${curPrice}${priceAge}</td>
-                        <td class="td-dim td-sltp">${p.sl_pips}p / ${p.tp_pips}p</td>
+                        <td class="td-sltp">${sltpCellHtml(p, true)}</td>
                         <td class="td-pnl-live">${pnlCell}</td>
                         <td class="td-dim">${p.entry_time}</td>
                     </tr>`;
@@ -1688,7 +1750,7 @@
             const isMultiAcc = (selectedAccountId === 'demo' || selectedAccountId === 'live' || selectedAccountId === 'all');
             const tb=document.getElementById('history-table');if(!tb)return;const ah=isMultiAcc?'':'hidden';
             if(!history.length){
-                tb.innerHTML='<tr><td colspan="9" class="empty-state">No trade history</td></tr>';
+                tb.innerHTML='<tr><td colspan="11" class="empty-state">No trade history</td></tr>';
             } else {
                 tb.innerHTML=history.map(t=>`<tr>
                     <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td>
@@ -1698,7 +1760,9 @@
                     <td>${t.volume}L</td>
                     <td class="td-mono">${t.entry_price}</td>
                     <td class="td-mono">${t.exit_price}</td>
+                    <td class="td-sltp">${sltpCellHtml(t, false)}</td>
                     <td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'} font-bold">${Number(t.pnl)>0?'+':''}${formatMoney(t.pnl)}</td>
+                    <td class="td-reason">${closeReasonHtml(t.close_reason)}</td>
                     <td class="td-dim">${t.exit_time}</td>
                 </tr>`).join('');
             }

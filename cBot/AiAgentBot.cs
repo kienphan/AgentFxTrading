@@ -219,6 +219,7 @@ namespace cAlgo.Robots
         private CancellationTokenSource _tickStreamCts;
         private readonly object _tickFrameLock = new object();
         private double _tickFrameBid, _tickFrameAsk, _tickFramePnl, _tickFramePips;
+        private double? _tickFrameSl, _tickFrameTp, _tickFrameSlPnl, _tickFrameTpPnl;
         private bool _tickFrameHasPnl;
         private long _tickFrameStamp;
         private DateTime _lastTickFrameAt = DateTime.MinValue;
@@ -1567,8 +1568,8 @@ namespace cAlgo.Robots
 
                 if (effectiveMfeRatio > 0 && giveback >= (mfe * effectiveMfeRatio))
                 {
-                    pos.Close();
                     string tierLabel = isTier2Giveback ? "Tier 2 (Tight 30-35%)" : "Tier 1";
+                    CloseWithReason(pos, $"Giveback Lock ({tierLabel}, {effectiveMfeRatio:P0} of MFE)");
                     if (ShowLogs) Print($"[Giveback % {tierLabel}] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {effectiveMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
                     continue;
                 }
@@ -1577,7 +1578,7 @@ namespace cAlgo.Robots
                 double effectiveGivebackAtr = isIndex ? Math.Max(MaxGivebackAtr, 1.0) * atrInPips : maxGivebackPips;
                 if (MaxGivebackAtr > 0 && giveback >= effectiveGivebackAtr)
                 {
-                    pos.Close();
+                    CloseWithReason(pos, "Giveback Lock (ATR)");
                     if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={effectiveGivebackAtr:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
                 }
             }
@@ -1637,7 +1638,7 @@ namespace cAlgo.Robots
             {
                 foreach (var pos in botPositions)
                 {
-                    pos.Close();
+                    CloseWithReason(pos, "Session End (EOD flatten)");
                     if (ShowLogs) Print($"[EOD Force-Flatten] Pos#{pos.Id} closed outside trading session (phase={session.phase}, UTC={Server.TimeInUtc:HH:mm:ss})");
                 }
             }
@@ -1657,6 +1658,56 @@ namespace cAlgo.Robots
                 _tradesToday = 0;
             }
             _lastClosedTradeDay = today;
+        }
+
+        // ==========================================
+        // CLOSE REASON + P&L AT SL/TP (dashboard reporting)
+        // ==========================================
+        // cTrader's own reason wins for broker-side exits (StopLoss, TakeProfit, StopOut). A plain
+        // "Closed" means this bot (or a human) closed it, so the rule that called the close is
+        // recorded here just before the call and reported instead.
+        private readonly Dictionary<int, string> _closeReasons = new Dictionary<int, string>();
+
+        private void CloseWithReason(Position pos, string reason)
+        {
+            _closeReasons[pos.Id] = reason;
+            pos.Close();
+        }
+
+        private string ResolveCloseReason(PositionClosedEventArgs args)
+        {
+            var pos = args.Position;
+            string botReason;
+            bool hasBotReason = _closeReasons.TryGetValue(pos.Id, out botReason);
+            _closeReasons.Remove(pos.Id);
+
+            switch (args.Reason)
+            {
+                case PositionCloseReason.TakeProfit:
+                    return "Take Profit";
+                case PositionCloseReason.StopLoss:
+                    // A stop at or beyond entry was moved there by break-even / trailing.
+                    bool lockedIn = pos.StopLoss.HasValue && (pos.TradeType == TradeType.Buy
+                        ? pos.StopLoss.Value >= pos.EntryPrice
+                        : pos.StopLoss.Value <= pos.EntryPrice);
+                    return lockedIn ? "Stop Loss (Trailing / Break-Even)" : "Stop Loss";
+                case PositionCloseReason.StopOut:
+                    return "Stop Out (margin)";
+                default:
+                    return hasBotReason ? botReason : "Closed (manual / external)";
+            }
+        }
+
+        /// <summary>The position's net P&L if it closed at `level`: the gross move at cTrader's own
+        /// pip value, less the round-trip commission, plus swap so far (same fee model as
+        /// FlowRsiBot.CalculateEstimatedNetProfitAtSL).</summary>
+        private double? PnlAtLevel(Position pos, double? level)
+        {
+            if (!level.HasValue || level.Value <= 0 || Symbol.PipSize <= 0) return null;
+            double pips = (pos.TradeType == TradeType.Buy
+                ? level.Value - pos.EntryPrice
+                : pos.EntryPrice - level.Value) / Symbol.PipSize;
+            return Math.Round(pips * Symbol.PipValue * pos.VolumeInUnits - Math.Abs(pos.Commissions) * 2.0 + pos.Swap, 2);
         }
 
         private void OnPositionClosed(PositionClosedEventArgs args)
@@ -1710,7 +1761,7 @@ namespace cAlgo.Robots
             }
 
             // Report to portfolio manager
-            _ = ReportPositionClosed(args.Position, pnl, exitPrice);
+            _ = ReportPositionClosed(args.Position, pnl, exitPrice, ResolveCloseReason(args));
         }
 
         // ==========================================
@@ -1873,7 +1924,8 @@ namespace cAlgo.Robots
                     side = position.TradeType.ToString(),
                     volume = position.VolumeInUnits / Symbol.LotSize,
                     entry_price = position.EntryPrice,
-
+                    sl_price = position.StopLoss,
+                    tp_price = position.TakeProfit,
                     sl_pips = Math.Round(slPips, 1),
                     tp_pips = Math.Round(tpPips, 1),
                     account_number = Account.Number.ToString(),
@@ -1943,7 +1995,7 @@ namespace cAlgo.Robots
             }
         }
 
-        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice)
+        private async Task ReportPositionClosed(Position position, double pnl, double exitPrice, string closeReason)
         {
             try
             {
@@ -1956,6 +2008,9 @@ namespace cAlgo.Robots
                     symbol = SymbolName,
                     exit_price = exitPrice,
                     pnl = pnl,
+                    close_reason = closeReason,
+                    sl_price = position.StopLoss,
+                    tp_price = position.TakeProfit,
                     account_number = Account.Number.ToString(),
                     account_type = Account.IsLive ? "live" : "demo",
                     account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
@@ -2050,7 +2105,7 @@ namespace cAlgo.Robots
                                    (pos.TradeType == TradeType.Sell && bias == "BULLISH");
                 if (againstBias && decision.action == "HOLD")
                 {
-                    pos.Close();
+                    CloseWithReason(pos, $"Bias Flip Exit ({bias})");
                     if (ShowLogs) Print($"[BiasFlip] Pos#{pos.Id} closed: bias flipped to {bias}");
                     return;
                 }
@@ -2059,7 +2114,7 @@ namespace cAlgo.Robots
             // CLOSE_ALL
             if (decision.action == "CLOSE_ALL")
             {
-                foreach (var pos in GetBotPositions()) pos.Close();
+                foreach (var pos in GetBotPositions()) CloseWithReason(pos, $"AI Close: {decision.reason}");
                 return;
             }
 
@@ -2445,6 +2500,11 @@ namespace cAlgo.Robots
             public double ask { get; set; }
             public double? pnl { get; set; }
             public double? pips { get; set; }
+            // SL/TP prices and the P&L at each; sent only with a position (null = no level)
+            public double? sl { get; set; }
+            public double? tp { get; set; }
+            public double? sl_pnl { get; set; }
+            public double? tp_pnl { get; set; }
         }
 
         private void StartTickStream()
@@ -2491,12 +2551,17 @@ namespace cAlgo.Robots
             _lastTickFrameAt = now;
 
             double pnl = 0, pips = 0;
+            double? sl = null, tp = null, slPnl = null, tpPnl = null;
             bool hasPnl = false;
             var positions = GetBotPositions();
             if (positions.Length > 0)
             {
                 var pos = positions[0];
                 pnl = Math.Round(pos.NetProfit, 2);
+                sl = pos.StopLoss;
+                tp = pos.TakeProfit;
+                slPnl = PnlAtLevel(pos, pos.StopLoss);
+                tpPnl = PnlAtLevel(pos, pos.TakeProfit);
                 pips = Math.Round(GetPnlPips(pos), 1);
                 hasPnl = true;
             }
@@ -2508,6 +2573,8 @@ namespace cAlgo.Robots
                 _tickFramePnl = pnl;
                 _tickFramePips = pips;
                 _tickFrameHasPnl = hasPnl;
+                _tickFrameSl = sl; _tickFrameTp = tp;
+                _tickFrameSlPnl = slPnl; _tickFrameTpPnl = tpPnl;
                 _tickFrameStamp++;
             }
         }
@@ -2537,6 +2604,7 @@ namespace cAlgo.Robots
                         await Task.Delay(Math.Min(250, TickStreamMs), token);
 
                         double bid, ask, pnl, pips;
+                        double? sl, tp, slPnl, tpPnl;
                         bool hasPnl;
                         long stamp;
                         lock (_tickFrameLock)
@@ -2544,6 +2612,8 @@ namespace cAlgo.Robots
                             bid = _tickFrameBid; ask = _tickFrameAsk;
                             pnl = _tickFramePnl; pips = _tickFramePips;
                             hasPnl = _tickFrameHasPnl; stamp = _tickFrameStamp;
+                            sl = _tickFrameSl; tp = _tickFrameTp;
+                            slPnl = _tickFrameSlPnl; tpPnl = _tickFrameTpPnl;
                         }
 
                         bool isNewTick = (stamp != sentStamp && (bid > 0 || ask > 0));
@@ -2561,7 +2631,11 @@ namespace cAlgo.Robots
                                 bid = bid,
                                 ask = ask,
                                 pnl = hasPnl ? (double?)pnl : null,
-                                pips = hasPnl ? (double?)pips : null
+                                pips = hasPnl ? (double?)pips : null,
+                                sl = hasPnl ? sl : null,
+                                tp = hasPnl ? tp : null,
+                                sl_pnl = hasPnl ? slPnl : null,
+                                tp_pnl = hasPnl ? tpPnl : null
                             });
                             sentStamp = stamp;
                         }

@@ -143,9 +143,9 @@ def sanitize_bot_id(bot_id: Optional[str]) -> str:
     if " --" in cleaned:
         cleaned = cleaned.split(" --")[0].strip()
     return cleaned.strip("\"'“”‘’`") or "default"
-from app.llm_client import create_llm_client, JSONResponseParser
+from app.llm_client import create_llm_client, JSONResponseParser, describe_llm_error, _clean_env_float, _clean_env_int
 from app.portfolio import init_portfolio, get_portfolio_manager, is_us_index
-from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, broadcast_decision, record_ai_decision, manager as ws_manager, WebSocketLogHandler
+from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, broadcast_decision, record_ai_decision, manager as ws_manager, WebSocketLogHandler, tick_levels
 from app.accounts import init_account_registry, get_account_registry
 from app.cbot_watchdog import record_bot_snapshot
 
@@ -201,6 +201,14 @@ portfolio_manager = init_portfolio()
 # Create LLM client based on LLM_PROVIDER env variable
 # Supports: "qwen", "openai", "anthropic", "deepseek", "openai_compatible"
 llm_client = create_llm_client()
+
+# /trade answers a cBot that is waiting on the other end of an HTTP call (FlowRsiBot gives
+# up after 60 s), so the client-wide LLM_TIMEOUT x LLM_MAX_RETRIES budget (90 s x 4 tries)
+# is far too long here: the bot would time out before the safety fallback ever reached it.
+# Each attempt gets its own timeout, and a hard deadline caps retries plus backoff.
+TRADE_LLM_TIMEOUT = _clean_env_float("LLM_TRADE_TIMEOUT", 40.0)
+TRADE_LLM_MAX_RETRIES = _clean_env_int("LLM_TRADE_MAX_RETRIES", 1)
+TRADE_LLM_DEADLINE = _clean_env_float("LLM_TRADE_DEADLINE", 55.0)
 
 # ---- Data Models (from cBot) ----
 class BarData(BaseModel):
@@ -1637,7 +1645,7 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
                 action="ADJUST",
                 new_sl_price=safe_be_sl,
                 confidence=75.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
+                reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
@@ -1648,7 +1656,7 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
                 action="ADJUST",
                 new_sl_price=safe_be_sl,
                 confidence=75.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
+                reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Position in verified profit (+${price_gain:.2f} >= +${min_be_profit_price:.2f}) -> Moving SL to Break-Even ({safe_be_sl}).",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
@@ -1662,7 +1670,7 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
                 action="ADJUST",
                 new_sl_price=strat.recent_high,
                 confidence=70.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Tightening SELL SL to recent swing high ({strat.recent_high}) to cap risk.",
+                reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Tightening SELL SL to recent swing high ({strat.recent_high}) to cap risk.",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
@@ -1674,7 +1682,7 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
                 action="ADJUST",
                 new_sl_price=strat.recent_low,
                 confidence=70.0,
-                reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Tightening BUY SL to recent swing low ({strat.recent_low}) to cap risk.",
+                reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Tightening BUY SL to recent swing low ({strat.recent_low}) to cap risk.",
                 request_id=snapshot.request_id,
                 bot_id=snapshot.bot_id,
                 symbol=snapshot.symbol,
@@ -1688,7 +1696,7 @@ def generate_fallback_decision(snapshot: MarketSnapshot, error_msg: str) -> Agen
         sl_pips=0.0,
         tp_pips=0.0,
         confidence=50.0,
-        reason=f"[SAFETY FALLBACK] LLM timeout ({error_msg}). Retaining protective SL ({cur_sl}).",
+        reason=f"[SAFETY FALLBACK] LLM call failed ({error_msg}). Retaining protective SL ({cur_sl}).",
         request_id=snapshot.request_id,
         bot_id=snapshot.bot_id,
         symbol=snapshot.symbol,
@@ -1892,11 +1900,14 @@ async def trade_decision(snapshot: MarketSnapshot):
             {"role": "user", "content": user_prompt}
         ]
         
-        kwargs = {"temperature": 0.1}
+        kwargs = {"temperature": 0.1, "timeout": TRADE_LLM_TIMEOUT, "max_retries": TRADE_LLM_MAX_RETRIES}
         if hasattr(llm_client, 'client') and hasattr(llm_client.client, 'chat'):
             kwargs["response_format"] = {"type": "json_object"}
         
-        result_str = await llm_client.chat(messages, **kwargs)
+        try:
+            result_str = await asyncio.wait_for(llm_client.chat(messages, **kwargs), timeout=TRADE_LLM_DEADLINE)
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"no LLM answer within the {TRADE_LLM_DEADLINE:.0f}s /trade deadline") from None
         decision_dict = JSONResponseParser.parse(result_str)
         
         # Inject metadata if not in response
@@ -2124,12 +2135,21 @@ async def trade_decision(snapshot: MarketSnapshot):
 
         return AgentDecision(**decision_dict)
     except Exception as e:
-        logger.error(f"[{account_id}/{snapshot.bot_id}] LLM Error: {e}")
-        fallback = generate_fallback_decision(snapshot, str(e))
+        error_desc = describe_llm_error(e)
+        logger.error(f"[{account_id}/{snapshot.bot_id}] LLM Error: {error_desc}")
+        fallback = generate_fallback_decision(snapshot, error_desc)
         logger.info(
             f"[FALLBACK DECISION] {account_id}/{snapshot.bot_id} -> Action: {fallback.action} | "
             f"new_sl_price: {fallback.new_sl_price} | Conf: {fallback.confidence:.1f}% | Reason: {fallback.reason}"
         )
+        # Record it like a model decision so the dashboard shows the bot running on the fallback.
+        try:
+            fallback_dict = fallback.model_dump()
+            fallback_dict["is_fallback"] = True
+            record_ai_decision(fallback_dict)
+            await broadcast_decision(fallback_dict)
+        except Exception:
+            pass
         return fallback
 
 @app.post("/api/tick")
@@ -2173,12 +2193,25 @@ async def handle_telemetry_tick(request: dict):
             pips = float(request["pips"]) if request.get("pips") is not None else None
         except (TypeError, ValueError):
             pnl = pips = None
+        # FlowRsiBot posts a `positions` list instead of flat fields; its first entry is the
+        # position the dashboard row shows (one per bot).
+        levels = tick_levels(request)
+        positions = request.get("positions")
+        if pnl is None and isinstance(positions, list) and positions and isinstance(positions[0], dict):
+            first = positions[0]
+            try:
+                pnl = float(first["net_profit"]) if first.get("net_profit") is not None else None
+                pips = float(first["pips"]) if first.get("pips") is not None else None
+            except (TypeError, ValueError):
+                pnl = pips = None
+            levels = tick_levels(first)
         if pnl is not None:
-            portfolio_manager.update_position_metrics(bot_id, pnl, pips or 0.0, account_id=account_id)
+            portfolio_manager.update_position_metrics(bot_id, pnl, pips or 0.0, account_id=account_id,
+                                                      levels=levels)
 
         try:
             await broadcast_tick(symbol=symbol, bid=bid, ask=ask, account_id=account_id,
-                                 bot_id=bot_id, pnl=pnl, pips=pips)
+                                 bot_id=bot_id, pnl=pnl, pips=pips, levels=levels)
         except Exception:
             pass
             
@@ -2205,6 +2238,15 @@ async def handle_cbot_event(request: dict):
     except Exception as e:
         logger.error(f"Error handling cbot event: {e}")
         return {"status": "error", "message": str(e)}
+
+
+def _level_price(value) -> Optional[float]:
+    """An SL/TP price from a bot report; cTrader has no level as null, older bots send 0."""
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 0 else None
 
 
 @app.post("/portfolio/report")
@@ -2252,6 +2294,8 @@ async def report_position(request: dict):
             tp_pips = request.get("tp_pips")
             
             success = portfolio_manager.register_position(
+                sl_price=_level_price(request.get("sl_price")),
+                tp_price=_level_price(request.get("tp_price")),
                 bot_id=bot_id,
                 symbol=symbol,
                 side=side,
@@ -2332,13 +2376,19 @@ async def report_position(request: dict):
                 if latest:
                     exit_price = latest.get("bid") or latest.get("ask")
             
+            # FlowRsiBot sends `reason`; the other bots send `close_reason`. Both are free text
+            # composed by the bot (cTrader's close reason plus the bot's own exit rule).
+            close_reason = (request.get("close_reason") or request.get("reason") or "").strip() or None
             success = portfolio_manager.close_position(
                 bot_id=bot_id,
                 symbol=symbol,
                 exit_price=exit_price,
                 pnl=pnl,
                 account_id=account_id,
-                ctrader_id=ctrader_id
+                ctrader_id=ctrader_id,
+                close_reason=close_reason,
+                sl_price=_level_price(request.get("sl_price")),
+                tp_price=_level_price(request.get("tp_price")),
             )
             
             if success:
