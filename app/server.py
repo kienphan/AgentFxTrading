@@ -1801,9 +1801,60 @@ async def trade_decision(snapshot: MarketSnapshot):
             "and displays clear momentum exhaustion or structural reversal, lock in gains by adjusting SL or closing. Do not exit prematurely for petty cents.\n"
             "4. NEW ENTRIES: If candidate_action is BUY/SELL, confirm with confidence >= 75% only when Nested RSI cross and SMC zone align."
         )
+        # SMC Swing Structure & Multi-timeframe / Indicator context
+        flow_sw_str = ""
+        if snapshot.multi_timeframe:
+            flow_lines = []
+            cur_tf = snapshot.multi_timeframe.current_tf
+            h1_tf = snapshot.multi_timeframe.h1_tf
+            h4_tf = snapshot.multi_timeframe.h4_tf
+            for tf_ctx, label in [(cur_tf, f"Current ({cur_tf.timeframe if cur_tf and cur_tf.timeframe else snapshot.timeframe})"), (h1_tf, "Higher TF (H1)"), (h4_tf, "Major TF (H4)")]:
+                if tf_ctx:
+                    sw_sub = ""
+                    if tf_ctx.swing_structure:
+                        sw = tf_ctx.swing_structure
+                        sw_sub = (
+                            f" | Swings: High={format_price(sw.last_swing_high, snapshot.symbol)} ({sw.swing_high_type or 'N/A'}), "
+                            f"Low={format_price(sw.last_swing_low, snapshot.symbol)} ({sw.swing_low_type or 'N/A'}), "
+                            f"PrevH={format_price(sw.prev_swing_high, snapshot.symbol)}, "
+                            f"PrevL={format_price(sw.prev_swing_low, snapshot.symbol)} "
+                            f"[Struct: {sw.market_structure or 'SIDEWAYS'}]"
+                        )
+                    flow_lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{sw_sub}")
+            if flow_lines:
+                flow_sw_str = "SMC Swing Structure (Multi-Timeframe):\n" + "\n".join(flow_lines) + "\n"
+        elif snapshot.strategy and (snapshot.strategy.recent_high > 0 or snapshot.strategy.recent_low > 0):
+            rec_h = snapshot.strategy.recent_high
+            rec_l = snapshot.strategy.recent_low
+            # Determine swing relation vs current price
+            cur_p = snapshot.bid or snapshot.ask
+            sh_tag = "HH" if rec_h > cur_p else "LH"
+            sl_tag = "HL" if rec_l < cur_p else "LL"
+            st_lbl = "BULLISH_HH_HL" if sh_tag == "HH" and sl_tag == "HL" else ("BEARISH_LH_LL" if sh_tag == "LH" and sl_tag == "LL" else "SIDEWAYS")
+            flow_sw_str = (
+                f"SMC Swing Structure (Current {snapshot.timeframe}):\n"
+                f"- Swings: High={format_price(rec_h, snapshot.symbol)} (Resistance/BSL), "
+                f"Low={format_price(rec_l, snapshot.symbol)} (Support/SSL) [Struct: {st_lbl}]\n"
+            )
+
+        atr_info_str = ""
+        if snapshot.strategy and snapshot.strategy.atr > 0:
+            atr_val = snapshot.strategy.atr
+            sym_u = snapshot.symbol.upper()
+            if "XAU" in sym_u or "GOLD" in sym_u:
+                atr_p = atr_val / 0.01 if atr_val < 100.0 else atr_val
+            elif any(k in sym_u for k in ["US30", "USTEC", "DE40", "UK100", "BTC", "ETH"]):
+                atr_p = atr_val
+            elif "JPY" in sym_u:
+                atr_p = atr_val / 0.01 if atr_val < 5.0 else atr_val
+            else:
+                atr_p = atr_val / 0.0001 if atr_val < 1.0 else atr_val
+            atr_info_str = f" | ATR (14): {atr_p:.1f} pips ({format_price(atr_val, snapshot.symbol)} price move)"
+
         user_prompt = (
             f"Symbol: {snapshot.symbol} ({snapshot.timeframe})\n"
-            f"Current Bid={snapshot.bid:g}, Ask={snapshot.ask:g}, Spread={snapshot.spread_pips or 0:.1f}p\n"
+            f"Current Bid={snapshot.bid:g}, Ask={snapshot.ask:g}, Spread={snapshot.spread_pips or 0:.1f}p{atr_info_str}\n"
+            f"{flow_sw_str}"
             f"Nested RSI: Fast={snapshot.fast_rsi}, Slow={snapshot.slow_rsi}, Signal={snapshot.rsi_cross_signal}\n"
             f"SMC: Zone={zone_str}, InFVG={snapshot.in_fvg_zone} ({snapshot.fvg_type}), LiquiditySwept={snapshot.liquidity_swept} ({snapshot.swept_liquidity_type})\n"
             f"Proposed Technical Setup: Candidate={cand_str}, SL={snapshot.technical_sl_price}, TP={snapshot.technical_tp_price}, RR={snapshot.technical_risk_reward}\n"

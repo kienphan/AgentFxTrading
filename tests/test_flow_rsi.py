@@ -77,8 +77,15 @@ async def test_flow_rsi_snapshot_routing(monkeypatch):
         ),
         bars=[BarData(time="2026-09-17 15:00:00")]
     )
-
     decision = await trade_decision(snap)
     assert decision.action == "BUY"
     assert decision.confidence == 85.0
     assert "Nested RSI" in decision.reason
+
+    # Verify prompt received by llm_client contains SMC Swing Structure
+    messages = mock_chat.call_args[0][0]
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert "SMC Swing Structure" in user_content
+    assert "High=1.08950 (Resistance/BSL)" in user_content
+    assert "Low=1.08200 (Support/SSL)" in user_content
+    assert "[Struct: BULLISH_HH_HL]" in user_content
