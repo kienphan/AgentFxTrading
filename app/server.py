@@ -299,6 +299,8 @@ class PositionInfo(BaseModel):
     unrealized_pnl: float = 0.0
     unrealized_pnl_pips: float = 0.0
     pnl: Optional[float] = None  # Alias for unrealized_pnl
+    pnl_pips: Optional[float] = None  # Alias for unrealized_pnl_pips
+    pips: Optional[float] = None  # Alias for unrealized_pnl_pips (the tick route's name)
     mfe_pips: float = 0.0  # Maximum Favorable Excursion
     giveback_pips: float = 0.0  # MFE - current profit
     sl_price: float = 0.0
@@ -316,6 +318,25 @@ class PositionInfo(BaseModel):
     @property
     def resolved_pnl(self) -> float:
         return self.unrealized_pnl if self.unrealized_pnl != 0.0 else (self.pnl or 0.0)
+
+    @property
+    def resolved_pnl_pips(self) -> float:
+        """The position's P&L in pips, under whichever name the reporting cBot used.
+
+        AiAgentBot sends `unrealized_pnl_pips`; FlowRsiBot and AsianRangeJudasSweepBot use the
+        short names they already use on the tick route (`pnl_pips` / `pips`), matching their
+        `pnl` alias for the money. Only the bot can produce this figure - the server has no pip
+        size and no FX rate - so an unreported name has to fall through to the next alias
+        instead of the 0.0 default, which is what printed a flat "(0.0p)" next to a correct
+        dollar amount on the dashboard. A pips field the bot did send is authoritative even
+        when it is exactly 0.0, hence the membership test rather than a truthiness one.
+        """
+        if "unrealized_pnl_pips" in self.model_fields_set:
+            return self.unrealized_pnl_pips
+        for alias in (self.pnl_pips, self.pips):
+            if alias is not None:
+                return alias
+        return self.unrealized_pnl_pips
 
 class SessionInfo(BaseModel):
     session_name: str = "london"  # "london", "newyork", "tokyo", etc.
@@ -1718,7 +1739,7 @@ async def trade_decision(snapshot: MarketSnapshot):
             "side": snapshot.position.resolved_side,
             "entry_price": snapshot.position.entry_price,
             "unrealized_pnl": snapshot.position.resolved_pnl,
-            "unrealized_pnl_pips": snapshot.position.unrealized_pnl_pips,
+            "unrealized_pnl_pips": snapshot.position.resolved_pnl_pips,
             "mfe_pips": snapshot.position.mfe_pips,
             "giveback_pips": snapshot.position.giveback_pips,
             "sl_price": snapshot.position.sl or snapshot.position.sl_price,

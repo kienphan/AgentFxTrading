@@ -338,6 +338,9 @@ namespace cAlgo.Robots
             public double entry_price { get; set; }
             public double current_price { get; set; }
             public double pnl { get; set; }
+            // The dashboard prints the P&L in pips next to the money and cannot derive it
+            // (no pip size, no FX rate server-side), so the snapshot has to carry it too.
+            public double pnl_pips { get; set; }
             public double? sl { get; set; }
             public double? tp { get; set; }
             public double duration_minutes { get; set; }
@@ -489,12 +492,12 @@ namespace cAlgo.Robots
                 // High-Watermark Drawdown Circuit Breaker check
                 CheckCircuitBreaker();
 
-                // Stream Live Tick Telemetry to Web Hub (throttled every 5 seconds)
-                if (RunningMode == RunningMode.RealTime && (DateTime.UtcNow - _lastTickTelemetryTime).TotalSeconds >= 5.0)
-                {
-                    _lastTickTelemetryTime = DateTime.UtcNow;
-                    SendLiveTickTelemetry();
-                }
+                // Stream Live Tick Telemetry to Web Hub. The throttle lives inside
+                // SendLiveTickTelemetry so the forced calls share one clock: stamping it here as
+                // well meant every periodic send measured its own fresh timestamp, read ~0 s
+                // against the 10 s interval and returned. Nothing but an open/close/modify ever
+                // reached the server, so the dashboard's P&L cell fell back to the bar snapshot.
+                SendLiveTickTelemetry();
             }
             catch (Exception ex)
             {
@@ -894,6 +897,7 @@ namespace cAlgo.Robots
                         entry_price = p.EntryPrice,
                         current_price = p.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask,
                         pnl = p.NetProfit,
+                        pnl_pips = Math.Round(p.Pips, 1),
                         sl = p.StopLoss,
                         tp = p.TakeProfit,
                         duration_minutes = (Server.TimeInUtc - p.EntryTime).TotalMinutes

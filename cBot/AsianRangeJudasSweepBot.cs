@@ -2426,6 +2426,9 @@ namespace cAlgo.Robots
             public double entry_price { get; set; }
             public double current_price { get; set; }
             public double pnl { get; set; }
+            // The dashboard prints the P&L in pips next to the money and cannot derive it
+            // (no pip size, no FX rate server-side), so the snapshot has to carry it too.
+            public double pnl_pips { get; set; }
             public double? sl { get; set; }
             public double? tp { get; set; }
             public double duration_minutes { get; set; }
@@ -3266,6 +3269,7 @@ Reply strictly with JSON object.";
                         entry_price = p.EntryPrice,
                         current_price = p.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask,
                         pnl = p.NetProfit,
+                        pnl_pips = Math.Round(p.Pips, 1),
                         sl = p.StopLoss,
                         tp = p.TakeProfit,
                         duration_minutes = (Server.Time - p.EntryTime).TotalMinutes
