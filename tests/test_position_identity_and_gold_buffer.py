@@ -94,6 +94,79 @@ def test_close_without_a_ctrader_id_still_works(pm):
     )
 
 
+def test_close_position_with_ctrader_id_matches_open_position_having_null_ctrader_id(tmp_path):
+    """If a position was registered without ctrader_id, closing with ctrader_id must still find and close it."""
+    manager = PortfolioManager(db_path=str(tmp_path / "legacy_close.db"))
+    manager.register_position(
+        bot_id="hk50-bot", symbol="HK50", side="Sell", volume=0.2,
+        entry_price=24858.5, sl_pips=50.0, tp_pips=100.0, account_id="acct-live",
+        ctrader_id=None,
+    )
+    assert manager.close_position(
+        bot_id="hk50-bot", symbol="HK50", exit_price=24799.7, pnl=0.59,
+        account_id="acct-live", ctrader_id=347787252, close_reason="Session End",
+    )
+    conn = manager._get_conn()
+    try:
+        row = conn.execute("SELECT status, pnl, ctrader_id, close_reason FROM positions WHERE bot_id = ?", ("hk50-bot",)).fetchone()
+        assert row[0] == "closed"
+        assert row[1] == pytest.approx(0.59)
+        assert row[2] == 347787252
+        assert row[3] == "Session End"
+    finally:
+        conn.close()
+
+
+def test_partial_close_with_ctrader_id_matches_open_position_having_null_ctrader_id(tmp_path):
+    """If a position was registered without ctrader_id, partial close must bank PnL and attach ctrader_id."""
+    manager = PortfolioManager(db_path=str(tmp_path / "legacy_partial.db"))
+    manager.register_position(
+        bot_id="hk50-bot", symbol="HK50", side="Sell", volume=0.2,
+        entry_price=24858.5, sl_pips=50.0, tp_pips=100.0, account_id="acct-live",
+        ctrader_id=None,
+    )
+    # Partial close:
+    assert manager.record_partial_close(
+        bot_id="hk50-bot", symbol="HK50", remaining_volume=0.1, realized_pnl=0.52,
+        account_id="acct-live", ctrader_id=347787252,
+    )
+    conn = manager._get_conn()
+    try:
+        row = conn.execute("SELECT status, volume, pnl, ctrader_id FROM positions WHERE bot_id = ?", ("hk50-bot",)).fetchone()
+        assert row[0] == "open"
+        assert row[1] == pytest.approx(0.1)
+        assert row[2] == pytest.approx(0.52)
+        assert row[3] == 347787252
+    finally:
+        conn.close()
+
+    # Subsequent final close uses ctrader_id:
+    assert manager.close_position(
+        bot_id="hk50-bot", symbol="HK50", exit_price=24799.7, pnl=0.59,
+        account_id="acct-live", ctrader_id=347787252,
+    )
+    conn = manager._get_conn()
+    try:
+        row = conn.execute("SELECT status, volume, pnl, ctrader_id FROM positions WHERE bot_id = ?", ("hk50-bot",)).fetchone()
+        assert row[0] == "closed"
+        assert row[1] == pytest.approx(0.2)  # initial_volume restored on close
+        assert row[2] == pytest.approx(1.11)  # 0.52 + 0.59
+    finally:
+        conn.close()
+
+
+def test_close_and_partial_close_return_false_when_no_position_matched(tmp_path):
+    """Unmatched closes must return False and not silently succeed."""
+    manager = PortfolioManager(db_path=str(tmp_path / "empty.db"))
+    assert not manager.close_position(
+        bot_id="ghost-bot", symbol="EURUSD", exit_price=1.10, pnl=0.0,
+        account_id="acct-1", ctrader_id=999,
+    )
+    assert not manager.record_partial_close(
+        bot_id="ghost-bot", symbol="EURUSD", remaining_volume=0.05, realized_pnl=1.0,
+        account_id="acct-1", ctrader_id=999,
+    )
+
 # ── X-02 ──
 
 def test_gold_judas_sweep_buffer_is_scaled_for_dollar_quoting():

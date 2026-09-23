@@ -246,23 +246,72 @@ class PortfolioManager:
         """
         conn = self._get_conn()
         try:
-            sql = """
-                UPDATE positions
-                SET initial_volume = COALESCE(initial_volume, volume),
-                    volume = ?, pnl = COALESCE(pnl, 0) + ?
-                WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
-            """
-            args = [remaining_volume, realized_pnl, bot_id, symbol, account_id]
+            matched = 0
             if ctrader_id is not None:
-                sql += " AND ctrader_id = ?"
-                args.append(ctrader_id)
-            cur = conn.execute(sql, tuple(args))
-            matched = cur.rowcount
+                # 1. Primary match: exact ctrader_id
+                sql = """
+                    UPDATE positions
+                    SET initial_volume = COALESCE(initial_volume, volume),
+                        volume = ?, pnl = COALESCE(pnl, 0) + ?
+                    WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ? AND ctrader_id = ?
+                """
+                cur = conn.execute(sql, (remaining_volume, realized_pnl, bot_id, symbol, account_id, ctrader_id))
+                matched = cur.rowcount
+
+                if not matched:
+                    # 2. Fallback: position registered without ctrader_id (e.g. older bot/payload),
+                    # match open position where ctrader_id IS NULL and link ctrader_id
+                    fallback_sql = """
+                        UPDATE positions
+                        SET initial_volume = COALESCE(initial_volume, volume),
+                            volume = ?, pnl = COALESCE(pnl, 0) + ?, ctrader_id = ?
+                        WHERE id = (
+                            SELECT id FROM positions
+                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                              AND ctrader_id IS NULL
+                            ORDER BY entry_time ASC
+                            LIMIT 1
+                        )
+                    """
+                    cur = conn.execute(fallback_sql, (remaining_volume, realized_pnl, ctrader_id, bot_id, symbol, account_id))
+                    matched = cur.rowcount
+
+                if not matched:
+                    # 3. Last resort: match any open position for this bot/symbol/account
+                    last_resort_sql = """
+                        UPDATE positions
+                        SET initial_volume = COALESCE(initial_volume, volume),
+                            volume = ?, pnl = COALESCE(pnl, 0) + ?, ctrader_id = COALESCE(?, ctrader_id)
+                        WHERE id = (
+                            SELECT id FROM positions
+                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                            ORDER BY entry_time ASC
+                            LIMIT 1
+                        )
+                    """
+                    cur = conn.execute(last_resort_sql, (remaining_volume, realized_pnl, ctrader_id, bot_id, symbol, account_id))
+                    matched = cur.rowcount
+            else:
+                # No ctrader_id supplied: update the oldest open position
+                sql = """
+                    UPDATE positions
+                    SET initial_volume = COALESCE(initial_volume, volume),
+                        volume = ?, pnl = COALESCE(pnl, 0) + ?
+                    WHERE id = (
+                        SELECT id FROM positions
+                        WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                        ORDER BY entry_time ASC
+                        LIMIT 1
+                    )
+                """
+                cur = conn.execute(sql, (remaining_volume, realized_pnl, bot_id, symbol, account_id))
+                matched = cur.rowcount
+
             conn.commit()
             if not matched:
                 logger.warning(
                     f"Partial close ignored: no open position for {symbol} by {bot_id} "
-                    f"on account {account_id}"
+                    f"(ctrader_id={ctrader_id}) on account {account_id}"
                 )
                 return False
             logger.info(
@@ -283,29 +332,84 @@ class PortfolioManager:
         """Mark position as closed (single source of truth)."""
         conn = self._get_conn()
         try:
-            # Update position (daily_stats view automatically updates)
-            # pnl is ADDITIVE: a position may already carry P&L banked by record_partial_close,
-            # and `pnl` is NULL for positions that never had one, so COALESCE covers both.
-            # ctrader_id narrows this to the one position when the bot supplies it; without it
-            # the update would hit every open row for this (bot_id, symbol).
-            # sl_price / tp_price keep the value recorded at entry when the bot did not report
-            # the final levels (an older cBot build), hence COALESCE rather than a plain set.
-            # volume goes back to what the position opened with, so that it matches the pnl
-            # summed over every partial slice.
-            sql = """
-                UPDATE positions
-                SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
-                    volume = COALESCE(initial_volume, volume),
-                    close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price)
-                WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
-            """
-            args = [exit_price, pnl, close_reason, sl_price, tp_price, bot_id, symbol, account_id]
+            matched = 0
             if ctrader_id is not None:
-                sql += " AND ctrader_id = ?"
-                args.append(ctrader_id)
-            conn.execute(sql, tuple(args))
-            
+                # 1. Primary match: exact ctrader_id
+                sql = """
+                    UPDATE positions 
+                    SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                        volume = COALESCE(initial_volume, volume),
+                        close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price)
+                    WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ? AND ctrader_id = ?
+                """
+                cur = conn.execute(sql, (exit_price, pnl, close_reason, sl_price, tp_price, bot_id, symbol, account_id, ctrader_id))
+                matched = cur.rowcount
+
+                if not matched:
+                    # 2. Fallback: position registered without ctrader_id, link ctrader_id upon closing
+                    fallback_sql = """
+                        UPDATE positions 
+                        SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                            volume = COALESCE(initial_volume, volume),
+                            close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price),
+                            ctrader_id = ?
+                        WHERE id = (
+                            SELECT id FROM positions
+                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                              AND ctrader_id IS NULL
+                            ORDER BY entry_time ASC
+                            LIMIT 1
+                        )
+                    """
+                    cur = conn.execute(fallback_sql, (exit_price, pnl, close_reason, sl_price, tp_price, ctrader_id, bot_id, symbol, account_id))
+                    matched = cur.rowcount
+
+                if not matched:
+                    # 3. Last resort: match any open position for this bot/symbol/account
+                    last_resort_sql = """
+                        UPDATE positions 
+                        SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                            volume = COALESCE(initial_volume, volume),
+                            close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price),
+                            ctrader_id = COALESCE(?, ctrader_id)
+                        WHERE id = (
+                            SELECT id FROM positions
+                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                            ORDER BY entry_time ASC
+                            LIMIT 1
+                        )
+                    """
+                    cur = conn.execute(last_resort_sql, (exit_price, pnl, close_reason, sl_price, tp_price, ctrader_id, bot_id, symbol, account_id))
+                    matched = cur.rowcount
+            else:
+                # No ctrader_id supplied: update open position (for legacy single-position bots)
+                sql = """
+                    UPDATE positions 
+                    SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
+                        volume = COALESCE(initial_volume, volume),
+                        close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price)
+                    WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
+                """
+                cur = conn.execute(sql, (exit_price, pnl, close_reason, sl_price, tp_price, bot_id, symbol, account_id))
+                matched = cur.rowcount
+
             conn.commit()
+            if not matched:
+                logger.warning(
+                    f"Close position ignored: no open position for {symbol} by {bot_id} "
+                    f"(ctrader_id={ctrader_id}) on account {account_id}"
+                )
+                return False
+
+            # Clear cache for this bot so stale live metrics do not linger
+            if hasattr(self, "_bot_positions_cache"):
+                self._bot_positions_cache.pop(bot_id, None)
+                if account_id:
+                    self._bot_positions_cache.pop(f"{account_id}:{bot_id}", None)
+                for key in list(self._bot_positions_cache.keys()):
+                    if key.endswith(f":{bot_id}"):
+                        self._bot_positions_cache.pop(key, None)
+
             logger.info(f"Position closed: {symbol} by {bot_id}, PnL: {pnl} for account {account_id}")
             return True
         except Exception as e:
@@ -612,19 +716,27 @@ class PortfolioManager:
             "time": datetime.now().isoformat(),
             "ts": datetime.now(timezone.utc).timestamp()
         }
-        if bot_id and position_data:
-            # Stamp the report: price and P&L only arrive with a bot snapshot, so consumers
-            # need the age to avoid presenting a stale figure as a live one.
-            reported = dict(position_data, _reported_at=datetime.now(timezone.utc).timestamp())
-            # The P&L-at-SL/TP estimate rides on ticks, not snapshots. Carry it over while the
-            # level it was computed for has not moved, so each bar close does not blank it.
-            prev = self._bot_positions_cache.get(f"{account_id}:{bot_id}" if account_id else bot_id) or {}
-            for price_key, pnl_key in (("sl_price", "sl_pnl"), ("tp_price", "tp_pnl")):
-                if pnl_key not in reported and prev.get(price_key) == reported.get(price_key):
-                    reported[pnl_key] = prev.get(pnl_key)
-            self._bot_positions_cache[bot_id] = reported
-            if account_id:
-                self._bot_positions_cache[f"{account_id}:{bot_id}"] = reported
+        if bot_id:
+            if position_data:
+                # Stamp the report: price and P&L only arrive with a bot snapshot, so consumers
+                # need the age to avoid presenting a stale figure as a live one.
+                reported = dict(position_data, _reported_at=datetime.now(timezone.utc).timestamp())
+                # The P&L-at-SL/TP estimate rides on ticks, not snapshots. Carry it over while the
+                # level it was computed for has not moved, so each bar close does not blank it.
+                prev = self._bot_positions_cache.get(f"{account_id}:{bot_id}" if account_id else bot_id) or {}
+                for price_key, pnl_key in (("sl_price", "sl_pnl"), ("tp_price", "tp_pnl")):
+                    if pnl_key not in reported and prev.get(price_key) == reported.get(price_key):
+                        reported[pnl_key] = prev.get(pnl_key)
+                self._bot_positions_cache[bot_id] = reported
+                if account_id:
+                    self._bot_positions_cache[f"{account_id}:{bot_id}"] = reported
+            else:
+                self._bot_positions_cache.pop(bot_id, None)
+                if account_id:
+                    self._bot_positions_cache.pop(f"{account_id}:{bot_id}", None)
+                for key in list(self._bot_positions_cache.keys()):
+                    if key.endswith(f":{bot_id}"):
+                        self._bot_positions_cache.pop(key, None)
 
     def update_position_metrics(self, bot_id: str, unrealized_pnl: float, unrealized_pnl_pips: float,
                                 account_id: Optional[str] = None,

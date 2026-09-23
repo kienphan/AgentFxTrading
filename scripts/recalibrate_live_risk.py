@@ -7,7 +7,6 @@ import sys
 TARGETS = [
     'cbot-uk100-judas',
     'cbot-ustec-judas',
-    'cbot-hk50',
     'cbot-us500',
     'cbot-uk100',
     'cbot-de40',

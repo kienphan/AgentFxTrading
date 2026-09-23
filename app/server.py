@@ -2288,7 +2288,7 @@ async def report_position(request: dict):
 
         # The cBot has always sent this; it now narrows the close / partial-close updates
         # to one position instead of every open row for the (bot_id, symbol) pair.
-        raw_ctrader_id = request.get("ctrader_id")
+        raw_ctrader_id = request.get("ctrader_id") or request.get("position_id") or request.get("pos_id") or request.get("id")
         try:
             ctrader_id = int(raw_ctrader_id) if raw_ctrader_id not in (None, "") else None
         except (TypeError, ValueError):
