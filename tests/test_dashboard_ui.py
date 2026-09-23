@@ -195,3 +195,34 @@ def test_bot_action_buttons_show_pending_state_and_polls_do_not_overlap():
         assert label in html, label
     # A 10 s poll must never re-render over a pending row, nor stack up while a slow poll runs.
     assert "if (botsFetchInFlight || botActionInFlight) return;" in html
+
+
+def test_position_pips_are_read_from_every_alias_a_cbot_sends():
+    """The pip figure must survive whichever field name the reporting cBot uses.
+
+    Only the bot can produce it (see the note in `_attach_live_metrics`), and the three cBots
+    do not agree on a name: AiAgentBot sends `unrealized_pnl_pips`, while FlowRsiBot and
+    AsianRangeJudasSweepBot use the same short names as their money field (`pnl` / `pnl_pips`).
+    A missing alias used to fall through to the 0.0 default, so the dashboard printed the
+    broker's dollars next to a flat "(0.0p)" for those two bots.
+    """
+    from app.server import PositionInfo
+
+    ai_agent = PositionInfo(side="BUY", entry_price=1.1, unrealized_pnl=-4.68,
+                            unrealized_pnl_pips=-9.0)
+    assert ai_agent.resolved_pnl == -4.68
+    assert ai_agent.resolved_pnl_pips == -9.0
+
+    # FlowRsiBot / AsianRangeJudasSweepBot snapshot shape
+    short = PositionInfo(type="Buy", entry_price=1.1, pnl=-4.68, pnl_pips=-9.0)
+    assert short.resolved_pnl == -4.68
+    assert short.resolved_pnl_pips == -9.0
+
+    # `pips` is what the same bots already call it on the tick route
+    assert PositionInfo(pnl=9.94, pips=51.0).resolved_pnl_pips == 51.0
+
+    # A bot that reports no pips at all still reads as 0.0 rather than raising
+    assert PositionInfo(pnl=9.94).resolved_pnl_pips == 0.0
+
+    # A genuine zero is not mistaken for "absent" and replaced by a later alias
+    assert PositionInfo(unrealized_pnl_pips=0.0, pnl_pips=-9.0).resolved_pnl_pips == 0.0
