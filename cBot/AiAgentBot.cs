@@ -336,6 +336,7 @@ namespace cAlgo.Robots
             public string account_label { get; set; }
             public double account_balance { get; set; }
             public double account_equity { get; set; }
+            public double account_margin { get; set; }
         }
 
         public class AgentDecision
@@ -567,6 +568,7 @@ namespace cAlgo.Robots
                     account_label = string.IsNullOrWhiteSpace(AccountLabel) ? null : AccountLabel.Trim(),
                     account_balance = Account.Balance,
                     account_equity = Account.Equity,
+                    account_margin = Account.Margin,
                     bars = new List<BarData>
                     {
                         GetBarData(index),
@@ -1710,6 +1712,30 @@ namespace cAlgo.Robots
             return Math.Round(pips * Symbol.PipValue * pos.VolumeInUnits - Math.Abs(pos.Commissions) * 2.0 + pos.Swap, 2);
         }
 
+        /// <summary>The price the position's final close traded at, or null when History has not
+        /// booked that deal yet. History holds one deal per close, so a position that was partially
+        /// closed has several: the first is the partial, not the exit (GBPJPY #674942756 on
+        /// 2026-09-23 reported 210.09, the Break-Even partial, for a stop hit at 209.92). The final
+        /// deal is the one that just closed the remaining volume.</summary>
+        private double? FinalClosingPrice(Position pos)
+        {
+            try
+            {
+                var cutoff = Server.Time.AddSeconds(-60);
+                double tolerance = Symbol.VolumeInUnitsMin / 2.0;
+                var deal = History
+                    .Where(h => h.PositionId == pos.Id
+                                && h.ClosingTime >= cutoff
+                                && Math.Abs(h.VolumeInUnits - pos.VolumeInUnits) <= tolerance)
+                    .OrderByDescending(h => h.ClosingTime)
+                    .FirstOrDefault();
+                if (deal != null && deal.ClosingPrice > 0)
+                    return deal.ClosingPrice;
+            }
+            catch { }
+            return null;
+        }
+
         private void OnPositionClosed(PositionClosedEventArgs args)
         {
             if (args.Position.SymbolName != SymbolName || args.Position.Label != "AI_Agent")
@@ -1734,13 +1760,13 @@ namespace cAlgo.Robots
             // traded, corrupting every pip/RR statistic built on exit_price. Prefer the booked
             // deal, falling back to the spread when History has not caught up yet.
             double exitPrice = args.Position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
-            try
-            {
-                var closedHist = History.FirstOrDefault(h => h.PositionId == args.Position.Id);
-                if (closedHist != null && closedHist.ClosingPrice > 0)
-                    exitPrice = closedHist.ClosingPrice;
-            }
-            catch { }
+            if (args.Reason == PositionCloseReason.TakeProfit && args.Position.TakeProfit.HasValue)
+                exitPrice = args.Position.TakeProfit.Value;
+            else if (args.Reason == PositionCloseReason.StopLoss && args.Position.StopLoss.HasValue)
+                exitPrice = args.Position.StopLoss.Value;
+            double? bookedExit = FinalClosingPrice(args.Position);
+            if (bookedExit.HasValue)
+                exitPrice = bookedExit.Value;
 
             // Arm Post-TP Gate only when the exit captured a real move. A scratch exit inside the
             // tick-noise band (GBPUSD 2026-09-11: +0.6p net on a 14p-risk trade) must not lock the
