@@ -31,31 +31,38 @@ def _src() -> str:
 
 
 def _track_call_argument() -> str:
-    match = re.search(r"TrackAsianSession\((?P<arg>[^)]*)\);", _src())
+    match = re.search(r"TrackAsianSession\((?P<arg>[^;]*)\);", _src())
     assert match, "TrackAsianSession call site not found"
     return match.group("arg").strip()
 
 
+def _track_body() -> str:
+    src = _src()
+    start = src.index("private void TrackAsianSession(")
+    return src[start : src.index("private bool IsSessionSweepSideTaken")]
+
+
 def test_session_hour_comes_from_the_bar_not_the_tick_clock():
     arg = _track_call_argument()
-    assert arg != "Server.Time", (
+    assert "Server.Time" not in arg, (
         "TrackAsianSession is still driven by Server.Time (the tick that CLOSED the "
-        "bar) while it reads High/Low from Bars.LastBar (the bar that OPENED 15m "
-        "earlier) - the Asian range is off by one bar at both session edges."
+        "bar) while it reads High/Low from the bar that OPENED 15m earlier - the Asian "
+        "range is off by one bar at both session edges."
     )
 
 
 def test_session_hour_uses_the_same_bar_whose_high_low_is_read():
-    """The time argument must be the OpenTime of the bar TrackAsianSession samples."""
-    arg = _track_call_argument()
-    assert "OpenTime" in arg, (
-        f"TrackAsianSession must be passed a bar OpenTime so the hour and the "
-        f"High/Low describe the same bar, got: {arg!r}"
-    )
-    assert "LastBar" in arg or "Bars[" in arg, (
-        f"TrackAsianSession must be passed the OpenTime of the bar it samples "
-        f"(Bars.LastBar), got: {arg!r}"
-    )
+    """
+    The hour and the High/Low must describe the same bar. Since 2026-09-23 the call passes
+    the closed bar itself (ClosedBar(): inside OnBarClosed Bars.LastBar is sometimes the bar
+    that just opened), and TrackAsianSession reads all three from that one parameter.
+    """
+    assert _track_call_argument() == "ClosedBar()"
+    body = _track_body()
+    assert "private void TrackAsianSession(Bar closedBar)" in body
+    assert "closedBar.OpenTime.Hour" in body
+    assert "closedBar.High" in body and "closedBar.Low" in body
+    assert "Bars.LastBar" not in body
 
 
 def test_live_tracking_agrees_with_restart_initialisation():
@@ -67,6 +74,6 @@ def test_live_tracking_agrees_with_restart_initialisation():
         "InitializeAsianSession no longer reads bar.OpenTime - the restart path and "
         "the live path must agree on which bars belong to the Asian session."
     )
-    assert "OpenTime" in _track_call_argument(), (
+    assert "closedBar.OpenTime" in _track_body(), (
         "Live tracking and restart initialisation disagree on the bar time source."
     )

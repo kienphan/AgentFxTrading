@@ -496,8 +496,8 @@ namespace cAlgo.Robots
         private bool _tickFrameHasPnl;
         private long _tickFrameStamp;
         private DateTime _lastTickFrameAt = DateTime.MinValue;
-        // Open time of the last bar OnBarClosed handled, carried on every tick frame as the
-        // watchdog's bar heartbeat (the bot calls /trade only on a fresh sweep, so that is none).
+        // When OnBarClosed last handled a bar, carried on every tick frame as the watchdog's
+        // bar heartbeat (the bot calls /trade only on a fresh sweep, so that is none).
         private DateTime _lastBarHandled = DateTime.MinValue;
         private string _tickFrameLastBar;
         #endregion
@@ -570,11 +570,11 @@ namespace cAlgo.Robots
                 CheckNewsEvents();
 
                 // Track Asian session range & golden killzones.
-                // Pass the OpenTime of the bar being sampled, NOT Server.Time: Server.Time is
+                // Sample the bar that closed, by its OpenTime, NOT Server.Time: Server.Time is
                 // the tick that CLOSED the bar, one bar-width later. Using it dropped the
                 // 05:45-06:00 bar from the session and folded the 23:45-00:00 bar of the
                 // previous day in (resetting the range). Matches InitializeAsianSession.
-                TrackAsianSession(Bars.LastBar.OpenTime);
+                TrackAsianSession(ClosedBar());
                 bool inKillzone = IsGoldenKillzone(Server.Time, out _activeKillzone);
 
                 // Evaluate Judas Sweep signals (respecting reverseCondition)
@@ -687,7 +687,9 @@ namespace cAlgo.Robots
 
         private void MarkBarHandled()
         {
-            _lastBarHandled = Bars.LastBar.OpenTime;
+            // Server.Time, not the last bar's open time: inside OnBarClosed that is sometimes the
+            // bar that just opened, so the open time repeated across two bars (2026-09-23).
+            _lastBarHandled = Server.Time;
         }
 
         protected override void OnTick()
@@ -1150,18 +1152,48 @@ namespace cAlgo.Robots
             return Math.Max(AiSlMinFloorPips, currentAtrPips > 0 ? Math.Round(currentAtrPips * 0.8, 0) : 200.0);
         }
 
-        private void TrackAsianSession(DateTime timeUtc)
+        /// <summary>The bar that has just closed. Inside OnBarClosed that is normally Bars.LastBar,
+        /// but on 2026-09-23 half the bots saw the bar that had just opened there instead (17:45
+        /// close: 17:30 on some, 17:45 on others). A bar whose full span has not yet elapsed on
+        /// the server clock is still forming, so the closed one is the bar before it.</summary>
+        private Bar ClosedBar()
         {
-            DateTime date = timeUtc.Date;
-            int hour = timeUtc.Hour;
+            var last = Bars.LastBar;
+            if (Bars.Count > 1 && last.OpenTime + BarSpan() > Server.Time)
+                return Bars.Last(1);
+            return last;
+        }
+
+        private TimeSpan _barSpan = TimeSpan.Zero;
+
+        /// <summary>Bar width, as the smallest gap between recent open times (weekends and
+        /// holidays only ever widen a gap).</summary>
+        private TimeSpan BarSpan()
+        {
+            if (_barSpan > TimeSpan.Zero) return _barSpan;
+            var span = TimeSpan.MaxValue;
+            for (int i = Math.Max(1, Bars.Count - 50); i < Bars.Count; i++)
+            {
+                var gap = Bars[i].OpenTime - Bars[i - 1].OpenTime;
+                if (gap > TimeSpan.Zero && gap < span) span = gap;
+            }
+            if (span == TimeSpan.MaxValue) return TimeSpan.FromMinutes(15);
+            _barSpan = span;
+            return span;
+        }
+
+        private void TrackAsianSession(Bar closedBar)
+        {
+            DateTime date = closedBar.OpenTime.Date;
+            int hour = closedBar.OpenTime.Hour;
 
             if (hour >= asianStartHour && hour < asianEndHour)
             {
                 if (_asianSessionDate != date)
                 {
                     _asianSessionDate = date;
-                    _asianHigh = Bars.LastBar.High;
-                    _asianLow = Bars.LastBar.Low;
+                    _asianHigh = closedBar.High;
+                    _asianLow = closedBar.Low;
                     _highSwept = false;
                     _lowSwept = false;
                     ResetSessionSweepFlags();
@@ -1169,8 +1201,8 @@ namespace cAlgo.Robots
                 }
                 else
                 {
-                    if (Bars.LastBar.High > _asianHigh) _asianHigh = Bars.LastBar.High;
-                    if (Bars.LastBar.Low < _asianLow) _asianLow = Bars.LastBar.Low;
+                    if (closedBar.High > _asianHigh) _asianHigh = closedBar.High;
+                    if (closedBar.Low < _asianLow) _asianLow = closedBar.Low;
                 }
                 _asianRangePips = Symbol.PipSize > 0 ? (_asianHigh - _asianLow) / Symbol.PipSize : 0;
             }

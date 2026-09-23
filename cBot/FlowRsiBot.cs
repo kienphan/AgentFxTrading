@@ -276,8 +276,8 @@ namespace cAlgo.Robots
         private bool _circuitBreakerTriggered;
         private DateTime _lastCircuitBreakerResetDate = DateTime.MinValue;
         private DateTime _lastTickTelemetryTime = DateTime.MinValue;
-        // Open time of the last bar OnBarClosed handled, sent with every tick as the watchdog's
-        // bar heartbeat (/trade is no signal: news, spread and the circuit breaker skip it).
+        // When OnBarClosed last handled a bar, sent with every tick as the watchdog's bar
+        // heartbeat (/trade is no signal: news, spread and the circuit breaker skip it).
         private DateTime _lastBarHandled = DateTime.MinValue;
         private DateTime _lastNewsFetchTime = DateTime.MinValue;
         private DateTime _nextAllowedDirectFetchTime = DateTime.MinValue;
@@ -565,7 +565,9 @@ namespace cAlgo.Robots
 
         private void MarkBarHandled()
         {
-            _lastBarHandled = Bars.LastBar.OpenTime;
+            // Server.Time, not the last bar's open time: inside OnBarClosed that is sometimes the
+            // bar that just opened, so the open time repeated across two bars (2026-09-23).
+            _lastBarHandled = Server.Time;
         }
 
         protected override void OnStop()
