@@ -62,10 +62,16 @@ FLOWRSI = (ROOT / "cBot" / "FlowRsiBot.cs").read_text(encoding="utf-8")
 JUDAS = (ROOT / "cBot" / "AsianRangeJudasSweepBot.cs").read_text(encoding="utf-8")
 
 
-def test_bar_is_stamped_with_its_open_time():
+def test_bar_stamp_changes_on_every_bar():
+    """
+    Stamping Bars.LastBar.OpenTime repeated a value across two bars: inside OnBarClosed that
+    is sometimes the closed bar and sometimes the new one (17:45 close on 2026-09-23: half the
+    bots sent 17:30, half 17:45; 19 then sent 17:45 again at 18:00). The handling time cannot
+    repeat.
+    """
     for src in (FLOWRSI, JUDAS):
         body = _method(src, "private void MarkBarHandled()")
-        assert "Bars.LastBar.OpenTime" in body
+        assert "Server.Time" in body and "Bars.LastBar" not in body, body
 
 
 def test_flowrsi_sends_last_bar_with_its_ticks():
