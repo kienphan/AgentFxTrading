@@ -209,7 +209,9 @@ async def test_post_decision_risk_guard_blocks_opposing_us_index(clean_pm, monke
     )
 
     # Mock LLM client to propose a SELL on US30
-    class MockLLMClient:
+    from app.llm_client import LLMClient
+
+    class MockLLMClient(LLMClient):
         async def chat(self, messages, **kwargs):
             import json
             return json.dumps({

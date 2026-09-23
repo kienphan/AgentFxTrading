@@ -49,7 +49,7 @@ def _braced_block(src: str, marker: str) -> str:
 FAILURE_BRANCHES = [
     ("cooldown", "if (DateTime.UtcNow < _aiCooldownUntil)"),
     ("http-error", "if (!response.IsSuccessStatusCode)"),
-    ("exception", "catch (Exception ex)\n            {\n                string exErr = ex.Message;"),
+    ("exception", "catch (Exception ex)\n            {\n                string exErr = ex.InnerException"),
 ]
 
 

@@ -918,6 +918,8 @@ async def cbot_websocket_endpoint(websocket: WebSocket):
     Bidirectional low-latency WebSocket endpoint for cBots.
     Handles fast tick telemetry streaming and real-time push orders/adjustments.
     """
+    from app.cbot_watchdog import record_bot_tick
+
     await websocket.accept()
     bot_id = "unknown"
     try:
@@ -938,6 +940,7 @@ async def cbot_websocket_endpoint(websocket: WebSocket):
                     if symbol and (bid > 0 or ask > 0):
                         pm = get_portfolio_manager()
                         pm.update_market_price(symbol, bid, ask, bot_id=bot_id)
+                        record_bot_tick(bot_id, payload.get("last_bar"))
 
                         # A bot with a position open also sends its own broker P&L sample, which
                         # keeps the dashboard live between bar snapshots without the server

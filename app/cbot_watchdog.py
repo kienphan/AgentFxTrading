@@ -33,14 +33,55 @@ def record_bot_snapshot(bot_key: str) -> None:
 
 
 def reset_snapshot_telemetry() -> None:
-    """Forget every recorded snapshot (used by tests)."""
+    """Forget every recorded snapshot and tick (used by tests)."""
     _snapshot_seen_at.clear()
+    _tick_seen_at.clear()
+    _tick_run_since.clear()
+    _bar_seen.clear()
+    _bar_advanced_at.clear()
 
 
 def last_snapshot_for(bot_id: str) -> Optional[float]:
     """Newest snapshot timestamp for `bot_id`, whichever account reported it."""
     hits = [t for key, t in _snapshot_seen_at.items() if key.endswith(f"/{bot_id}")]
     return max(hits) if hits else None
+
+
+# ---------------------------------------------------------------------------
+# Bar heartbeat for all-day bots (FlowRSI, Judas)
+#
+# They have no session window and call /trade only when a setup or a filter allows it: a Judas
+# bot sat silent 5-7 h on 2026-09-23, and FlowRSI skips the call on news, a wide spread or a
+# tripped circuit breaker. Their tick frames carry `last_bar` instead - the last bar the bot
+# handled - so a bot whose ticks keep flowing while that stops advancing has a stalled bar
+# pipeline. Ticks stop when the market does, so a closed market never looks stalled.
+# Keyed by bot_id alone: the /ws/cbot frames carry no account.
+# ---------------------------------------------------------------------------
+
+TICK_GAP_SECONDS = 300  # a longer gap ends the tick run: market closed, or the bot was down
+
+_tick_seen_at: Dict[str, float] = {}
+_tick_run_since: Dict[str, float] = {}
+_bar_seen: Dict[str, str] = {}
+_bar_advanced_at: Dict[str, float] = {}
+
+
+def record_bot_tick(bot_id: str, last_bar: Optional[str], now: Optional[float] = None) -> None:
+    """Stamp a tick frame from `bot_id`, with the last bar it handled when the bot reports one."""
+    now = time.time() if now is None else now
+    previous = _tick_seen_at.get(bot_id)
+    if previous is None or now - previous > TICK_GAP_SECONDS:
+        _tick_run_since[bot_id] = now
+    _tick_seen_at[bot_id] = now
+    if last_bar and _bar_seen.get(bot_id) != last_bar:
+        _bar_seen[bot_id] = last_bar
+        _bar_advanced_at[bot_id] = now
+
+
+def parse_bot_id(run_command: Optional[str]) -> str:
+    """The --BotId a bot's docker run command passes, or "" when absent."""
+    m = re.search(r'--BotId=("?)([^"\s\\]+)\1', run_command or "")
+    return m.group(2) if m else ""
 
 
 def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -65,7 +106,7 @@ def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]
         return None
 
     return {
-        "bot_id": text("BotId"),
+        "bot_id": parse_bot_id(run_command),
         "session_name": text("SessionName") or "unknown",
         "start_hour": start_hour,
         "start_minute": number("OrbStartMinute") or 0,
@@ -169,8 +210,9 @@ class CbotWatchdog:
 
         # Per-bot restart timestamps: bot_name -> list of float timestamps
         self._restart_history: Dict[str, List[float]] = {}
-        # Session instance already healed for a stalled bar feed: bot_name -> session start
-        self._stale_healed: Dict[str, datetime.datetime] = {}
+        # Stall episode already healed: bot_name -> session start (session bots) or the bar the
+        # bot was stuck on (all-day bots)
+        self._stale_healed: Dict[str, Any] = {}
         # Recent healing events (max 50)
         self._recent_events: List[Dict[str, Any]] = []
         self._is_running = False
@@ -313,14 +355,18 @@ class CbotWatchdog:
         A cBot pushes a snapshot per closed bar only while its own session window is
         open, so silence only means something inside that window and outside the FX
         weekend. A per-session latch keeps a broker holiday (everyone legitimately
-        silent) from turning into a restart loop.
+        silent) from turning into a restart loop. Bots without a session window are
+        judged by their bar heartbeat instead (_bar_stall_reason).
         """
-        params = parse_session_params(run_command)
-        if params is None or not params["bot_id"]:
-            return None
-
         if now_utc is None:
             now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+        params = parse_session_params(run_command)
+        if params is None:
+            return self._bar_stall_reason(name, run_command, now_utc)
+        if not params["bot_id"]:
+            return None
+
         if is_forex_weekend(now_utc):
             return None
 
@@ -343,6 +389,36 @@ class CbotWatchdog:
         return (
             f"No bar snapshot for {silence / 60:.0f} min during the "
             f"'{params['session_name']}' session (bar cycle is M15)"
+        )
+
+    def _bar_stall_reason(self, name: str, run_command: Optional[str],
+                          now_utc: datetime.datetime) -> Optional[str]:
+        """Reason when an all-day bot keeps streaming ticks but handles no bar, else None.
+
+        The clock starts at the later of the last bar advance and the start of the current
+        tick run, so the first bar after a market reopen gets its full allowance. Latched on
+        the bar the bot is stuck on: a restarted bot still warming up is not restarted again.
+        """
+        bot_id = parse_bot_id(run_command)
+        if not bot_id or bot_id not in _bar_seen:
+            return None
+
+        now = now_utc.timestamp()
+        if now - _tick_seen_at[bot_id] > TICK_GAP_SECONDS:
+            return None
+
+        silence = now - max(_bar_advanced_at[bot_id], _tick_run_since[bot_id])
+        if silence <= self.stale_feed_seconds:
+            return None
+
+        stuck_on = _bar_seen[bot_id]
+        if self._stale_healed.get(name) == stuck_on:
+            return None
+        self._stale_healed[name] = stuck_on
+
+        return (
+            f"Ticks streaming for {silence / 60:.0f} min but no bar handled since {stuck_on} "
+            f"(bar cycle is M15)"
         )
 
     async def run_loop(self):
@@ -381,6 +457,15 @@ class CbotWatchdog:
             # Age of the last snapshot per bot, so the detector is observable from the dashboard.
             "feed_telemetry": {
                 key: round(time.time() - seen_at, 1) for key, seen_at in _snapshot_seen_at.items()
+            },
+            # All-day bots: the last bar each one handled, how long ago it advanced, last tick age.
+            "bar_telemetry": {
+                bot_id: {
+                    "last_bar": last_bar,
+                    "bar_age": round(time.time() - _bar_advanced_at[bot_id], 1),
+                    "tick_age": round(time.time() - _tick_seen_at[bot_id], 1),
+                }
+                for bot_id, last_bar in _bar_seen.items()
             },
             "last_check": datetime.datetime.fromtimestamp(
                 self._last_check_time, tz=datetime.timezone.utc

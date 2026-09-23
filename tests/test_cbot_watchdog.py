@@ -216,9 +216,9 @@ JUDAS_RUN_COMMAND = (
 
 @pytest.fixture(autouse=True)
 def _clean_snapshot_telemetry():
-    wd._snapshot_seen_at.clear()
+    wd.reset_snapshot_telemetry()
     yield
-    wd._snapshot_seen_at.clear()
+    wd.reset_snapshot_telemetry()
 
 
 def test_parse_session_params_reads_tms_window():
@@ -410,3 +410,117 @@ def test_watchdog_heals_bot_with_stale_bar_feed(mock_get_pm, mock_dm):
     assert "No bar snapshot" in actions[0]["reason"]
     assert actions[0]["success"] is True
     mock_dm.restart_container.assert_called_once_with("cbot-usdjpy", timeout=15)
+
+
+# ---------------------------------------------------------------------------
+# All-day bots (FlowRSI, Judas): bar heartbeat carried on the tick stream
+#
+# They have no session window and call /trade only when a setup or a filter allows it
+# (Judas sat silent 5-7 h a day, FlowRSI skips a bar on news, spread or a tripped circuit
+# breaker), so /trade silence means nothing for them. Each tick frame carries the last
+# bar the bot handled instead; a bot whose ticks keep flowing while that stops advancing
+# has a stalled bar pipeline.
+# ---------------------------------------------------------------------------
+
+FLOWRSI_RUN_COMMAND = (
+    "docker run -d \\ --name cbot-demo-demo-gbpusd-all-flowrsi \\ --network host \\ "
+    "run /workspace/cBot/FlowRsiBot.algo \\ --BotId=\"cbot-demo-demo-gbpusd-all-flowrsi\" \\ "
+    "--FastRsiPeriod=7 --SlowRsiPeriod=14"
+)
+FLOWRSI_BOT = "cbot-demo-demo-gbpusd-all-flowrsi"
+NOW = datetime(2026, 9, 24, 10, 0, tzinfo=timezone.utc)
+
+
+def _stream(bot_id, last_bar, start, end, step=timedelta(minutes=2)):
+    t = start
+    while t <= end:
+        bar = last_bar(t) if callable(last_bar) else last_bar
+        wd.record_bot_tick(bot_id, bar, now=t.timestamp())
+        t += step
+
+
+def test_bar_stall_flags_all_day_bot_whose_ticks_flow_but_bars_stop():
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", NOW - timedelta(minutes=60), NOW)
+    reason = CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-demo-demo-gbpusd-all-flowrsi", FLOWRSI_RUN_COMMAND, NOW)
+    assert reason is not None
+    assert "60 min" in reason and "2026-09-24T08:45:00" in reason
+
+
+def test_bar_stall_ignores_healthy_bot_whose_bars_advance():
+    quarter = lambda t: t.replace(minute=t.minute // 15 * 15, second=0).strftime("%Y-%m-%dT%H:%M:%S")
+    _stream(FLOWRSI_BOT, quarter, NOW - timedelta(minutes=90), NOW)
+    assert CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-demo-demo-gbpusd-all-flowrsi", FLOWRSI_RUN_COMMAND, NOW) is None
+
+
+def test_bar_stall_ignores_a_closed_market():
+    """No ticks means no market (daily index break, weekend): silence is expected."""
+    _stream(FLOWRSI_BOT, "2026-09-24T08:00:00", NOW - timedelta(minutes=90), NOW - timedelta(minutes=10))
+    assert CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-demo-demo-gbpusd-all-flowrsi", FLOWRSI_RUN_COMMAND, NOW) is None
+
+
+def test_bar_stall_gives_the_first_bar_after_a_reopen_its_full_allowance():
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", NOW - timedelta(minutes=70), NOW - timedelta(minutes=60))
+    # market shut for 40 min, ticks resume 20 min ago with no bar closed yet
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", NOW - timedelta(minutes=20), NOW)
+    assert CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-demo-demo-gbpusd-all-flowrsi", FLOWRSI_RUN_COMMAND, NOW) is None
+
+
+def test_bar_stall_ignores_bots_without_bar_telemetry():
+    """An older build sends ticks without last_bar: nothing to judge by."""
+    _stream(FLOWRSI_BOT, None, NOW - timedelta(minutes=60), NOW)
+    assert CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-demo-demo-gbpusd-all-flowrsi", FLOWRSI_RUN_COMMAND, NOW) is None
+
+
+def test_bar_stall_heals_once_per_stalled_bar():
+    watchdog = CbotWatchdog(stale_feed_seconds=2400)
+    name = "cbot-demo-demo-gbpusd-all-flowrsi"
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", NOW - timedelta(minutes=60), NOW)
+    assert watchdog._stale_feed_reason(name, FLOWRSI_RUN_COMMAND, NOW) is not None
+    # restarted bot still warming up on the same bar -> latched, no restart loop
+    later = NOW + timedelta(minutes=10)
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", NOW, later)
+    assert watchdog._stale_feed_reason(name, FLOWRSI_RUN_COMMAND, later) is None
+    # it recovers, then stalls again on a new bar -> eligible again
+    _stream(FLOWRSI_BOT, "2026-09-24T10:00:00", later, later + timedelta(minutes=50))
+    assert watchdog._stale_feed_reason(name, FLOWRSI_RUN_COMMAND, later + timedelta(minutes=50)) is not None
+
+
+def test_judas_bot_is_judged_by_its_bar_heartbeat():
+    _stream("cbot-gbpusd-judas", "2026-09-24T08:45:00", NOW - timedelta(minutes=60), NOW)
+    assert CbotWatchdog(stale_feed_seconds=2400)._stale_feed_reason(
+        "cbot-gbpusd-judas", JUDAS_RUN_COMMAND, NOW) is not None
+
+
+@patch("app.cbot_watchdog.docker_manager")
+@patch("app.cbot_watchdog.get_portfolio_manager")
+def test_watchdog_heals_all_day_bot_with_stalled_bars(mock_get_pm, mock_dm):
+    mock_dm.is_available = True
+    mock_dm.check_cbot_health.return_value = {
+        "status": "running", "stuck": False, "healthy": True, "reason": "Healthy and running"
+    }
+    mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
+    mock_pm = MagicMock()
+    mock_pm.get_cbot_configs.return_value = [{"name": FLOWRSI_BOT, "run_command": FLOWRSI_RUN_COMMAND}]
+    mock_get_pm.return_value = mock_pm
+
+    now = datetime.now(timezone.utc)
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", now - timedelta(minutes=60), now)
+    actions = CbotWatchdog(stale_feed_seconds=2400).check_and_heal()
+
+    assert [a["name"] for a in actions] == [FLOWRSI_BOT]
+    assert "no bar handled" in actions[0]["reason"]
+    mock_dm.restart_container.assert_called_once_with(FLOWRSI_BOT, timeout=15)
+
+
+def test_status_exposes_the_bar_heartbeat():
+    now = datetime.now(timezone.utc)
+    _stream(FLOWRSI_BOT, "2026-09-24T08:45:00", now - timedelta(minutes=4), now)
+    beat = CbotWatchdog().get_status()["bar_telemetry"][FLOWRSI_BOT]
+    assert beat["last_bar"] == "2026-09-24T08:45:00"
+    assert 200 <= beat["bar_age"] <= 300
+    assert beat["tick_age"] < 60

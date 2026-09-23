@@ -143,11 +143,11 @@ def sanitize_bot_id(bot_id: Optional[str]) -> str:
     if " --" in cleaned:
         cleaned = cleaned.split(" --")[0].strip()
     return cleaned.strip("\"'“”‘’`") or "default"
-from app.llm_client import create_llm_client, JSONResponseParser, describe_llm_error, _clean_env_float, _clean_env_int
+from app.llm_client import create_llm_client, JSONResponseParser, describe_llm_error, _clean_env_float, _clean_env_int, _clean_env_bool
 from app.portfolio import init_portfolio, get_portfolio_manager, is_us_index
 from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, broadcast_decision, record_ai_decision, manager as ws_manager, WebSocketLogHandler, tick_levels
 from app.accounts import init_account_registry, get_account_registry
-from app.cbot_watchdog import record_bot_snapshot
+from app.cbot_watchdog import record_bot_snapshot, record_bot_tick
 
 # Attach WebSocket live log handler to root logger
 _ws_handler = WebSocketLogHandler(ws_manager)
@@ -209,6 +209,9 @@ llm_client = create_llm_client()
 TRADE_LLM_TIMEOUT = _clean_env_float("LLM_TRADE_TIMEOUT", 40.0)
 TRADE_LLM_MAX_RETRIES = _clean_env_int("LLM_TRADE_MAX_RETRIES", 1)
 TRADE_LLM_DEADLINE = _clean_env_float("LLM_TRADE_DEADLINE", 55.0)
+# qwen3.7-flash thinks by default: 1,250-3,200 hidden reasoning tokens per /trade call, 18-39 s
+# instead of 2-3 s, and the Judas prompt ran past the deadline. The answer is a small JSON verdict.
+TRADE_LLM_ENABLE_THINKING = _clean_env_bool("LLM_TRADE_ENABLE_THINKING", False)
 
 # ---- Data Models (from cBot) ----
 class BarData(BaseModel):
@@ -1987,7 +1990,8 @@ async def trade_decision(snapshot: MarketSnapshot):
             {"role": "user", "content": user_prompt}
         ]
         
-        kwargs = {"temperature": 0.1, "timeout": TRADE_LLM_TIMEOUT, "max_retries": TRADE_LLM_MAX_RETRIES}
+        kwargs = {"temperature": 0.1, "timeout": TRADE_LLM_TIMEOUT, "max_retries": TRADE_LLM_MAX_RETRIES,
+                  **llm_client.thinking_options(TRADE_LLM_ENABLE_THINKING)}
         if hasattr(llm_client, 'client') and hasattr(llm_client.client, 'chat'):
             kwargs["response_format"] = {"type": "json_object"}
         
@@ -2272,6 +2276,7 @@ async def handle_telemetry_tick(request: dict):
         ask = float(request.get("ask", 0.0) or 0.0)
         if symbol and (bid > 0 or ask > 0):
             portfolio_manager.update_market_price(symbol, bid, ask, bot_id=bot_id)
+            record_bot_tick(bot_id, request.get("last_bar"))
 
         # A tick carries its own P&L sample, so refreshing the dashboard costs one small
         # broadcast instead of rebuilding the whole positions payload for three account
