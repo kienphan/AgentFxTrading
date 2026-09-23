@@ -302,7 +302,7 @@
                                         <th>SL / TP</th>
                                         <th>Net P&amp;L</th>
                                         <th>Close Reason</th>
-                                        <th>Closed Time</th>
+                                        <th>Open / Close</th>
                                     </tr>
                                 </thead>
                                 <tbody id="history-table">
@@ -353,7 +353,10 @@
                                             {% if trade.pnl > 0 %}+{% endif %}${{ trade.pnl }}
                                         </td>
                                         <td class="td-reason">{{ close_reason_chip(trade.close_reason) }}</td>
-                                        <td class="td-dim">{{ trade.exit_time }}</td>
+                                        <td class="td-times">
+                                            <div class="sltp-line"><span class="sltp-tag">IN</span><span class="td-dim">{{ trade.entry_time or '—' }}</span></div>
+                                            <div class="sltp-line"><span class="sltp-tag">OUT</span><span class="td-dim">{{ trade.exit_time or '—' }}</span>{% if trade.duration %}<span class="duration-chip" title="Time in trade">{{ trade.duration }}</span>{% endif %}</div>
+                                        </td>
                                     </tr>
                                     {% else %}
                                     <tr><td colspan="11" class="empty-state">No trade history</td></tr>
@@ -1274,6 +1277,13 @@
             return sltpLineHtml('SL', o.sl_price, withPnl?o.sl_pnl:null, o.sl_pips)
                  + sltpLineHtml('TP', o.tp_price, withPnl?o.tp_pnl:null, o.tp_pips);
         }
+        // Mirrors the Recent Trades "Open / Close" cell: entry on one line, exit plus time in trade on the next.
+        function tradeTimesHtml(t){
+            const line=(tag, body)=>`<div class="sltp-line"><span class="sltp-tag">${tag}</span>${body}</div>`;
+            return line('IN', `<span class="td-dim">${escapeHtml(t.entry_time||'—')}</span>`)
+                 + line('OUT', `<span class="td-dim">${escapeHtml(t.exit_time||'—')}</span>`
+                     + (t.duration ? `<span class="duration-chip" title="Time in trade">${escapeHtml(t.duration)}</span>` : ''));
+        }
         // Mirrors the close_reason_chip macro.
         function closeReasonHtml(reason){
             if(!reason) return '<span class="td-dim">—</span>';
@@ -1763,7 +1773,7 @@
                     <td class="td-sltp">${sltpCellHtml(t, false)}</td>
                     <td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'} font-bold">${Number(t.pnl)>0?'+':''}${formatMoney(t.pnl)}</td>
                     <td class="td-reason">${closeReasonHtml(t.close_reason)}</td>
-                    <td class="td-dim">${t.exit_time}</td>
+                    <td class="td-times">${tradeTimesHtml(t)}</td>
                 </tr>`).join('');
             }
         }
