@@ -96,3 +96,60 @@ def test_json_response_parser():
     parsed_trunc = JSONResponseParser.parse(truncated_json)
     assert parsed_trunc["action"] == "BUY"
     assert parsed_trunc["volume_lots"] == 0.05
+
+
+# --- thinking mode ------------------------------------------------------------------------
+# qwen3.7-flash thinks by default. Measured on the VPS 2026-09-23 with the real prompts: a
+# FlowRSI /trade call spent 1,254 of 1,378 output tokens on hidden reasoning (18.5 s vs 1.9 s
+# with thinking off), a Judas call 3,194 of 3,369 (39.3 s vs 2.9 s) - and timed out 4/5 times.
+
+def test_only_qwen_exposes_a_thinking_switch():
+    qwen = create_llm_client("qwen")
+    assert qwen.thinking_options(False) == {"extra_body": {"enable_thinking": False}}
+    assert qwen.thinking_options(True) == {"extra_body": {"enable_thinking": True}}
+    # OpenAI rejects unknown body fields, so providers without the switch send nothing
+    assert create_llm_client("openai").thinking_options(False) == {}
+    assert AnthropicClient(api_key="k").thinking_options(False) == {}
+
+
+def _flowrsi_entry_snapshot():
+    from app.server import MarketSnapshot
+    return MarketSnapshot(
+        bot_id="cbot-demo-demo-gbpusd-all-flowrsi", symbol="GBPUSD", timeframe="Minute15",
+        bid=1.32747, ask=1.32750, account_number="12345", account_label="demo",
+        account_balance=1850.0, account_margin=40.0, pip_size=0.0001,
+        fast_rsi=38.2, slow_rsi=36.9, rsi_cross_signal="Bullish_Cross", is_discount=True,
+        candidate_action="BUY", technical_sl_price=1.32599, technical_tp_price=1.32995,
+        technical_risk_reward=1.6,
+    )
+
+
+async def _trade_kwargs(monkeypatch, tmp_path):
+    import json
+    from unittest.mock import AsyncMock
+    import app.server as server_mod
+    import app.news_service as news_mod
+    from app.portfolio import PortfolioManager
+
+    client = OpenAICompatibleClient(api_key="k", base_url="https://example.invalid/v1", thinking_switch=True)
+    client.chat = AsyncMock(return_value=json.dumps({"action": "HOLD", "confidence": 60, "reason": "x"}))
+    monkeypatch.setattr(server_mod, "llm_client", client)
+    monkeypatch.setattr(server_mod, "portfolio_manager", PortfolioManager(db_path=str(tmp_path / "t.db")))
+    monkeypatch.setattr(news_mod, "is_news_blackout_active", AsyncMock(return_value=(False, None, 0)))
+    await server_mod.trade_decision(_flowrsi_entry_snapshot())
+    assert client.chat.await_count == 1
+    return client.chat.await_args.kwargs
+
+
+@pytest.mark.anyio
+async def test_trade_calls_switch_thinking_off_by_default(monkeypatch, tmp_path):
+    kwargs = await _trade_kwargs(monkeypatch, tmp_path)
+    assert kwargs.get("extra_body") == {"enable_thinking": False}
+
+
+@pytest.mark.anyio
+async def test_trade_thinking_can_be_switched_back_on(monkeypatch, tmp_path):
+    import app.server as server_mod
+    monkeypatch.setattr(server_mod, "TRADE_LLM_ENABLE_THINKING", True)
+    kwargs = await _trade_kwargs(monkeypatch, tmp_path)
+    assert kwargs.get("extra_body") == {"enable_thinking": True}

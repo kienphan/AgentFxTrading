@@ -24,6 +24,12 @@ class LLMClient(ABC):
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Send chat completion request and return response text."""
         pass
+
+    def thinking_options(self, enabled: bool) -> Dict[str, Any]:
+        """chat() kwargs that switch the model's thinking mode; {} when the provider has no switch."""
+        return {}
+
+
 def _clean_env(key: str, default: str = "") -> str:
     val = os.getenv(key)
     if val is None or val == "":
@@ -46,6 +52,15 @@ def _clean_env_int(key: str, default: int) -> int:
         return int(raw)
     except (ValueError, TypeError):
         return default
+
+
+def _clean_env_bool(key: str, default: bool) -> bool:
+    raw = _clean_env(key, "").lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return default
 
 
 def describe_llm_error(exc: BaseException) -> str:
@@ -78,6 +93,7 @@ class OpenAICompatibleClient(LLMClient):
         timeout: Optional[float] = None,
         connect_timeout: Optional[float] = None,
         max_retries: Optional[int] = None,
+        thinking_switch: bool = False,
         **kwargs
     ):
         from openai import AsyncOpenAI, Timeout
@@ -96,7 +112,12 @@ class OpenAICompatibleClient(LLMClient):
         self.model = model
         self.timeout = client_timeout
         self.max_retries = retries_val
+        # DashScope's Qwen models take an `enable_thinking` body field; OpenAI rejects it.
+        self.thinking_switch = thinking_switch
         self.default_kwargs = kwargs
+
+    def thinking_options(self, enabled: bool) -> Dict[str, Any]:
+        return {"extra_body": {"enable_thinking": enabled}} if self.thinking_switch else {}
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         merged = {**self.default_kwargs, **kwargs}
@@ -256,6 +277,7 @@ def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
             api_key=_clean_env("DASHSCOPE_API_KEY", ""),
             base_url=_clean_env("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
             model=_clean_env("LLM_MODEL", "qwen3.7-flash"),
+            thinking_switch=True,
             **kwargs
         )
 

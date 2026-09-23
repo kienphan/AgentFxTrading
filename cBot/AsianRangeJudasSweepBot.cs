@@ -496,6 +496,10 @@ namespace cAlgo.Robots
         private bool _tickFrameHasPnl;
         private long _tickFrameStamp;
         private DateTime _lastTickFrameAt = DateTime.MinValue;
+        // Open time of the last bar OnBarClosed handled, carried on every tick frame as the
+        // watchdog's bar heartbeat (the bot calls /trade only on a fresh sweep, so that is none).
+        private DateTime _lastBarHandled = DateTime.MinValue;
+        private string _tickFrameLastBar;
         #endregion
 
         #region Robot Events
@@ -557,7 +561,11 @@ namespace cAlgo.Robots
         {
             try
             {
-                if (_isExpired) return;
+                if (_isExpired)
+                {
+                    MarkBarHandled();  // idle on purpose; a restart cannot fix an expired licence
+                    return;
+                }
 
                 CheckNewsEvents();
 
@@ -668,11 +676,18 @@ namespace cAlgo.Robots
                         _ = SendStateToAgentAsync(contextDir);
                     }
                 }
+
+                MarkBarHandled();
             }
             catch (Exception ex)
             {
                 Print($"[CRITICAL ERROR in OnBarClosed] {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        private void MarkBarHandled()
+        {
+            _lastBarHandled = Bars.LastBar.OpenTime;
         }
 
         protected override void OnTick()
@@ -3634,6 +3649,8 @@ Reply strictly with JSON object.";
             public double? tp { get; set; }
             public double? sl_pnl { get; set; }
             public double? tp_pnl { get; set; }
+            // Bar heartbeat for the watchdog: open time of the last bar OnBarClosed handled
+            public string last_bar { get; set; }
         }
 
         private void StartTickStream()
@@ -3704,6 +3721,7 @@ Reply strictly with JSON object.";
                 _tickFrameHasPnl = hasPnl;
                 _tickFrameSl = sl; _tickFrameTp = tp;
                 _tickFrameSlPnl = slPnl; _tickFrameTpPnl = tpPnl;
+                _tickFrameLastBar = _lastBarHandled == DateTime.MinValue ? null : _lastBarHandled.ToString("yyyy-MM-ddTHH:mm:ss");
                 _tickFrameStamp++;
             }
         }
@@ -3736,6 +3754,7 @@ Reply strictly with JSON object.";
                         double? sl, tp, slPnl, tpPnl;
                         bool hasPnl;
                         long stamp;
+                        string lastBar;
                         lock (_tickFrameLock)
                         {
                             bid = _tickFrameBid; ask = _tickFrameAsk;
@@ -3743,6 +3762,7 @@ Reply strictly with JSON object.";
                             hasPnl = _tickFrameHasPnl; stamp = _tickFrameStamp;
                             sl = _tickFrameSl; tp = _tickFrameTp;
                             slPnl = _tickFrameSlPnl; tpPnl = _tickFrameTpPnl;
+                            lastBar = _tickFrameLastBar;
                         }
 
                         bool isNewTick = (stamp != sentStamp && (bid > 0 || ask > 0));
@@ -3764,7 +3784,8 @@ Reply strictly with JSON object.";
                                 sl = hasPnl ? sl : null,
                                 tp = hasPnl ? tp : null,
                                 sl_pnl = hasPnl ? slPnl : null,
-                                tp_pnl = hasPnl ? tpPnl : null
+                                tp_pnl = hasPnl ? tpPnl : null,
+                                last_bar = lastBar
                             });
                             sentStamp = stamp;
                         }

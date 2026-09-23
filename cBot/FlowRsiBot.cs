@@ -276,6 +276,9 @@ namespace cAlgo.Robots
         private bool _circuitBreakerTriggered;
         private DateTime _lastCircuitBreakerResetDate = DateTime.MinValue;
         private DateTime _lastTickTelemetryTime = DateTime.MinValue;
+        // Open time of the last bar OnBarClosed handled, sent with every tick as the watchdog's
+        // bar heartbeat (/trade is no signal: news, spread and the circuit breaker skip it).
+        private DateTime _lastBarHandled = DateTime.MinValue;
         private DateTime _lastNewsFetchTime = DateTime.MinValue;
         private DateTime _nextAllowedDirectFetchTime = DateTime.MinValue;
         private readonly List<NewsEvent> _newsEvents = new List<NewsEvent>();
@@ -525,6 +528,7 @@ namespace cAlgo.Robots
                 if (IsNewsSuspensionActive(out string newsReason))
                 {
                     if (ShowLogs) Print($"[FlowRSI] Market entry suspended due to High-Impact News event window: {newsReason}");
+                    MarkBarHandled();
                     return;
                 }
 
@@ -532,6 +536,7 @@ namespace cAlgo.Robots
                 if (_circuitBreakerTriggered)
                 {
                     if (ShowLogs) Print("[FlowRSI] Circuit breaker active. Entries blocked.");
+                    MarkBarHandled();
                     return;
                 }
 
@@ -544,16 +549,23 @@ namespace cAlgo.Robots
                 if (spreadPips > MaxSpreadPips)
                 {
                     if (ShowLogs) Print($"[FlowRSI] Spread {spreadPips:F1} pips exceeds max allowed {MaxSpreadPips:F1} pips.");
+                    MarkBarHandled();
                     return;
                 }
 
                 // Evaluate SMC Market Structure & Nested RSI Crossing (coordinates single-flight AI snapshot)
                 EvaluateStrategySignals(hasOpenPos);
+                MarkBarHandled();
             }
             catch (Exception ex)
             {
                 Print($"[OnBarClosed Error] {ex.Message}");
             }
+        }
+
+        private void MarkBarHandled()
+        {
+            _lastBarHandled = Bars.LastBar.OpenTime;
         }
 
         protected override void OnStop()
@@ -1004,8 +1016,24 @@ namespace cAlgo.Robots
                     if (ShowLogs) Print($"[AI Agent] Sending market snapshot for {SymbolName} ({TimeFrame}) [Req: {expectedRequestId.Substring(0, 8)}...] to {localTargetUrl}...");
                 });
 
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync(localTargetUrl, content);
+                HttpResponseMessage response;
+                try
+                {
+                    response = await _httpClient.PostAsync(localTargetUrl, new StringContent(jsonPayload, Encoding.UTF8, "application/json"));
+                }
+                catch (HttpRequestException sendErr)
+                {
+                    // Failed before any response (4x on 2026-09-23, ~0.3 s in, never reaching the
+                    // server): most likely a pooled keep-alive socket the server had just closed.
+                    // The bot acts only on a response it receives, so one retry cannot double an
+                    // entry. Timeouts are TaskCanceledException and are not retried.
+                    string cause = sendErr.InnerException != null ? $"{sendErr.Message} ({sendErr.InnerException.Message})" : sendErr.Message;
+                    BeginInvokeOnMainThread(() =>
+                    {
+                        if (ShowLogs) Print($"[AI Agent Retry] {cause}. Retrying once.");
+                    });
+                    response = await _httpClient.PostAsync(localTargetUrl, new StringContent(jsonPayload, Encoding.UTF8, "application/json"));
+                }
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -1056,7 +1084,7 @@ namespace cAlgo.Robots
             }
             catch (Exception ex)
             {
-                string exErr = ex.Message;
+                string exErr = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
                 BeginInvokeOnMainThread(() =>
                 {
                     if (ShowLogs) Print($"[AI Agent Bridge Error] {exErr}");
@@ -2212,7 +2240,8 @@ namespace cAlgo.Robots
                     ask = Symbol.Ask,
                     equity = Account.Equity,
                     balance = Account.Balance,
-                    positions = posList
+                    positions = posList,
+                    last_bar = _lastBarHandled == DateTime.MinValue ? null : _lastBarHandled.ToString("yyyy-MM-ddTHH:mm:ss")
                 };
 
                 string tickUrl = !string.IsNullOrEmpty(AiTelemetryUrl) ? AiTelemetryUrl : ApiUrl.Replace("/trade", "/api/tick");
