@@ -672,7 +672,7 @@ namespace cAlgo.Robots
                 double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
                 string symUpper = SymbolName.ToUpperInvariant();
                 if (symUpper.Contains("XAU") || symUpper.Contains("GOLD"))
-                    effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 100.0 : 150.0);
+                    effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
                 else if (symUpper.Contains("JPY"))
                     effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
@@ -1294,7 +1294,7 @@ namespace cAlgo.Robots
             double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
             string symUpperExec = SymbolName.ToUpperInvariant();
             if (symUpperExec.Contains("XAU") || symUpperExec.Contains("GOLD"))
-                effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 100.0 : 150.0);
+                effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
             else if (symUpperExec.Contains("JPY"))
                 effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
@@ -1434,7 +1434,7 @@ namespace cAlgo.Robots
                     double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
                     string symUpperRestore = SymbolName.ToUpperInvariant();
                     if (symUpperRestore.Contains("XAU") || symUpperRestore.Contains("GOLD"))
-                        effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 100.0 : 150.0);
+                        effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
                     else if (symUpperRestore.Contains("JPY"))
                         effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
@@ -1452,7 +1452,7 @@ namespace cAlgo.Robots
                     double minRequiredPips = MinBreakEvenPips > 0 ? MinBreakEvenPips : 10.0;
                     string symUpper = SymbolName.ToUpperInvariant();
                     if (symUpper.Contains("XAU") || symUpper.Contains("GOLD"))
-                        minRequiredPips = Math.Max(minRequiredPips, IsM5OrLower ? 80.0 : 150.0);
+                        minRequiredPips = Math.Max(minRequiredPips, IsM5OrLower ? 500.0 : 1000.0);
                     else if (symUpper.Contains("JPY"))
                         minRequiredPips = Math.Max(minRequiredPips, 15.0);
 
@@ -1536,7 +1536,7 @@ namespace cAlgo.Robots
                     string symUp = SymbolName.ToUpperInvariant();
                     double minTrailDistPips = TrailingStopDistancePips;
                     if (symUp.Contains("XAU") || symUp.Contains("GOLD"))
-                        minTrailDistPips = Math.Max(minTrailDistPips, IsM5OrLower ? 120.0 : 350.0); // min $1.20 for Gold M5, $3.50 for M15+
+                        minTrailDistPips = Math.Max(minTrailDistPips, IsM5OrLower ? 400.0 : 800.0); // min $4.00 for Gold M5, $8.00 for M15+
                     else if (symUp.Contains("JPY"))
                         minTrailDistPips = Math.Max(minTrailDistPips, 25.0);  // min 25 pips for JPY
                     else if (symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("UK100"))
