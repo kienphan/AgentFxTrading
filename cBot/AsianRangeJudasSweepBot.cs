@@ -569,16 +569,20 @@ namespace cAlgo.Robots
 
                 CheckNewsEvents();
 
+                // The bar that closed: the last bar is sometimes already the next one here
+                // (see ClosedBarIndex), and every read below is about the closed bar.
+                int closedIdx = ClosedBarIndex();
+
                 // Track Asian session range & golden killzones.
                 // Sample the bar that closed, by its OpenTime, NOT Server.Time: Server.Time is
                 // the tick that CLOSED the bar, one bar-width later. Using it dropped the
                 // 05:45-06:00 bar from the session and folded the 23:45-00:00 bar of the
                 // previous day in (resetting the range). Matches InitializeAsianSession.
-                TrackAsianSession(ClosedBar());
+                TrackAsianSession(Bars[closedIdx]);
                 bool inKillzone = IsGoldenKillzone(Server.Time, out _activeKillzone);
 
                 // Evaluate Judas Sweep signals (respecting reverseCondition)
-                CheckJudasSweep(out bool sweepBuy, out bool sweepSell, out string sweepSignal);
+                CheckJudasSweep(closedIdx, out bool sweepBuy, out bool sweepSell, out string sweepSignal);
                 bool rawBuy  = !reverseCondition ? sweepBuy  : sweepSell;
                 bool rawSell = !reverseCondition ? sweepSell : sweepBuy;
 
@@ -587,16 +591,16 @@ namespace cAlgo.Robots
                 {
                     _allowedAiDirection = "BUY";
                     _traditionalSignal  = sweepSignal;
-                    _lastCrossBarIndex  = Bars.Count - 1;
-                    _lastCrossBarTime   = Bars[Bars.Count - 1].OpenTime;
+                    _lastCrossBarIndex  = closedIdx;
+                    _lastCrossBarTime   = Bars[closedIdx].OpenTime;
                     _barsSinceCross     = 0;
                 }
                 else if (rawSell && !rawBuy)
                 {
                     _allowedAiDirection = "SELL";
                     _traditionalSignal  = sweepSignal;
-                    _lastCrossBarIndex  = Bars.Count - 1;
-                    _lastCrossBarTime   = Bars[Bars.Count - 1].OpenTime;
+                    _lastCrossBarIndex  = closedIdx;
+                    _lastCrossBarTime   = Bars[closedIdx].OpenTime;
                     _barsSinceCross     = 0;
                 }
                 else if (_lastCrossBarIndex >= 0)
@@ -608,7 +612,7 @@ namespace cAlgo.Robots
                     // signal when that bar is no longer in the series.
                     if (_lastCrossBarIndex < Bars.Count && Bars[_lastCrossBarIndex].OpenTime == _lastCrossBarTime)
                     {
-                        _barsSinceCross = Bars.Count - 1 - _lastCrossBarIndex;
+                        _barsSinceCross = closedIdx - _lastCrossBarIndex;
                     }
                     else
                     {
@@ -1152,15 +1156,15 @@ namespace cAlgo.Robots
             return Math.Max(AiSlMinFloorPips, currentAtrPips > 0 ? Math.Round(currentAtrPips * 0.8, 0) : 200.0);
         }
 
-        /// <summary>The bar that has just closed. Inside OnBarClosed that is normally Bars.LastBar,
-        /// but on 2026-09-23 half the bots saw the bar that had just opened there instead (17:45
-        /// close: 17:30 on some, 17:45 on others). A bar whose full span has not yet elapsed on
-        /// the server clock is still forming, so the closed one is the bar before it.</summary>
-        private Bar ClosedBar()
+        /// <summary>Index of the bar that has just closed. Inside OnBarClosed that is normally the
+        /// last bar, but on 2026-09-23 half the bots saw the bar that had just opened there instead
+        /// (17:45 close: 17:30 on some, 17:45 on others). A bar whose full span has not yet elapsed
+        /// on the server clock is still forming, so the closed one is the bar before it.</summary>
+        private int ClosedBarIndex()
         {
-            var last = Bars.LastBar;
-            if (Bars.Count > 1 && last.OpenTime + BarSpan() > Server.Time)
-                return Bars.Last(1);
+            int last = Bars.Count - 1;
+            if (last > 0 && Bars[last].OpenTime + BarSpan() > Server.Time)
+                return last - 1;
             return last;
         }
 
@@ -1383,7 +1387,9 @@ namespace cAlgo.Robots
             return false;
         }
 
-        private void CheckJudasSweep(out bool buySignal, out bool sellSignal, out string signalName)
+        /// <summary>Judas sweep on bar `barIndex`: the closed bar from OnBarClosed, the forming
+        /// bar in tick mode.</summary>
+        private void CheckJudasSweep(int barIndex, out bool buySignal, out bool sellSignal, out string signalName)
         {
             buySignal = false;
             sellSignal = false;
@@ -1397,7 +1403,7 @@ namespace cAlgo.Robots
             if (_asianHigh <= 0 || _asianLow <= 0) return;
             if (_asianRangePips < minAsianRangePips || _asianRangePips > maxAsianRangePips) return;
 
-            var lastBar = Bars.LastBar;
+            var lastBar = Bars[barIndex];
             double sweepBuffer = sweepBufferPips * Symbol.PipSize;
 
             double totalBarRange = lastBar.High - lastBar.Low;
@@ -1408,7 +1414,7 @@ namespace cAlgo.Robots
             if (lastBar.High >= (_asianHigh + sweepBuffer) && lastBar.Close <= _asianHigh)
             {
                 bool wickValid = !requireRejectionWick || (totalBarRange > 0 && (upperWick / totalBarRange) >= minRejectionWickRatio);
-                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result.LastValue > rsiOversold))
+                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result[barIndex] > rsiOversold))
                 {
                     sellSignal = true;
                     _highSwept = true;
@@ -1423,7 +1429,7 @@ namespace cAlgo.Robots
             else if (lastBar.Low <= (_asianLow - sweepBuffer) && lastBar.Close >= _asianLow)
             {
                 bool wickValid = !requireRejectionWick || (totalBarRange > 0 && (lowerWick / totalBarRange) >= minRejectionWickRatio);
-                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result.LastValue < rsiOverbought))
+                if (wickValid && (!enableRsiFilter || rsi == null || rsi.Result[barIndex] < rsiOverbought))
                 {
                     buySignal = true;
                     _lowSwept = true;
@@ -1438,13 +1444,13 @@ namespace cAlgo.Robots
 
         private bool buyCondition()
         {
-            CheckJudasSweep(out bool buySignal, out _, out _);
+            CheckJudasSweep(Bars.Count - 1, out bool buySignal, out _, out _);
             return buySignal;
         }
 
         private bool sellCondition()
         {
-            CheckJudasSweep(out _, out bool sellSignal, out _);
+            CheckJudasSweep(Bars.Count - 1, out _, out bool sellSignal, out _);
             return sellSignal;
         }
 

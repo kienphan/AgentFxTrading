@@ -563,6 +563,37 @@ namespace cAlgo.Robots
             }
         }
 
+        /// <summary>Index of the bar that has just closed. Inside OnBarClosed that is normally the
+        /// last bar, but on 2026-09-23 the first call after a restart saw the bar that had just
+        /// opened there instead (17:45 close: 17:45 on 14 of 15 bots). A bar whose full span has
+        /// not yet elapsed on the server clock is still forming, so the closed one is the bar
+        /// before it.</summary>
+        private int ClosedBarIndex()
+        {
+            int last = Bars.Count - 1;
+            if (last > 0 && Bars[last].OpenTime + BarSpan() > Server.Time)
+                return last - 1;
+            return last;
+        }
+
+        private TimeSpan _barSpan = TimeSpan.Zero;
+
+        /// <summary>Bar width, as the smallest gap between recent open times (weekends and
+        /// holidays only ever widen a gap).</summary>
+        private TimeSpan BarSpan()
+        {
+            if (_barSpan > TimeSpan.Zero) return _barSpan;
+            var span = TimeSpan.MaxValue;
+            for (int i = Math.Max(1, Bars.Count - 50); i < Bars.Count; i++)
+            {
+                var gap = Bars[i].OpenTime - Bars[i - 1].OpenTime;
+                if (gap > TimeSpan.Zero && gap < span) span = gap;
+            }
+            if (span == TimeSpan.MaxValue) return TimeSpan.FromMinutes(15);
+            _barSpan = span;
+            return span;
+        }
+
         private void MarkBarHandled()
         {
             // Server.Time, not the last bar's open time: inside OnBarClosed that is sometimes the
@@ -582,7 +613,8 @@ namespace cAlgo.Robots
         #region SMC / ICT Structure & Nested RSI Signal Analysis
         private void EvaluateStrategySignals(bool hasOpenPos)
         {
-            int index = Bars.ClosePrices.Count - 1;
+            // The bar that closed: the last bar is sometimes already the next one (ClosedBarIndex).
+            int index = ClosedBarIndex();
             if (index < 20) return;
 
             double fastRsiCurr = _fastRsi.Result[index];

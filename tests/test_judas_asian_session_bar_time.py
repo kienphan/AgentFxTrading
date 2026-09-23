@@ -54,10 +54,10 @@ def test_session_hour_comes_from_the_bar_not_the_tick_clock():
 def test_session_hour_uses_the_same_bar_whose_high_low_is_read():
     """
     The hour and the High/Low must describe the same bar. Since 2026-09-23 the call passes
-    the closed bar itself (ClosedBar(): inside OnBarClosed Bars.LastBar is sometimes the bar
-    that just opened), and TrackAsianSession reads all three from that one parameter.
+    the closed bar itself (ClosedBarIndex(): inside OnBarClosed Bars.LastBar is sometimes the
+    bar that just opened), and TrackAsianSession reads all three from that one parameter.
     """
-    assert _track_call_argument() == "ClosedBar()"
+    assert _track_call_argument() == "Bars[closedIdx]"
     body = _track_body()
     assert "private void TrackAsianSession(Bar closedBar)" in body
     assert "closedBar.OpenTime.Hour" in body
