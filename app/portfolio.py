@@ -8,7 +8,7 @@ from datetime import datetime, date, timezone
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
-from app.db import get_db_connection
+from app.db import get_db_connection, INTEGRITY_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -275,22 +275,8 @@ class PortfolioManager:
                     """
                     cur = conn.execute(fallback_sql, (remaining_volume, realized_pnl, ctrader_id, bot_id, symbol, account_id))
                     matched = cur.rowcount
-
-                if not matched:
-                    # 3. Last resort: match any open position for this bot/symbol/account
-                    last_resort_sql = """
-                        UPDATE positions
-                        SET initial_volume = COALESCE(initial_volume, volume),
-                            volume = ?, pnl = COALESCE(pnl, 0) + ?, ctrader_id = COALESCE(?, ctrader_id)
-                        WHERE id = (
-                            SELECT id FROM positions
-                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
-                            ORDER BY entry_time ASC
-                            LIMIT 1
-                        )
-                    """
-                    cur = conn.execute(last_resort_sql, (remaining_volume, realized_pnl, ctrader_id, bot_id, symbol, account_id))
-                    matched = cur.rowcount
+                # No further fallback: a row that carries a different ctrader_id is a different
+                # position, and banking this slice on it would shrink the wrong trade.
             else:
                 # No ctrader_id supplied: update the oldest open position
                 sql = """
@@ -363,24 +349,9 @@ class PortfolioManager:
                     """
                     cur = conn.execute(fallback_sql, (exit_price, pnl, close_reason, sl_price, tp_price, ctrader_id, bot_id, symbol, account_id))
                     matched = cur.rowcount
-
-                if not matched:
-                    # 3. Last resort: match any open position for this bot/symbol/account
-                    last_resort_sql = """
-                        UPDATE positions 
-                        SET status = 'closed', exit_price = ?, pnl = COALESCE(pnl, 0) + ?, exit_time = datetime('now'),
-                            volume = COALESCE(initial_volume, volume),
-                            close_reason = ?, sl_price = COALESCE(?, sl_price), tp_price = COALESCE(?, tp_price),
-                            ctrader_id = COALESCE(?, ctrader_id)
-                        WHERE id = (
-                            SELECT id FROM positions
-                            WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ?
-                            ORDER BY entry_time ASC
-                            LIMIT 1
-                        )
-                    """
-                    cur = conn.execute(last_resort_sql, (exit_price, pnl, close_reason, sl_price, tp_price, ctrader_id, bot_id, symbol, account_id))
-                    matched = cur.rowcount
+                # No further fallback: a row that carries a different ctrader_id is a different
+                # position. A replayed report, or one for a position whose open report never
+                # arrived, would otherwise close it with this trade's exit and P&L.
             else:
                 # No ctrader_id supplied: update open position (for legacy single-position bots)
                 sql = """
@@ -417,7 +388,7 @@ class PortfolioManager:
             return False
         finally:
             conn.close()
-    def check_risk(self, symbol: str, side: str, volume: float,
+    def check_risk(self, symbol: str, side: Optional[str], volume: float,
                    account_balance: float = 10000.0, account_id: str = "default",
                    used_margin: Optional[float] = None) -> Tuple[bool, str]:
         """
@@ -425,13 +396,15 @@ class PortfolioManager:
         Returns (allowed: bool, reason: str)
 
         used_margin is the broker's own figure (cTrader Account.Margin) when the cBot sends it.
+        side is None when the direction is not known yet (the capacity check before the LLM
+        picks one): the US-index alignment check is skipped then and runs on the final decision.
         """
         conn = self._get_conn()
         try:
             # 1. US Index Correlation / Directional Alignment Check
             # All US Equity Indices (US30, USTEC, US500) must align with macro trend direction.
             # Blocking opposing positions across US indices prevents portfolio self-hedging and divergence losses.
-            if is_us_index(symbol) and side.upper() in ("BUY", "SELL"):
+            if side and is_us_index(symbol) and side.upper() in ("BUY", "SELL"):
                 cursor = conn.execute(
                     "SELECT symbol, side FROM positions WHERE status = 'open' AND account_id = ?",
                     (account_id,)
@@ -675,7 +648,7 @@ class PortfolioManager:
             )
             conn.commit()
             return True
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             return False # Name already exists
         finally:
             conn.close()

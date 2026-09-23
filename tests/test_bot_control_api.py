@@ -62,6 +62,14 @@ def bot_config():
     pm.delete_cbot_config(NAME)
 
 
+def test_adding_a_duplicate_bot_name_is_refused_not_a_500(bot_config):
+    # add_cbot_config caught sqlite3.IntegrityError without importing sqlite3, so the
+    # duplicate raised NameError (and on PostgreSQL the error is psycopg2's anyway).
+    r = client.post("/api/bots", json={"name": NAME, "run_command": "docker run -d img"})
+    assert r.status_code == 200
+    assert r.json() == {"success": False, "message": "Bot name already exists"}
+
+
 def _bot(name):
     return next(b for b in client.get("/api/bots").json()["bots"] if b["name"] == name)
 

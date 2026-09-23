@@ -1239,7 +1239,7 @@ def api_setup_instances(req: SetupInstancesRequest):
         name = container_name(account["slug"], strategy, symbol)
         entry["name"] = name
         cmd = build_run_command(account, strategy, symbol, str(PROJECT_ROOT), ctrader_home)
-        # get_cbot_config first: add_cbot_config only recognises sqlite3.IntegrityError, not psycopg2's
+        # get_cbot_config first, so an existing cell is reported without attempting the INSERT
         if pm.get_cbot_config(name) or not pm.add_cbot_config(name, describe_cell(strategy, symbol, account["label"]), cmd):
             entry.update(status="exists", message="Bot config already exists")
             continue

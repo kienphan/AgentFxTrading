@@ -27,6 +27,9 @@ try:
 except ImportError:
     HAS_PSYCOPG2 = False
 
+# Constraint violations from either backend, for callers that treat a duplicate as "already exists".
+INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError) if HAS_PSYCOPG2 else (sqlite3.IntegrityError,)
+
 
 def _adapt_query_for_pg(sql: str) -> str:
     """

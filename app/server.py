@@ -1954,9 +1954,13 @@ async def trade_decision(snapshot: MarketSnapshot):
             logger.warning(f"[{account_id}/{snapshot.bot_id}] Error checking news blackout shield: {ex_news}")
 
     if not has_open:
+        # Only FlowRSI states its direction up front; elsewhere the LLM picks it. Guessing
+        # "BUY" refused aligned US-index SELLs here, so an unknown side skips the alignment
+        # check and the Risk Guard below applies it to the final decision.
+        pre_side = snapshot.candidate_action if is_flowrsi and snapshot.candidate_action in ("BUY", "SELL") else None
         can_trade, reason = portfolio_manager.check_risk(
             symbol=snapshot.symbol,
-            side="BUY",  # Will be determined by LLM, checking capacity
+            side=pre_side,
             volume=0.01,
             account_balance=snapshot.account_balance,
             account_id=account_id,

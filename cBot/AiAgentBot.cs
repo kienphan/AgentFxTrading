@@ -1453,29 +1453,38 @@ namespace cAlgo.Robots
                     }
 
                     double effectiveTrailDistancePips = effectiveTrailDistanceAtr * atrInPips;
+                    // The broker holds the stop rounded to Symbol.Digits. An unrounded candidate
+                    // (10712.73643 vs 10712.74) re-sent the stop already in place and got
+                    // InvalidRequest, and chasing every tick sent a modify per tick. Round first,
+                    // then move only when the stop gains a tenth of the trail distance.
+                    double minTrailStep = Math.Max(Symbol.TickSize, 0.1 * effectiveTrailDistancePips * Symbol.PipSize);
                     double trailSl;
                     if (pos.TradeType == TradeType.Buy)
                     {
-                        trailSl = Symbol.Bid - effectiveTrailDistancePips * Symbol.PipSize;
-                        if (trailSl > pos.StopLoss.Value && trailSl < Symbol.Bid)
-                        {
-                            pos.ModifyStopLossPrice(trailSl);
-                            if (isTier2Trailing && ShowLogs)
-                                Print($"[Trailing Tier 2] Pos#{pos.Id} tightened SL → {trailSl:F5} (dist={effectiveTrailDistancePips:F1}p / pnl={pnlPips:F1}p)");
-                        }
+                        trailSl = Math.Round(Symbol.Bid - effectiveTrailDistancePips * Symbol.PipSize, Symbol.Digits);
+                        if (trailSl - pos.StopLoss.Value >= minTrailStep && trailSl < Symbol.Bid)
+                            ApplyTrailingStop(pos, trailSl, isTier2Trailing, effectiveTrailDistancePips, pnlPips);
                     }
                     else
                     {
-                        trailSl = Symbol.Ask + effectiveTrailDistancePips * Symbol.PipSize;
-                        if (trailSl < pos.StopLoss.Value && trailSl > Symbol.Ask)
-                        {
-                            pos.ModifyStopLossPrice(trailSl);
-                            if (isTier2Trailing && ShowLogs)
-                                Print($"[Trailing Tier 2] Pos#{pos.Id} tightened SL → {trailSl:F5} (dist={effectiveTrailDistancePips:F1}p / pnl={pnlPips:F1}p)");
-                        }
+                        trailSl = Math.Round(Symbol.Ask + effectiveTrailDistancePips * Symbol.PipSize, Symbol.Digits);
+                        if (pos.StopLoss.Value - trailSl >= minTrailStep && trailSl > Symbol.Ask)
+                            ApplyTrailingStop(pos, trailSl, isTier2Trailing, effectiveTrailDistancePips, pnlPips);
                     }
                 }
             }
+        }
+
+        private void ApplyTrailingStop(Position pos, double trailSl, bool isTier2Trailing, double trailDistancePips, double pnlPips)
+        {
+            var result = pos.ModifyStopLossPrice(trailSl);
+            if (result == null || !result.IsSuccessful)
+            {
+                if (ShowLogs) Print($"[Trailing Failed] Pos#{pos.Id} stop move to {trailSl:F5} rejected: {result?.Error}. Existing stop kept.");
+                return;
+            }
+            if (isTier2Trailing && ShowLogs)
+                Print($"[Trailing Tier 2] Pos#{pos.Id} tightened SL → {trailSl:F5} (dist={trailDistancePips:F1}p / pnl={pnlPips:F1}p)");
         }
 
         private void CheckMaxGiveback()
