@@ -560,7 +560,9 @@ ELSE:
 | `closePositionsBeforeNews` | `false` | Close open positions before high-impact news |
 | `riskFactor` | `1.0` | Account risk allocation factor (%) (Recommended: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move SL to breakeven after trigger |
-| `breakEvenTrigger` | `250.0 pips` | Profit distance to activate breakeven ($2.50 on Gold) |
+| `breakEvenMode` | `Risk_Reward_Ratio` | Which trigger is read: `Risk_Reward_Ratio` (default) or `Fixed_Pips` |
+| `breakEvenRrTrigger` | `1.5 R` | Moves SL to breakeven once profit reaches 1.5x the initial SL distance — **this is the trigger in force by default** |
+| `breakEvenTrigger` | `250.0 pips` | Pip trigger, read **only** when `breakEvenMode = Fixed_Pips`; ignored in the default R:R mode |
 
 ### 🏹 Recommended Presets for Asian Range Judas Sweep
 
@@ -570,13 +572,13 @@ ELSE:
 | **Asian Session (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
 | **Min / Max Asian Range** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
-| **Judas Sweep Buffer** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **Judas Sweep Buffer** | `500.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
 | **AI SL Minimum Floor** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
-| **Default Stop Loss** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
-| **Default Take Profit** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
-| **Breakeven Trigger** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Default Stop Loss** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Default Take Profit** | `450.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **Breakeven Trigger (R:R)** | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` |
 | **AI Confidence Threshold** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| **Risk per Trade** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `0.2%` | `0.2%` |
 
 ### 📊 Recommended Presets for TMS + ORB (by Symbol)
 #### Metals & Indices
@@ -673,13 +675,13 @@ The dashboard's **Setup Instances** grid offers every strategy on every symbol (
 
 **Asian Range Judas Sweep** (M15, London + NY killzones)
 
-| Symbol | Min / Max Asian Range | Sweep Buffer | AI SL Floor | Breakeven | SL / TP | Risk | Source |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| USDJPY, USDCAD, AUDUSD | `15.0 / 45.0` | `3.5` | `15.0` | `20.0` | `15.0 / 35.0` | default | = EURUSD / GBPUSD |
-| AUDJPY | `25.0 / 70.0` | `5.0` | `25.0` | `30.0` | `25.0 / 50.0` | default | = GBPJPY / EURJPY |
-| US30 | `600 / 4000` (60 / 400 pt) | `150` | `750` | `1000` | `750 / 1750` | `0.2%` | UK100 ×5 |
-| USTEC | `500 / 3000` (50 / 300 pt) | `120` | `600` | `800` | `600 / 1400` | `0.2%` | UK100 ×4 |
-| DE40 | `350 / 2500` (35 / 250 pt) | `90` | `450` | `600` | `450 / 1000` | `0.2%` | UK100 ×3 |
+| Symbol | Min / Max Asian Range | Sweep Buffer | AI SL Floor | SL / TP | Risk | Source |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| USDJPY, USDCAD, AUDUSD | `15.0 / 45.0` | `3.5` | `15.0` | `15.0 / 35.0` | default | = EURUSD / GBPUSD |
+| AUDJPY | `25.0 / 70.0` | `5.0` | `25.0` | `25.0 / 50.0` | default | = GBPJPY / EURJPY |
+| US30 | `600 / 4000` (60 / 400 pt) | `150` | `750` | `750 / 1750` | `0.2%` | UK100 ×5 |
+| USTEC | `500 / 3000` (50 / 300 pt) | `120` | `600` | `600 / 1400` | `0.2%` | UK100 ×4 |
+| DE40 | `350 / 2500` (35 / 250 pt) | `90` | `450` | `450 / 1000` | `0.2%` | UK100 ×3 |
 
 **FlowRSI** (from the EURUSD block: RSI 7/14, SMC + FVG + Premium/Discount filters, 0.2% / $50 risk, RR 1.5, AI gate)
 

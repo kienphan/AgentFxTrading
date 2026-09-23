@@ -522,7 +522,9 @@ ELSE:
 | `closePositionsBeforeNews` | `false` | Fechar posições abertas antes de notícias de alto impacto |
 | `riskFactor` | `1.0` | Fator de alocação de risco da conta por operação (%) (Recomendado: 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | Move automaticamente o SL para o zero ao atingir a meta |
-| `breakEvenTrigger` | `250.0 pips` | Distância de lucro para acionar o breakeven ($2.50 no Ouro) |
+| `breakEvenMode` | `Risk_Reward_Ratio` | Qual gatilho é lido: `Risk_Reward_Ratio` (padrão) ou `Fixed_Pips` |
+| `breakEvenRrTrigger` | `1.5 R` | Move o SL para o zero quando o lucro atinge 1.5x a distância inicial do SL — **é este o gatilho em vigor por padrão** |
+| `breakEvenTrigger` | `250.0 pips` | Gatilho em pips, lido **apenas** quando `breakEvenMode = Fixed_Pips`; ignorado no modo R:R padrão |
 ### 🏹 Tabela de Parâmetros Recomendados para Asian Range Judas Sweep
 
 | Parâmetro | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY | BTCUSD | ETHUSD |
@@ -531,13 +533,13 @@ ELSE:
 | **Sessão Asiática (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **Killzones (UTC)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
 | **Range Asiático (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
-| **Profundidade do Pavio (Buffer)**| `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **Profundidade do Pavio (Buffer)** | `500.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
 | **Piso de SL AI (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
-| **Stop Loss Padrão** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
-| **Take Profit Padrão** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
-| **Gatilho de Breakeven (BE)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Stop Loss Padrão** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **Take Profit Padrão** | `450.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **Gatilho de Breakeven (R:R)** | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` |
 | **Confiança Mínima da IA** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **Risco por Operação** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| **Risco por Operação** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `0.2%` | `0.2%` |
 
 ### 📊 Presets Recomendados para TMS + ORB (Por Símbolo)
 #### Metals & Indices

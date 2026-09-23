@@ -526,7 +526,9 @@ ELSE:
 | `closePositionsBeforeNews` | `false` | 重大新闻发布前强制平掉所有持仓 |
 | `riskFactor` | `1.0` | 每笔交易风险资金分配系数 (%) (建议 0.5% – 1.0%) |
 | `enableBreakEvenPrice` | `true` | 盈利达到目标后自动将止损移至保本 |
-| `breakEvenTrigger` | `250.0 pips` | 触发保本的盈利距离（黄金 $2.50） |
+| `breakEvenMode` | `Risk_Reward_Ratio` | 决定读取哪个触发条件：`Risk_Reward_Ratio`（默认）或 `Fixed_Pips` |
+| `breakEvenRrTrigger` | `1.5 R` | 盈利达到初始止损距离的 1.5 倍时将止损移至保本 —— **默认真正生效的是它** |
+| `breakEvenTrigger` | `250.0 pips` | 按点数的触发值，**仅**在 `breakEvenMode = Fixed_Pips` 时读取；默认 R:R 模式下被忽略 |
 ### 🏹 亚洲时段流动性猎杀推荐预设参数表 (Asian Range Judas Sweep)
 
 | 参数 | XAUUSD | GBPUSD | EURUSD | GBPJPY | EURJPY | BTCUSD | ETHUSD |
@@ -535,13 +537,13 @@ ELSE:
 | **亚盘时段 (UTC)** | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` | `00:00 - 06:00` |
 | **猎杀时段 (Killzones)** | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` | `07-10h & 12:30-16h` |
 | **亚盘幅度限制 (Min/Max)** | `200.0 / 8000.0 pips` | `15.0 / 45.0 pips` | `15.0 / 45.0 pips` | `25.0 / 70.0 pips` | `25.0 / 70.0 pips` | `10000.0 / 400000.0 pips` | `800.0 / 35000.0 pips` |
-| **扫荡引线深度 (Buffer)** | `30.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
+| **扫荡引线深度 (Buffer)** | `500.0 pips` | `3.5 pips` | `3.5 pips` | `5.0 pips` | `5.0 pips` | `1500.0 pips` | `150.0 pips` |
 | **AI SL 保底地板 (Floor)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `20000.0 pips` | `1500.0 pips` |
-| **默认止损 (Stop Loss)** | `350.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
-| **默认止盈 (Take Profit)** | `700.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
-| **保本触发点 (BE Trigger)** | `250.0 pips` | `20.0 pips` | `20.0 pips` | `30.0 pips` | `30.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **默认止损 (Stop Loss)** | `200.0 pips` | `15.0 pips` | `15.0 pips` | `25.0 pips` | `25.0 pips` | `25000.0 pips` | `2000.0 pips` |
+| **默认止盈 (Take Profit)** | `450.0 pips` | `35.0 pips` | `35.0 pips` | `50.0 pips` | `50.0 pips` | `60000.0 pips` | `5000.0 pips` |
+| **保本触发点 (R:R)** | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` | `1.5 R` |
 | **最低 AI 置信度评分** | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` | `70.0%` |
-| **单笔风险占比** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` |
+| **单笔风险占比** | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `1.0%` | `0.2%` | `0.2%` |
 
 ### 📊 TMS + ORB 推荐预设参数表 (按品种)
 #### Metals & Indices
