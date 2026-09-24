@@ -89,6 +89,11 @@ namespace cAlgo.Robots
         // previously switched off entirely. 0 disables the stream.
         [Parameter("Tick Stream (ms, 0=off)", Group = "AI Agent Settings", DefaultValue = 1000, MinValue = 0)]
         public int TickStreamMs { get; set; }
+
+        // Dashboard commands (Close, Close & Stop, Pause) are polled from /api/cbot/commands.
+        // 0 turns them off.
+        [Parameter("Command Poll (ms, 0=off)", Group = "AI Agent Settings", DefaultValue = 2000, MinValue = 0)]
+        public int CommandPollMs { get; set; }
         [Parameter("Account Label (optional)", Group = "AI Agent Settings", DefaultValue = "")]
         public string AccountLabel { get; set; }
 
@@ -553,6 +558,7 @@ namespace cAlgo.Robots
             Print(label + " Started successfully. Bot is running...");
 
             StartTickStream();
+            StartCommandPoll();
 
             _ = SendStateToAgentAsync();
         }
@@ -779,6 +785,7 @@ namespace cAlgo.Robots
                     TimeSpan timeDifference = Server.Time - dcalastEntryTime;
                     if (timeDifference.TotalSeconds >= 2 && _isWaiting == false)
                     {
+                        if (DashboardPauseBlocks("BUY entry")) return;
                         CalculateSLTP(TradeType.Buy, Symbol.Bid);
 
                         var result = ExecuteMarketOrder(TradeType.Buy, SymbolName, _calculatedVol, label, stoploss, takeprofit);
@@ -799,6 +806,7 @@ namespace cAlgo.Robots
                     TimeSpan timeDifference = Server.Time - dcalastEntryTime;
                     if (timeDifference.TotalSeconds >= 2 && _isWaiting == false)
                     {
+                        if (DashboardPauseBlocks("SELL entry")) return;
                         CalculateSLTP(TradeType.Sell, Symbol.Ask);
 
                         var result = ExecuteMarketOrder(TradeType.Sell, SymbolName, _calculatedVol, label, stoploss, takeprofit);
@@ -862,10 +870,10 @@ namespace cAlgo.Robots
         // recorded here just before the call and reported instead.
         private readonly Dictionary<int, string> _closeReasons = new Dictionary<int, string>();
 
-        private void CloseWithReason(Position pos, string reason)
+        private TradeResult CloseWithReason(Position pos, string reason)
         {
             _closeReasons[pos.Id] = reason;
-            ClosePosition(pos);
+            return ClosePosition(pos);
         }
 
         private string ResolveCloseReason(PositionClosedEventArgs args)
@@ -1001,6 +1009,7 @@ namespace cAlgo.Robots
         protected override void OnStop()
         {
             StopTickStream();
+            StopCommandPoll();
             Print(label + " Stopped.");
         }
         #endregion
@@ -1913,6 +1922,7 @@ namespace cAlgo.Robots
                     double newEntryPrice = dcaEndPosition_down.EntryPrice - dca_Distance * Symbol.PipSize;
                     if (Math.Max(Symbol.Ask, Symbol.Bid) <= newEntryPrice)
                     {
+                        if (DashboardPauseBlocks("DCA BUY add")) return;
                         double vol = dcaVolumeUnit();
                         var res = ExecuteMarketOrder(TradeType.Buy, SymbolName, vol, label, stoploss, takeprofit);
                         if (res.IsSuccessful) { findEndDeal(); }
@@ -1926,6 +1936,7 @@ namespace cAlgo.Robots
                     double newEntryPrice = dcaEndPosition_down.EntryPrice + dca_Distance * Symbol.PipSize;
                     if (Math.Min(Symbol.Ask, Symbol.Bid) >= newEntryPrice)
                     {
+                        if (DashboardPauseBlocks("DCA SELL add")) return;
                         double vol = dcaVolumeUnit();
                         var res = ExecuteMarketOrder(TradeType.Sell, SymbolName, vol, label, stoploss, takeprofit);
                         if (res.IsSuccessful) { findEndDeal(); }
@@ -3710,6 +3721,179 @@ Reply strictly with JSON object.";
             _tickStreamCts = null;
         }
 
+        // ==========================================
+        // DASHBOARD COMMANDS (/api/cbot/commands)
+        // ==========================================
+        // The dashboard can close this bot's positions (Close, Close & Stop) and pause its new
+        // entries (Pause). The server cannot reach a cBot, so the bot asks every CommandPollMs;
+        // the reply carries the pause flag and any pending commands. A command not picked up
+        // within 15 s expires on the server and is never handed out, so a bot that restarts later
+        // cannot act on a stale close. Ids already run are skipped.
+
+        private const string ManualCloseReason = "Manual close (dashboard)";
+
+        private class DashboardCommand
+        {
+            public string id { get; set; }
+            public string action { get; set; }
+            public long? position_id { get; set; }
+        }
+
+        private class DashboardCommandPoll
+        {
+            public bool paused { get; set; }
+            public List<DashboardCommand> commands { get; set; }
+        }
+
+        private CancellationTokenSource _commandPollCts;
+        private HttpClient _commandHttp;
+        private volatile bool _dashboardPaused;
+        private readonly HashSet<string> _handledCommandIds = new HashSet<string>();
+        private DateTime _lastCommandPollErrorAt = DateTime.MinValue;
+        private DateTime _lastPauseLogAt = DateTime.MinValue;
+
+        private void StartCommandPoll()
+        {
+            if (RunningMode != RunningMode.RealTime || CommandPollMs <= 0) return;
+            var baseUrl = BuildCommandBaseUrl();
+            if (baseUrl == null) return;
+
+            _commandHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            _commandPollCts = new CancellationTokenSource();
+            var token = _commandPollCts.Token;
+            var http = _commandHttp;
+            var pollUrl = $"{baseUrl}/api/cbot/commands?bot_id={Uri.EscapeDataString(BotId)}";
+            Task.Run(() => CommandPollLoopAsync(http, baseUrl, pollUrl, token), token);
+            Print($"[Dashboard] Polling {pollUrl} every {CommandPollMs} ms");
+        }
+
+        private void StopCommandPoll()
+        {
+            try { _commandPollCts?.Cancel(); } catch { }
+            _commandPollCts = null;
+        }
+
+        private string BuildCommandBaseUrl()
+        {
+            // The dashboard server first, as for the tick stream: this bot's AI endpoint parameter
+            // defaults to a cloud LLM, not to our server.
+            var baseUrl = !string.IsNullOrWhiteSpace(DashboardServerUrl) ? DashboardServerUrl : ApiUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl)) return null;
+
+            baseUrl = baseUrl.Trim().Trim('"', '\'', '“', '”', '‘', '’', '`');
+            const string tradePath = "/trade";
+            if (baseUrl.EndsWith(tradePath)) baseUrl = baseUrl.Substring(0, baseUrl.Length - tradePath.Length);
+            baseUrl = baseUrl.TrimEnd('/');
+            return baseUrl.StartsWith("http://") || baseUrl.StartsWith("https://") ? baseUrl : null;
+        }
+
+        private async Task CommandPollLoopAsync(HttpClient http, string baseUrl, string pollUrl, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    var response = await http.GetAsync(pollUrl, token);
+                    response.EnsureSuccessStatusCode();
+                    var body = await response.Content.ReadAsStringAsync();
+                    var poll = JsonSerializer.Deserialize<DashboardCommandPoll>(body);
+                    if (poll != null)
+                    {
+                        _dashboardPaused = poll.paused;
+                        foreach (var cmd in poll.commands ?? new List<DashboardCommand>())
+                        {
+                            if (cmd == null || string.IsNullOrEmpty(cmd.id)) continue;
+                            bool isNew;
+                            lock (_handledCommandIds) { isNew = _handledCommandIds.Add(cmd.id); }
+                            if (!isNew) continue;
+                            var command = cmd;
+                            BeginInvokeOnMainThread(() => ExecuteDashboardCommand(baseUrl, command));
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    // Keep the last known pause flag; say so at most once a minute.
+                    if ((DateTime.UtcNow - _lastCommandPollErrorAt).TotalSeconds >= 60)
+                    {
+                        _lastCommandPollErrorAt = DateTime.UtcNow;
+                        Print($"[Dashboard] Command poll failed: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+
+                try { await Task.Delay(CommandPollMs, token); } catch { break; }
+            }
+            try { http.Dispose(); } catch { }
+        }
+
+        /// <summary>Runs on the cBot thread. Closes only this bot's own positions (its label).</summary>
+        private void ExecuteDashboardCommand(string baseUrl, DashboardCommand cmd)
+        {
+            var own = Positions.FindAll(label, SymbolName);
+            List<Position> targets;
+            if (cmd.action == "close_all")
+                targets = own.ToList();
+            else if (cmd.action == "close_position")
+                targets = own.Where(p => p.Id == cmd.position_id).ToList();
+            else
+            {
+                PostCommandResult(baseUrl, cmd.id, "failed", $"unknown action '{cmd.action}'", 0, 0);
+                return;
+            }
+
+            if (cmd.action == "close_position" && targets.Count == 0)
+            {
+                Print($"[Dashboard] Close #{cmd.position_id}: not among this bot's open positions");
+                PostCommandResult(baseUrl, cmd.id, "failed", $"position {cmd.position_id} not found among this bot's open positions", 0, 0);
+                return;
+            }
+
+            int closed = 0;
+            var errors = new List<string>();
+            foreach (var pos in targets)
+            {
+                var result = CloseWithReason(pos, ManualCloseReason);
+                if (result != null && result.IsSuccessful) closed++;
+                else errors.Add($"#{pos.Id} {(result != null ? result.Error.ToString() : "no result")}");
+            }
+
+            string message = errors.Count == 0 ? $"closed {closed}" : $"closed {closed}, failed: {string.Join(", ", errors)}";
+            Print($"[Dashboard] {cmd.action}: {message}");
+            PostCommandResult(baseUrl, cmd.id, errors.Count == 0 ? "done" : "failed", message, closed, errors.Count);
+        }
+
+        private void PostCommandResult(string baseUrl, string commandId, string status, string message, int closed, int failed)
+        {
+            var http = _commandHttp;
+            if (http == null) return;
+            var json = JsonSerializer.Serialize(new { bot_id = BotId, status, message, closed, failed });
+            var url = $"{baseUrl}/api/cbot/commands/{Uri.EscapeDataString(commandId)}/result";
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await http.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+                }
+                catch (Exception ex)
+                {
+                    Print($"[Dashboard] Could not report command {commandId}: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>True while the dashboard has paused this bot's new entries (logged once a minute).</summary>
+        private bool DashboardPauseBlocks(string what)
+        {
+            if (!_dashboardPaused) return false;
+            if ((DateTime.UtcNow - _lastPauseLogAt).TotalSeconds >= 60)
+            {
+                _lastPauseLogAt = DateTime.UtcNow;
+                Print($"[Dashboard] Paused from the dashboard: {what} skipped");
+            }
+            return true;
+        }
+
         private string BuildTickStreamUrl()
         {
             var baseUrl = !string.IsNullOrWhiteSpace(DashboardServerUrl) ? DashboardServerUrl : ApiUrl;
@@ -4249,6 +4433,7 @@ Reply strictly with JSON object.";
                     return;
                 }
 
+                if (DashboardPauseBlocks($"AI {tradeType} entry")) return;
                 _lastAgentReason = decision.reason;
                 var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
                 if (result.IsSuccessful)
@@ -4447,6 +4632,12 @@ Reply strictly with JSON object.";
                 volume = rescaled;
             }
 
+            // A pause drops the staged order: resuming later must not fire a stale signal.
+            if (DashboardPauseBlocks($"staged {tradeType} entry"))
+            {
+                ResetStagedOrder();
+                return;
+            }
             _lastAgentReason = decision.reason;
             var result = ExecuteMarketOrder(tradeType, SymbolName, volume, label, slPips > 0 ? slPips : (double?)null, tpPips > 0 ? tpPips : (double?)null);
             if (result.IsSuccessful)

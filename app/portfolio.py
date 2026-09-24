@@ -4,12 +4,13 @@ Tracks positions across multiple bots and enforces portfolio-level risk limits.
 """
 
 import logging
+import threading
 from datetime import datetime, date, timezone
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
 from app.db import get_db_connection, INTEGRITY_ERRORS
-from app import risk_limits
+from app import bot_controls, risk_limits
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,10 @@ class PortfolioManager:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = Path(db_path) if db_path else None
         self.config = PortfolioConfig()
+        # Bots paused from the dashboard; a copy of the bot_controls table for the 2 s command
+        # poll, which must never touch the DB. Written only by set_bot_paused (single worker).
+        self._paused_lock = threading.Lock()
+        self._paused_bots: Set[str] = set()
         self._init_db()
     
     def _init_db(self):
@@ -166,7 +171,9 @@ class PortfolioManager:
                 )
             """)
             risk_limits.init_schema(conn)
+            bot_controls.init_schema(conn)
             conn.commit()
+            self._paused_bots = bot_controls.load_paused(conn)
             logger.info(f"Portfolio database initialized (target: {self.db_path or 'PostgreSQL'})")
         finally:
             conn.close()
@@ -405,6 +412,10 @@ class PortfolioManager:
         """
         conn = self._get_conn()
         try:
+            # 0. Paused from the dashboard (Bots tab): no new entries until Resume.
+            if bot_id and bot_controls.is_paused(conn, bot_id):
+                return False, bot_controls.PAUSED_REASON
+
             # 1. US Index Correlation / Directional Alignment Check
             # All US Equity Indices (US30, USTEC, US500) must align with macro trend direction.
             # Blocking opposing positions across US indices prevents portfolio self-hedging and divergence losses.
@@ -463,6 +474,48 @@ class PortfolioManager:
             risk_limits.save(conn, updates)
             conn.commit()
             return risk_limits.load(conn)
+        finally:
+            conn.close()
+
+    # --- Dashboard pause (app/bot_controls.py) ---
+
+    def set_bot_paused(self, bot_id: str, paused: bool) -> None:
+        """Pause or resume a bot's new entries: the table first, then the in-memory copy."""
+        conn = self._get_conn()
+        try:
+            bot_controls.save_paused(conn, bot_id, paused)
+            conn.commit()
+        finally:
+            conn.close()
+        with self._paused_lock:
+            if paused:
+                self._paused_bots.add(bot_id)
+            else:
+                self._paused_bots.discard(bot_id)
+
+    def is_bot_paused(self, bot_id: str) -> bool:
+        """Answered from memory: the command poll calls this ~22 times a second."""
+        with self._paused_lock:
+            return bot_id in self._paused_bots
+
+    def get_open_position(self, position_id: int) -> Optional[Dict]:
+        """One open position by its row id (the dashboard's Close button), or None."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT id, bot_id, symbol, side, volume, account_id, ctrader_id FROM positions "
+                "WHERE id = ? AND status = 'open'", (position_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def open_position_counts(self) -> Dict[str, int]:
+        """Open positions per bot_id, in one query (the Bots tab lists every container)."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT bot_id, COUNT(*) FROM positions WHERE status = 'open' GROUP BY bot_id").fetchall()
+            return {row[0]: int(row[1]) for row in rows}
         finally:
             conn.close()
 
