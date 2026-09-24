@@ -516,173 +516,59 @@ class AgentDecision(BaseModel):
         except (ValueError, TypeError):
             return defaults.get(info.field_name, 0.0)
 
-_TMS_CROSS_LOCK_REGISTRY: Dict[str, dict] = {}
+# Macro TMS cross-lock published by the bots, one entry per symbol and macro timeframe:
+# {"EURUSD": {"Hour": {"bias", "bars_since_cross", "source", "timestamp", "bar_bucket"}}}.
+# Only a bot's own macro calculation is recorded. AiAgentBot and FlowRsiBot compute it
+# with the same TDI/Stochastic settings, so a FlowRSI bot can borrow a session bot's lock.
+_TMS_CROSS_LOCK_REGISTRY: Dict[str, Dict[str, dict]] = {}
 
-def update_tms_cross_lock(symbol: str, bias: str, bars_since_cross: int = 0, source: str = "Macro TMS"):
-    """Record or update authoritative TMS cross-lock directional bias for a symbol."""
+_SUB_HOUR_TIMEFRAME_SECONDS = {"Minute": 60, "Minute5": 300, "Minute15": 900, "Minute30": 1800}
+
+
+def _cross_lock_bar_bucket(timeframe: str, ts: float) -> int:
+    """The clock bucket a lock recorded at ts stays valid in.
+
+    A lock covers the macro bars closed so far, so it expires when the next one closes:
+    at the top of the hour for H1. H4 and D1 closes depend on the broker's day offset, so
+    they expire hourly too, which is early but never late.
+    """
+    return int(ts // _SUB_HOUR_TIMEFRAME_SECONDS.get(timeframe, 3600))
+
+
+def update_tms_cross_lock(symbol: str, bias: str, bars_since_cross: int = 0,
+                          source: str = "Macro TMS", timeframe: str = "Hour"):
+    """Record a bot's own macro TMS cross-lock for (symbol, macro timeframe)."""
     sym = (symbol or "").upper()
     b = (bias or "").upper()
     if not sym or b not in ("BULLISH", "BEARISH"):
         return
-    _TMS_CROSS_LOCK_REGISTRY[sym] = {
+    tf = timeframe or "Hour"
+    now = time.time()
+    _TMS_CROSS_LOCK_REGISTRY.setdefault(sym, {})[tf] = {
         "bias": b,
         "bars_since_cross": max(0, int(bars_since_cross or 0)),
-        "timestamp": time.time(),
+        "timestamp": now,
+        "bar_bucket": _cross_lock_bar_bucket(tf, now),
         "source": source,
     }
 
-def compute_tms_cross_lock_from_bars(bars_list: Optional[List[Any]]) -> Tuple[Optional[str], int]:
+
+def get_tms_cross_lock(snapshot: MarketSnapshot) -> Tuple[str, int, str]:
     """
-    Computes Heikin-Ashi, TDI (RSI 13, Green 2, Red 7), and Stochastic (8,3,3)
-    from BarInfo list (newest first). Scans backward for the most recent
-    confirmed cross lock (mirrors AiAgentBot.cs dnse-kash logic).
-    Returns (locked_bias, bars_since_cross).
+    Returns (locked_bias, bars_since_cross, source) of the macro TMS cross-lock.
+    1. The snapshot's own macro TMS, computed by the bot from macro bars.
+    2. Another bot's lock for the same symbol and macro timeframe, recorded during the
+       current macro bar.
+    3. Otherwise NEUTRAL. The gate stays open rather than letting a chart-timeframe
+       cross or an EMA trend bias stand in for the macro cross-lock.
     """
-    if not bars_list or len(bars_list) < 18:
-        return None, 0
+    if snapshot.tms and (snapshot.tms.bias or "").upper() in ("BULLISH", "BEARISH"):
+        return snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, f"{snapshot.bot_id} (Macro TMS)"
 
-    chron = list(reversed(bars_list))
-    n = len(chron)
-
-    # 1. Heikin-Ashi
-    ha_close = []
-    ha_open = []
-    ha_high = []
-    ha_low = []
-    for i, b in enumerate(chron):
-        o = getattr(b, 'open', b.get('open', 0.0) if isinstance(b, dict) else 0.0)
-        h = getattr(b, 'high', b.get('high', 0.0) if isinstance(b, dict) else 0.0)
-        l = getattr(b, 'low', b.get('low', 0.0) if isinstance(b, dict) else 0.0)
-        c = getattr(b, 'close', b.get('close', 0.0) if isinstance(b, dict) else 0.0)
-        hc = (o + h + l + c) / 4.0
-        if i == 0:
-            ho = (o + c) / 2.0
-        else:
-            ho = (ha_open[-1] + ha_close[-1]) / 2.0
-        hh = max(h, ho, hc)
-        hl = min(l, ho, hc)
-        ha_close.append(hc)
-        ha_open.append(ho)
-        ha_high.append(hh)
-        ha_low.append(hl)
-
-    # 2. RSI(13) on ha_close
-    rsi_period = 13
-    gains = []
-    losses = []
-    for i in range(1, n):
-        diff = ha_close[i] - ha_close[i-1]
-        gains.append(max(diff, 0.0))
-        losses.append(max(-diff, 0.0))
-
-    if len(gains) < rsi_period:
-        return None, 0
-
-    avg_gain = sum(gains[:rsi_period]) / rsi_period
-    avg_loss = sum(losses[:rsi_period]) / rsi_period
-    
-    rsi = [50.0] * rsi_period
-    rs = avg_gain / (avg_loss if avg_loss > 1e-9 else 1e-9)
-    rsi.append(100.0 - (100.0 / (1.0 + rs)))
-
-    for i in range(rsi_period, len(gains)):
-        avg_gain = (avg_gain * (rsi_period - 1) + gains[i]) / rsi_period
-        avg_loss = (avg_loss * (rsi_period - 1) + losses[i]) / rsi_period
-        rs = avg_gain / (avg_loss if avg_loss > 1e-9 else 1e-9)
-        rsi.append(100.0 - (100.0 / (1.0 + rs)))
-
-    # 3. TDI Green = SMA(RSI, 2), Red = SMA(RSI, 7)
-    tdi_green = []
-    tdi_red = []
-    for i in range(n):
-        if i < 1:
-            tdi_green.append(rsi[i])
-        else:
-            tdi_green.append((rsi[i] + rsi[i-1]) / 2.0)
-        if i < 6:
-            tdi_red.append(rsi[i])
-        else:
-            tdi_red.append(sum(rsi[i-6:i+1]) / 7.0)
-
-    # 4. Stochastic %K(8, 3), %D(3) on ha_close
-    stoch_period = 8
-    fast_k = []
-    for i in range(n):
-        if i < stoch_period - 1:
-            fast_k.append(50.0)
-        else:
-            window_low = min(ha_low[i-stoch_period+1:i+1])
-            window_high = max(ha_high[i-stoch_period+1:i+1])
-            rng = window_high - window_low
-            k_val = 50.0 if rng <= 1e-9 else ((ha_close[i] - window_low) / rng) * 100.0
-            fast_k.append(k_val)
-
-    stoch_k = []
-    for i in range(n):
-        if i < 2:
-            stoch_k.append(fast_k[i])
-        else:
-            stoch_k.append(sum(fast_k[i-2:i+1]) / 3.0)
-
-    stoch_d = []
-    for i in range(n):
-        if i < 2:
-            stoch_d.append(stoch_k[i])
-        else:
-            stoch_d.append(sum(stoch_k[i-2:i+1]) / 3.0)
-
-    # 5. Backward scan for the most recent confirmed cross (Cross-Lock)
-    for k in range(n - 1, 0, -1):
-        c_up = (rsi[k-1] <= tdi_red[k-1] and rsi[k] > tdi_red[k]) and (ha_close[k] > ha_open[k]) and (stoch_k[k] > stoch_d[k])
-        c_dn = (rsi[k-1] >= tdi_red[k-1] and rsi[k] < tdi_red[k]) and (ha_close[k] < ha_open[k]) and (stoch_k[k] < stoch_d[k])
-        if c_up:
-            return "BULLISH", (n - 1) - k
-        elif c_dn:
-            return "BEARISH", (n - 1) - k
-
-    # Fallback to current alignment if no fresh cross within bar window
-    last = n - 1
-    if rsi[last] > tdi_red[last] and ha_close[last] > ha_open[last]:
-        return "BULLISH", 0
-    elif rsi[last] < tdi_red[last] and ha_close[last] < ha_open[last]:
-        return "BEARISH", 0
-
-    return None, 0
-
-def get_or_compute_tms_cross_lock(snapshot: MarketSnapshot) -> Tuple[str, int, str]:
-    """
-    Returns (locked_bias, bars_since_cross, source).
-    1. Checks _TMS_CROSS_LOCK_REGISTRY (from running TMS bots, fresh within 4 hours).
-    2. If snapshot itself carries tms, caches and returns it.
-    3. Checks snapshot.multi_timeframe.h1_tf trend_bias.
-    4. Computes directly from snapshot.bars.
-    5. Falls back to NEUTRAL if undetermined.
-    """
-    sym = (snapshot.symbol or "").upper()
-    # 1. Authoritative: snapshot directly carries bot-calculated Macro TMS
-    if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
-        b = snapshot.tms.bias.upper()
-        age = snapshot.tms.bars_since_cross
-        src = f"{snapshot.bot_id} (Macro TMS)"
-        update_tms_cross_lock(sym, b, age, source=src)
-        return b, age, src
-
-    # 2. Check cached registry
-    cached = _TMS_CROSS_LOCK_REGISTRY.get(sym)
-    if cached and (time.time() - cached.get("timestamp", 0) < 14400):
-        return cached["bias"], cached.get("bars_since_cross", 0), cached.get("source", "TMS Bot")
-
-    if snapshot.multi_timeframe and snapshot.multi_timeframe.h1_tf and snapshot.multi_timeframe.h1_tf.trend_bias:
-        h1_bias = snapshot.multi_timeframe.h1_tf.trend_bias.upper()
-        if h1_bias in ("BULLISH", "BEARISH"):
-            update_tms_cross_lock(sym, h1_bias, 0, source="Multi-Timeframe H1")
-            return h1_bias, 0, "Multi-Timeframe H1"
-
-    if snapshot.bars and len(snapshot.bars) >= 18:
-        b, age = compute_tms_cross_lock_from_bars(snapshot.bars)
-        if b in ("BULLISH", "BEARISH"):
-            update_tms_cross_lock(sym, b, age, source="Bars Computed TMS Cross-Lock")
-            return b, age, "Bars Computed TMS Cross-Lock"
+    tf = snapshot.tms_timeframe or "Hour"
+    cached = _TMS_CROSS_LOCK_REGISTRY.get((snapshot.symbol or "").upper(), {}).get(tf)
+    if cached and cached["bar_bucket"] == _cross_lock_bar_bucket(tf, time.time()):
+        return cached["bias"], cached["bars_since_cross"], cached["source"]
 
     return "NEUTRAL", 0, "None"
 
@@ -1991,7 +1877,10 @@ async def trade_decision(snapshot: MarketSnapshot):
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data, account_id=account_id)
     if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
-        update_tms_cross_lock(snapshot.symbol, snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, source=f"{snapshot.bot_id} (Macro TMS)")
+        update_tms_cross_lock(
+            snapshot.symbol, snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross,
+            source=f"{snapshot.bot_id} (Macro TMS)", timeframe=snapshot.tms_timeframe,
+        )
 
     if is_flowrsi:
         pos_str = f"{snapshot.position.resolved_side} pnl=${snapshot.position.resolved_pnl:.2f}" if snapshot.position else "FLAT"
@@ -1999,7 +1888,7 @@ async def trade_decision(snapshot: MarketSnapshot):
         fvg_str = f"FVG={snapshot.fvg_type}" if snapshot.in_fvg_zone else "FVG=None"
         zone_str = "Discount" if snapshot.is_discount else ("Premium" if snapshot.is_premium else "Eq")
         cand_str = snapshot.candidate_action or "NONE"
-        tms_bias, tms_age, tms_src = get_or_compute_tms_cross_lock(snapshot)
+        tms_bias, tms_age, tms_src = get_tms_cross_lock(snapshot)
 
         logger.info(
             f"[SNAPSHOT FLOW_RSI] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
@@ -2288,7 +2177,7 @@ async def trade_decision(snapshot: MarketSnapshot):
 
             if action_val in ("BUY", "SELL"):
                 # Safety Guard: Ensure LLM did not propose a counter-trend trade against TMS Cross-Lock
-                tms_bias, tms_age, tms_src = get_or_compute_tms_cross_lock(snapshot)
+                tms_bias, tms_age, tms_src = get_tms_cross_lock(snapshot)
                 if action_val == "BUY" and tms_bias == "BEARISH":
                     logger.warning(
                         f"[{account_id}/{snapshot.bot_id}] [FLOW_RSI TMS GUARD] Model BUY overridden -> HOLD: "
