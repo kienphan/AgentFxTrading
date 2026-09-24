@@ -11,7 +11,7 @@ from typing import Dict, List, Set, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
 from app.db import get_db_connection, INTEGRITY_ERRORS
-from app import bot_controls, risk_limits
+from app import backtest_store, bot_controls, risk_limits
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +182,7 @@ class PortfolioManager:
             """)
             risk_limits.init_schema(conn)
             bot_controls.init_schema(conn)
+            backtest_store.init_schema(conn)
             conn.commit()
             self._paused_bots = bot_controls.load_paused(conn)
             logger.info(f"Portfolio database initialized (target: {self.db_path or 'PostgreSQL'})")
