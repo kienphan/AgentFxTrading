@@ -943,16 +943,18 @@
             let html = "";
             filteredBots.forEach(b => {
                 const isRunning = b.status === "running";
-                let statusHtml = `<span style="color:var(--color-dim)">${b.status}</span>`;
+                let statusHtml = `<span style="color:var(--color-dim)">${escapeHtml(b.status)}</span>`;
                 if (b.stuck) {
-                    statusHtml = `<span style="color:var(--color-loss); font-weight:bold;" title="${b.health_reason || 'Bot is stuck'}">⚠️ STUCK</span>`;
+                    statusHtml = `<span style="color:var(--color-loss); font-weight:bold;" title="${escapeHtml(b.health_reason || 'Bot is stuck')}">⚠️ STUCK</span>`;
                 } else if (isRunning) {
                     statusHtml = `<span style="color:var(--color-profit)">● running</span>`;
                 } else if (b.status === "error") {
                     statusHtml = `<span style="color:var(--color-loss)">● error</span>`;
                 }
-                const escapedCmd = (b.run_command || '').replace(/"/g, '&quot;');
-                const escapedDesc = (b.description || '').replace(/"/g, '&quot;');
+                // Escaped once for text and attributes alike; dataset hands the Edit form the decoded values.
+                const escapedName = escapeHtml(b.name);
+                const escapedCmd = escapeHtml(b.run_command || '');
+                const escapedDesc = escapeHtml(b.description || '');
                 const modeBadge = (b.account_type === 'live')
                     ? '<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>'
                     : '<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>';
@@ -969,26 +971,26 @@
                     ? ` <span class="badge" style="background:rgba(229,57,53,0.12); color:var(--loss);" title="${escapeHtml(notPollingTitle)}">NOT POLLING</span>`
                     : '';
                 const pauseBtn = b.paused
-                    ? `<button class="log-btn action-resume" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit); margin-right:4px;">Resume</button>`
-                    : `<button class="log-btn action-pause" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Pause</button>`;
+                    ? `<button class="log-btn action-resume" data-name="${escapedName}" style="background:rgba(125,189,30,0.15); color:var(--profit); margin-right:4px;">Resume</button>`
+                    : `<button class="log-btn action-pause" data-name="${escapedName}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Pause</button>`;
                 const closeStopBtn = isRunning
-                    ? `<button class="log-btn action-close-stop" data-name="${b.name}" data-open="${b.open_positions || 0}" data-live="${b.account_type === 'live' ? '1' : '0'}" style="background:var(--loss); color:#fff; margin-right:4px;">Close &amp; Stop</button>`
+                    ? `<button class="log-btn action-close-stop" data-name="${escapedName}" data-open="${b.open_positions || 0}" data-live="${b.account_type === 'live' ? '1' : '0'}" style="background:var(--loss); color:#fff; margin-right:4px;">Close &amp; Stop</button>`
                     : '';
                 
                 html += `<tr>
-                    <td><strong>${b.name}</strong></td>
+                    <td><strong>${escapedName}</strong></td>
                     <td>${modeBadge}</td>
                     <td>${statusHtml}${pausedHtml}${notPollingHtml}</td>
                     <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
-                    <td class="td-dim">${b.description || "-"}</td>
-                    <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
+                    <td class="td-dim">${escapedDesc || "-"}</td>
+                    <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${escapedCmd}</td>
                     <td style="text-align:right; white-space:nowrap;">
-                        ${pauseBtn}${closeStopBtn}${isRunning 
-                            ? `<button class="log-btn action-restart" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Restart</button><button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
-                            : `<button class="log-btn action-start" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit);">Start</button>`
+                        ${pauseBtn}${closeStopBtn}${isRunning
+                            ? `<button class="log-btn action-restart" data-name="${escapedName}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Restart</button><button class="log-btn action-stop" data-name="${escapedName}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
+                            : `<button class="log-btn action-start" data-name="${escapedName}" style="background:rgba(125,189,30,0.15); color:var(--profit);">Start</button>`
                         }
-                        <button class="log-btn action-edit" data-name="${b.name}" data-desc="${escapedDesc}" data-cmd="${escapedCmd}" style="background:var(--bg-elevated); margin:0 4px;">Edit</button>
-                        <button class="log-btn action-delete" data-name="${b.name}">Delete</button>
+                        <button class="log-btn action-edit" data-name="${escapedName}" data-desc="${escapedDesc}" data-cmd="${escapedCmd}" style="background:var(--bg-elevated); margin:0 4px;">Edit</button>
+                        <button class="log-btn action-delete" data-name="${escapedName}">Delete</button>
                     </td>
                 </tr>`;
             });
@@ -1451,7 +1453,7 @@
         }
         function pnlClass(v){return Number(v)>=0?'kpi-value--profit':'kpi-value--loss'}
         function accountBadge(t){return t==='live'?'<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>':'<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>'}
-        function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${s}</span>`}
+        function sideChip(s){const c=s==='BUY'?'side-chip--buy':'side-chip--sell';return `<span class="side-chip ${c}">${escapeHtml(s)}</span>`}
         // Single renderer for the P&L cell, shared by the row builder and the live tick handler.
         // Only the broker's own figure is shown; a missing one reads as "—" rather than a guess.
         function pnlCellHtml(pnl, pips){
@@ -1468,13 +1470,13 @@
         function sltpLineHtml(tag, price, pnl, pips){
             let body;
             if(price){
-                body=`<span class="td-mono">${price}</span>`;
+                body=`<span class="td-mono">${escapeHtml(price)}</span>`;
                 if(pnl!==null&&pnl!==undefined){
                     const v=Number(pnl)||0;
                     body+=` <span class="${v>=0?'pnl-positive':'pnl-negative'}">${v>0?'+':(v<0?'-':'')}$${Math.abs(v).toFixed(2)}</span>`;
                 }
             } else if(pips){
-                body=`<span class="td-dim">${pips}p</span>`;
+                body=`<span class="td-dim">${escapeHtml(pips)}p</span>`;
             } else {
                 body='<span class="td-dim">—</span>';
             }
@@ -1510,9 +1512,10 @@
             const isJ=bl.includes('judas')||bl.includes('asian')||bl.includes('smc');
             const badgeCls = isF ? 'bot-badge--flowrsi' : (isJ ? 'bot-badge--judas' : 'bot-badge--tms');
             const badgeText = isF ? 'FlowRSI' : (isJ ? 'Judas SMC' : 'TMS+ORB');
+            const safe=escapeHtml(b);
             return `<div class="bot-cell">
                 <span class="bot-badge ${badgeCls}"><span class="bot-dot"></span>${badgeText}</span>
-                <span class="bot-id-text" title="${b}">${b}</span>
+                <span class="bot-id-text" title="${safe}">${safe}</span>
             </div>`;
         }
 
@@ -1905,16 +1908,16 @@
                     const pnlCell = pnlCellHtml(p.unrealized_pnl, p.unrealized_pnl_pips);
                     
                     return `<tr data-bot="${escapeHtml(p.bot_id||'')}">
-                        <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${p.account_label||''}</span></td>
+                        <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${escapeHtml(p.account_label||'')}</span></td>
                         <td>${botBadge(p.bot_id)}</td>
-                        <td class="td-mono font-bold">${p.symbol}</td>
+                        <td class="td-mono font-bold">${escapeHtml(p.symbol)}</td>
                         <td>${sideChip(p.side)}</td>
-                        <td>${p.volume}L</td>
-                        <td class="td-mono">${p.entry_price}</td>
-                        <td class="td-mono td-current-price">${curPrice}${priceAge}</td>
+                        <td>${escapeHtml(p.volume)}L</td>
+                        <td class="td-mono">${escapeHtml(p.entry_price)}</td>
+                        <td class="td-mono td-current-price">${escapeHtml(curPrice)}${priceAge}</td>
                         <td class="td-sltp">${sltpCellHtml(p, true)}</td>
                         <td class="td-pnl-live">${pnlCell}</td>
-                        <td class="td-dim">${p.entry_time}</td>
+                        <td class="td-dim">${escapeHtml(p.entry_time)}</td>
                         <td class="td-actions">${closeButtonHtml(p)}</td>
                     </tr>`;
                 }).join('');
@@ -1938,7 +1941,7 @@
             const closing = closingPositions.has(String(p.id));
             const noId = !p.ctrader_id;
             const title = noId ? ' title="No cTrader id recorded for this position - close it in cTrader"' : '';
-            return `<button class="log-btn action-close-pos" data-id="${p.id}" data-bot="${escapeHtml(p.bot_id||'')}" data-symbol="${escapeHtml(p.symbol||'')}" data-side="${escapeHtml(p.side||'')}" data-volume="${p.volume}" data-live="${p.account_type==='live'?'1':'0'}"${(noId||closing)?' disabled':''}${title} style="background:rgba(229,57,53,0.15); color:var(--loss);">${closing?'Closing…':'Close'}</button>`;
+            return `<button class="log-btn action-close-pos" data-id="${p.id}" data-bot="${escapeHtml(p.bot_id||'')}" data-symbol="${escapeHtml(p.symbol||'')}" data-side="${escapeHtml(p.side||'')}" data-volume="${escapeHtml(p.volume)}" data-live="${p.account_type==='live'?'1':'0'}"${(noId||closing)?' disabled':''}${title} style="background:rgba(229,57,53,0.15); color:var(--loss);">${closing?'Closing…':'Close'}</button>`;
         }
         async function waitForBotCommand(id, maxSeconds = 35) {
             for (let i = 0; i < maxSeconds; i++) {
@@ -2030,13 +2033,13 @@
                 tb.innerHTML='<tr><td colspan="11" class="empty-state">No trade history</td></tr>';
             } else {
                 tb.innerHTML=history.map(t=>`<tr>
-                    <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${t.account_label||''}</span></td>
+                    <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${escapeHtml(t.account_label||'')}</span></td>
                     <td>${botBadge(t.bot_id)}</td>
-                    <td class="td-mono font-bold">${t.symbol}</td>
+                    <td class="td-mono font-bold">${escapeHtml(t.symbol)}</td>
                     <td>${sideChip(t.side)}</td>
-                    <td>${t.volume}L</td>
-                    <td class="td-mono">${t.entry_price}</td>
-                    <td class="td-mono">${t.exit_price}</td>
+                    <td>${escapeHtml(t.volume)}L</td>
+                    <td class="td-mono">${escapeHtml(t.entry_price)}</td>
+                    <td class="td-mono">${escapeHtml(t.exit_price)}</td>
                     <td class="td-sltp">${sltpCellHtml(t, false)}</td>
                     <td class="${Number(t.pnl)>=0?'pnl-positive':'pnl-negative'} font-bold">${Number(t.pnl)>0?'+':''}${formatMoney(t.pnl)}</td>
                     <td class="td-reason">${closeReasonHtml(t.close_reason)}</td>
@@ -2526,7 +2529,7 @@
                 aiFeedList.innerHTML = `
                     <div class="ai-feed-empty" id="ai-feed-empty-state">
                         <i data-lucide="brain-circuit" style="width: 36px; height: 36px; margin-bottom: 8px; opacity: 0.5;"></i>
-                        <div>No AI decisions recorded ${selectedSym !== 'ALL' ? 'for ' + selectedSym : 'yet'}.</div>
+                        <div>No AI decisions recorded ${selectedSym !== 'ALL' ? 'for ' + escapeHtml(selectedSym) : 'yet'}.</div>
                     </div>
                 `;
                 if (window.lucide) lucide.createIcons();
@@ -2545,31 +2548,31 @@
                 const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
                 html += `
-                    <div class="ai-feed-item feed-action--${action}">
+                    <div class="ai-feed-item feed-action--${escapeHtml(action)}">
                         <div class="ai-feed-header">
                             <div class="ai-feed-header-left">
-                                <span class="ai-action-badge ai-action--${action}" style="font-size: 0.85rem; padding: 3px 10px;">
-                                    ${actionIcon} ${action}
+                                <span class="ai-action-badge ai-action--${escapeHtml(action)}" style="font-size: 0.85rem; padding: 3px 10px;">
+                                    ${actionIcon} ${escapeHtml(action)}
                                 </span>
-                                <span class="ai-feed-symbol">${sym}</span>
-                                <span class="ai-pill-tag">${tf}</span>
+                                <span class="ai-feed-symbol">${escapeHtml(sym)}</span>
+                                <span class="ai-pill-tag">${escapeHtml(tf)}</span>
                             </div>
                             <div class="ai-feed-meta">
                                 <span><strong style="color:var(--text-primary);">${conf.toFixed(1)}%</strong> Conf</span>
                                 <span>•</span>
-                                <span>${bot}</span>
+                                <span>${escapeHtml(bot)}</span>
                                 <span>•</span>
                                 <span>${timeStr} (GMT+7)</span>
                             </div>
                         </div>
                         <div class="ai-feed-reason">
-                            ${reason}
+                            ${escapeHtml(reason)}
                         </div>
                         <div class="ai-feed-params">
-                            ${item.volume_lots ? `<span class="ai-param-chip">Vol: <strong>${item.volume_lots}L</strong></span>` : ''}
-                            ${item.sl_pips ? `<span class="ai-param-chip">SL: <strong>${item.sl_pips}p</strong></span>` : ''}
-                            ${item.tp_pips ? `<span class="ai-param-chip">TP: <strong>${item.tp_pips}p</strong></span>` : ''}
-                            ${item.new_sl_price ? `<span class="ai-param-chip">New SL: <strong>${item.new_sl_price}</strong></span>` : ''}
+                            ${item.volume_lots ? `<span class="ai-param-chip">Vol: <strong>${escapeHtml(item.volume_lots)}L</strong></span>` : ''}
+                            ${item.sl_pips ? `<span class="ai-param-chip">SL: <strong>${escapeHtml(item.sl_pips)}p</strong></span>` : ''}
+                            ${item.tp_pips ? `<span class="ai-param-chip">TP: <strong>${escapeHtml(item.tp_pips)}p</strong></span>` : ''}
+                            ${item.new_sl_price ? `<span class="ai-param-chip">New SL: <strong>${escapeHtml(item.new_sl_price)}</strong></span>` : ''}
                             ${item.partial_ratio ? `<span class="ai-param-chip">Close: <strong>${(item.partial_ratio * 100).toFixed(0)}%</strong></span>` : ''}
                         </div>
                     </div>
@@ -2648,7 +2651,7 @@
                 if (chip && data.success) {
                     if (data.is_blackout) {
                         chip.className = 'status-pill status-pill--offline';
-                        chip.innerHTML = `<span class="status-dot"></span> 🚨 Shield Active: ${data.event_title} (${data.remaining_minutes}m left)`;
+                        chip.innerHTML = `<span class="status-dot"></span> 🚨 Shield Active: ${escapeHtml(data.event_title)} (${data.remaining_minutes}m left)`;
                     } else {
                         chip.className = 'status-pill status-pill--online';
                         chip.innerHTML = `<span class="status-dot"></span> Shield: Clear`;
@@ -2697,11 +2700,14 @@
 
             if (!filtered || filtered.length === 0) {
                 const rangeText = currentNewsRange === 'today' ? 'today' : (currentNewsRange === 'tomorrow' ? 'tomorrow' : 'this week');
-                const filterDesc = currentNewsCurrency !== 'ALL' ? `matching currency "${currentNewsCurrency}"` : '';
+                const filterDesc = currentNewsCurrency !== 'ALL' ? `matching currency "${escapeHtml(currentNewsCurrency)}"` : '';
                 container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);"><p>No High-Impact (Red) news events found for ${rangeText} ${filterDesc}.</p></div>`;
                 return;
             }
 
+            // Titles, figures and currencies come from the ForexFactory feed and the assessment
+            // fields from the LLM, so all of them are escaped. c.id is left raw inside the inline
+            // onclick handlers: it is always an MD5 hexdigest (news_service.generate_cluster_hash).
             if (currentNewsView === 'table') {
                 // Dense Table View
                 let rowsHtml = '';
@@ -2723,23 +2729,23 @@
                     }
 
                     const currPills = (c.currencies || []).map(curr => {
-                        const cls = 'currency-pill--' + curr.toLowerCase();
-                        return `<span class="currency-pill ${cls}">${curr}</span>`;
+                        const cls = 'currency-pill--' + escapeHtml(curr.toLowerCase());
+                        return `<span class="currency-pill ${cls}">${escapeHtml(curr)}</span>`;
                     }).join(' ');
 
                     const eventsHtml = (c.events || []).map(ev => `
                         <div class="news-table-event-item">
-                            <span class="news-table-event-title">🔴 ${ev.title}</span>
+                            <span class="news-table-event-title">🔴 ${escapeHtml(ev.title)}</span>
                             <span class="news-event-values">
-                                <span class="val-tag">F: <b>${ev.forecast || '--'}</b></span>
-                                <span class="val-tag">P: <b>${ev.previous || '--'}</b></span>
+                                <span class="val-tag">F: <b>${escapeHtml(ev.forecast || '--')}</b></span>
+                                <span class="val-tag">P: <b>${escapeHtml(ev.previous || '--')}</b></span>
                             </span>
                         </div>
                     `).join('');
 
                     const assessmentHtml = c.is_assessed && c.latest_assessment ? `
                         <span class="assessed-chip" onclick='viewSavedAssessment("${c.id}")' title="Click to view AI report">
-                            ✓ ${c.latest_assessment.volatility_level} (${c.latest_assessment.expected_pips_range})
+                            ✓ ${escapeHtml(c.latest_assessment.volatility_level)} (${escapeHtml(c.latest_assessment.expected_pips_range)})
                         </span>
                     ` : `<span style="color:var(--text-dim); font-size:0.7rem;">Not assessed</span>`;
 
@@ -2749,8 +2755,8 @@
                     rowsHtml += `
                         <tr class="${c.is_past ? 'news-table-row--past' : ''}">
                             <td style="white-space:nowrap;">
-                                <strong style="color:var(--text-primary); font-family:var(--font-mono);">${timeVn}</strong>
-                                <small style="display:block; color:var(--text-muted); font-size:0.68rem;">${dateShort}</small>
+                                <strong style="color:var(--text-primary); font-family:var(--font-mono);">${escapeHtml(timeVn)}</strong>
+                                <small style="display:block; color:var(--text-muted); font-size:0.68rem;">${escapeHtml(dateShort)}</small>
                             </td>
                             <td><span class="${countdownClass}">${countdownText}</span></td>
                             <td>${currPills}</td>
@@ -2815,23 +2821,23 @@
                     }
 
                     const currPills = (c.currencies || []).map(curr => {
-                        const cls = 'currency-pill--' + curr.toLowerCase();
-                        return `<span class="currency-pill ${cls}">${curr}</span>`;
+                        const cls = 'currency-pill--' + escapeHtml(curr.toLowerCase());
+                        return `<span class="currency-pill ${cls}">${escapeHtml(curr)}</span>`;
                     }).join('');
 
                     const eventsList = (c.events || []).map(ev => `
                         <div class="news-event-item">
-                            <span class="news-event-name" title="${ev.title}">🔴 ${ev.title}</span>
+                            <span class="news-event-name" title="${escapeHtml(ev.title)}">🔴 ${escapeHtml(ev.title)}</span>
                             <span class="news-event-values">
-                                <span class="val-tag" title="Forecast">F: <b>${ev.forecast || '--'}</b></span>
-                                <span class="val-tag" title="Previous">P: <b>${ev.previous || '--'}</b></span>
+                                <span class="val-tag" title="Forecast">F: <b>${escapeHtml(ev.forecast || '--')}</b></span>
+                                <span class="val-tag" title="Previous">P: <b>${escapeHtml(ev.previous || '--')}</b></span>
                             </span>
                         </div>
                     `).join('');
 
                     const assessmentBadge = c.is_assessed && c.latest_assessment ? `
                         <div class="news-card-assessed-tag" onclick='viewSavedAssessment("${c.id}")' style="cursor:pointer;" title="Click to view AI report">
-                            ✓ Assessed: <b>${c.latest_assessment.volatility_level}</b> (${c.latest_assessment.expected_pips_range})
+                            ✓ Assessed: <b>${escapeHtml(c.latest_assessment.volatility_level)}</b> (${escapeHtml(c.latest_assessment.expected_pips_range)})
                         </div>
                     ` : '';
 
@@ -2842,8 +2848,8 @@
                         <div class="news-cluster-card ${c.is_past ? 'news-cluster-card--past' : 'news-cluster-card--upcoming'}" id="card-${c.id}">
                             <div class="news-cluster-header">
                                 <div class="news-header-meta">
-                                    <span class="news-time-gmt">${timeShort}</span>
-                                    <span class="news-time-utc">${dateShort}</span>
+                                    <span class="news-time-gmt">${escapeHtml(timeShort)}</span>
+                                    <span class="news-time-utc">${escapeHtml(dateShort)}</span>
                                     ${currPills}
                                 </div>
                                 <span class="${countdownClass}">${countdownText}</span>
