@@ -193,8 +193,14 @@ namespace cAlgo.Robots
         [Parameter("Trailing Stop Distance (pips)", Group = "Position Protection", DefaultValue = 25.0, MinValue = 5.0)]
         public double TrailingStopDistancePips { get; set; }
 
-        [Parameter("Partial Close at BE Ratio (0-1)", Group = "Position Protection", DefaultValue = 0.25, MinValue = 0.0, MaxValue = 1.0)]
+        [Parameter("Enable Partial Close at TP1/BE", Group = "Position Protection", DefaultValue = true)]
+        public bool EnablePartialClose { get; set; }
+
+        [Parameter("Partial Close Ratio (0-1)", Group = "Position Protection", DefaultValue = 0.5, MinValue = 0.0, MaxValue = 1.0)]
         public double PartialCloseRatio { get; set; }
+
+        [Parameter("Remove TP on Trailing (Let Runners Run)", Group = "Position Protection", DefaultValue = true)]
+        public bool RemoveTpOnTrailing { get; set; }
         #endregion
 
         #region Gemini AI Agent Bridge
@@ -293,6 +299,7 @@ namespace cAlgo.Robots
         private DateTime _aiCooldownUntil = DateTime.MinValue;
 
         private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
+        private readonly HashSet<int> _partialCloseApplied = new HashSet<int>();
         private readonly Dictionary<int, double> _initialSlDistances = new Dictionary<int, double>();
 
         private double _highWatermarkEquity;
@@ -1812,8 +1819,8 @@ namespace cAlgo.Robots
                             {
                                 _breakevenApplied.Add(pos.Id);
 
-                                // Partial close at BE if configured
-                                if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
+                                // Partial close at BE / TP1 if configured
+                                if (EnablePartialClose && PartialCloseRatio > 0 && PartialCloseRatio < 1.0 && !_partialCloseApplied.Contains(pos.Id))
                                 {
                                     double volToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
                                     if (volToClose >= Symbol.VolumeInUnitsMin && (pos.VolumeInUnits - volToClose) >= Symbol.VolumeInUnitsMin)
@@ -1822,10 +1829,7 @@ namespace cAlgo.Robots
                                         var partialRes = ClosePosition(pos, volToClose);
                                         if (partialRes != null && partialRes.IsSuccessful)
                                         {
-                                            // Prefer the booked deal - it carries commission and swap, which is
-                                            // what "realised P&L" has to mean for the DB. History is not always
-                                            // populated the instant the call returns, so fall back to the NetProfit
-                                            // delta, i.e. the unrealised P&L the closed slice was carrying.
+                                            _partialCloseApplied.Add(pos.Id);
                                             double realizedPnl = pnlBeforePartial - pos.NetProfit;
                                             try
                                             {
@@ -1833,8 +1837,8 @@ namespace cAlgo.Robots
                                                 if (partialHist != null) realizedPnl = partialHist.NetProfit;
                                             }
                                             catch { }
-                                            Print($"[Partial Close] #{pos.Id} closed {volToClose / Symbol.LotSize:F2} lots at Break-Even.");
-                                            ReportPartialClose(pos, volToClose / Symbol.LotSize, realizedPnl, "Partial close at Break-Even");
+                                            Print($"[Partial Close] #{pos.Id} locked in profits on {volToClose / Symbol.LotSize:F2} lots (+${realizedPnl:F2}). Remaining {pos.VolumeInUnits / Symbol.LotSize:F2} lots converted to runner.");
+                                            ReportPartialClose(pos, volToClose / Symbol.LotSize, realizedPnl, "Partial close at TP1/BE");
                                         }
                                         else if (ShowLogs)
                                         {
@@ -1894,22 +1898,25 @@ namespace cAlgo.Robots
                     double trailStepPrice = Math.Max(1.0, effectiveTrailDistPips * trailStepFraction) * Symbol.PipSize;
 
                     double candidateTrailSL;
+                    bool shouldRemoveTp = RemoveTpOnTrailing;
+                    double? targetTp = shouldRemoveTp ? null : pos.TakeProfit;
+
                     if (pos.TradeType == TradeType.Buy)
                     {
                         candidateTrailSL = Symbol.Bid - (effectiveTrailDistPips * Symbol.PipSize);
                         candidateTrailSL = GetZeroLossStopLossPrice(pos, candidateTrailSL, extraBufferPips: BreakEvenExtraPips);
-                        if ((!pos.StopLoss.HasValue || candidateTrailSL >= pos.StopLoss.Value + trailStepPrice) && candidateTrailSL < Symbol.Bid)
+                        if ((!pos.StopLoss.HasValue || candidateTrailSL >= pos.StopLoss.Value + trailStepPrice || (shouldRemoveTp && pos.TakeProfit.HasValue)) && candidateTrailSL < Symbol.Bid)
                         {
-                            SafeModifyPosition(pos, candidateTrailSL, pos.TakeProfit, source: "Trailing Stop");
+                            SafeModifyPosition(pos, candidateTrailSL, targetTp, source: "Trailing Stop", removeTp: shouldRemoveTp);
                         }
                     }
                     else
                     {
                         candidateTrailSL = Symbol.Ask + (effectiveTrailDistPips * Symbol.PipSize);
                         candidateTrailSL = GetZeroLossStopLossPrice(pos, candidateTrailSL, extraBufferPips: BreakEvenExtraPips);
-                        if ((!pos.StopLoss.HasValue || candidateTrailSL <= pos.StopLoss.Value - trailStepPrice) && candidateTrailSL > Symbol.Ask)
+                        if ((!pos.StopLoss.HasValue || candidateTrailSL <= pos.StopLoss.Value - trailStepPrice || (shouldRemoveTp && pos.TakeProfit.HasValue)) && candidateTrailSL > Symbol.Ask)
                         {
-                            SafeModifyPosition(pos, candidateTrailSL, pos.TakeProfit, source: "Trailing Stop");
+                            SafeModifyPosition(pos, candidateTrailSL, targetTp, source: "Trailing Stop", removeTp: shouldRemoveTp);
                         }
                     }
                 }
@@ -1985,7 +1992,7 @@ namespace cAlgo.Robots
             return false;
         }
 
-        private TradeResult SafeModifyPosition(Position pos, double? targetSL, double? targetTP, bool? hasTrailingStop = null, string source = "")
+        private TradeResult SafeModifyPosition(Position pos, double? targetSL, double? targetTP, bool? hasTrailingStop = null, string source = "", bool removeTp = false)
         {
             if (pos == null) return null;
 
@@ -2024,7 +2031,7 @@ namespace cAlgo.Robots
                     finalSL = pos.StopLoss.Value;
             }
 
-            double? finalTP = targetTP ?? pos.TakeProfit;
+            double? finalTP = removeTp ? null : (targetTP ?? pos.TakeProfit);
             bool finalHasTrailingStop = hasTrailingStop ?? pos.HasTrailingStop;
 
             // Broker Pre-flight minStopBuffer validation (Never forcibly close winning trades at market!)
@@ -2035,8 +2042,11 @@ namespace cAlgo.Robots
                     if (ShowLogs) Print($"[SafeModify Pre-flight] SELL #{pos.Id}: Candidate SL {finalSL.Value:F5} too close to Ask {currentAsk:F5} (buffer {minStopBuffer:F5}). Retaining existing SL.");
                     finalSL = pos.StopLoss;
                 }
-                if (finalTP.HasValue && finalTP.Value >= (currentBid - minStopBuffer)) finalTP = pos.TakeProfit;
-                if (finalSL.HasValue && finalTP.HasValue && finalSL.Value <= finalTP.Value) finalTP = pos.TakeProfit;
+                if (!removeTp)
+                {
+                    if (finalTP.HasValue && finalTP.Value >= (currentBid - minStopBuffer)) finalTP = pos.TakeProfit;
+                    if (finalSL.HasValue && finalTP.HasValue && finalSL.Value <= finalTP.Value) finalTP = pos.TakeProfit;
+                }
             }
             else if (pos.TradeType == TradeType.Buy)
             {
@@ -2045,8 +2055,11 @@ namespace cAlgo.Robots
                     if (ShowLogs) Print($"[SafeModify Pre-flight] BUY #{pos.Id}: Candidate SL {finalSL.Value:F5} too close to Bid {currentBid:F5} (buffer {minStopBuffer:F5}). Retaining existing SL.");
                     finalSL = pos.StopLoss;
                 }
-                if (finalTP.HasValue && finalTP.Value <= (currentAsk + minStopBuffer)) finalTP = pos.TakeProfit;
-                if (finalSL.HasValue && finalTP.HasValue && finalSL.Value >= finalTP.Value) finalTP = pos.TakeProfit;
+                if (!removeTp)
+                {
+                    if (finalTP.HasValue && finalTP.Value <= (currentAsk + minStopBuffer)) finalTP = pos.TakeProfit;
+                    if (finalSL.HasValue && finalTP.HasValue && finalSL.Value >= finalTP.Value) finalTP = pos.TakeProfit;
+                }
             }
 
             // Scenario 9 (Anti-Spam Filter)
@@ -2072,7 +2085,8 @@ namespace cAlgo.Robots
                     {
                         _breakevenApplied.Add(pos.Id);
                     }
-                    if (ShowLogs) Print($"[{source}] Position #{pos.Id} modified successfully -> SL: {finalSL:F5}, TP: {finalTP:F5}");
+                    string tpDisplay = finalTP.HasValue ? finalTP.Value.ToString("F5") : "NONE (Runner)";
+                    if (ShowLogs) Print($"[{source}] Position #{pos.Id} modified successfully -> SL: {finalSL:F5}, TP: {tpDisplay}");
                     SendLiveTickTelemetry(force: true);
                 }
                 return res;
