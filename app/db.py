@@ -274,7 +274,11 @@ def get_db_connection(db_target: Optional[Union[str, Path]] = None, timeout: flo
             pg_url = os.getenv("DATABASE_URL") or DEFAULT_PG_URL
             
         try:
-            raw_conn = psycopg2.connect(pg_url, connect_timeout=int(timeout))
+            # Session clock in UTC: timestamps go into TEXT columns as CURRENT_TIMESTAMP text,
+            # and every reader (VN-time display, DATE() day buckets, the leaderboard's period
+            # cutoff compared as text) takes them as UTC, as SQLite's datetime('now') writes them.
+            # Under the server's own TimeZone they would carry its offset instead.
+            raw_conn = psycopg2.connect(pg_url, connect_timeout=int(timeout), options="-c TimeZone=UTC")
             raw_conn.autocommit = False
             return PostgresConnectionWrapper(raw_conn)
         except Exception as e:
