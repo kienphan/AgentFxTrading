@@ -4,6 +4,7 @@ Tracks positions across multiple bots and enforces portfolio-level risk limits.
 """
 
 import logging
+import re
 import threading
 from datetime import datetime, date, timezone
 from typing import Dict, List, Set, Tuple, Optional
@@ -28,6 +29,15 @@ def is_us_index(symbol: Optional[str]) -> bool:
         return False
     sym_up = symbol.upper()
     return any(tok in sym_up for tok in US_INDEX_SYMBOLS)
+
+
+_ISO_UTC = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
+
+
+def _utc_text(value) -> Optional[str]:
+    """A bot's UTC time ('2026-09-24T07:15:14.1234567Z') as the DB writes it: '2026-09-24 07:15:14'."""
+    m = _ISO_UTC.match(str(value or ""))
+    return f"{m.group(1)} {m.group(2)}" if m else None
 
 
 
@@ -190,6 +200,19 @@ class PortfolioManager:
         """Register new position after trade execution."""
         conn = self._get_conn()
         try:
+            if ctrader_id is not None:
+                # A bot retries a report whose answer it never got, and a close report may
+                # already have rebuilt the row: the same position must not be booked twice.
+                cur = conn.execute(
+                    "SELECT id FROM positions WHERE account_id = ? AND ctrader_id = ? LIMIT 1",
+                    (account_id, ctrader_id),
+                )
+                if cur.fetchone():
+                    logger.info(
+                        f"Duplicate open report ignored: ctrader_id={ctrader_id} by {bot_id} "
+                        f"on account {account_id}"
+                    )
+                    return False
             conn.execute("""
                 INSERT INTO positions (bot_id, symbol, side, volume, entry_price,
                                      sl_pips, tp_pips, entry_time, status, account_id, ctrader_id,
@@ -256,15 +279,32 @@ class PortfolioManager:
         try:
             matched = 0
             if ctrader_id is not None:
-                # 1. Primary match: exact ctrader_id
+                # 1. Primary match: exact ctrader_id. A row already down to remaining_volume
+                # has banked this slice: the report is a retry whose answer the bot lost.
                 sql = """
                     UPDATE positions
                     SET initial_volume = COALESCE(initial_volume, volume),
                         volume = ?, pnl = COALESCE(pnl, 0) + ?
                     WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ? AND ctrader_id = ?
+                      AND ABS(volume - ?) > 0.0001
                 """
-                cur = conn.execute(sql, (remaining_volume, realized_pnl, bot_id, symbol, account_id, ctrader_id))
+                cur = conn.execute(sql, (remaining_volume, realized_pnl, bot_id, symbol, account_id, ctrader_id,
+                                         remaining_volume))
                 matched = cur.rowcount
+
+                if not matched:
+                    cur = conn.execute("""
+                        SELECT id FROM positions
+                        WHERE bot_id = ? AND symbol = ? AND status = 'open' AND account_id = ? AND ctrader_id = ?
+                          AND ABS(volume - ?) <= 0.0001
+                        LIMIT 1
+                    """, (bot_id, symbol, account_id, ctrader_id, remaining_volume))
+                    if cur.fetchone():
+                        logger.info(
+                            f"Duplicate partial close report ignored: ctrader_id={ctrader_id} by {bot_id} "
+                            f"on account {account_id}"
+                        )
+                        return False
 
                 if not matched:
                     # 2. Fallback: position registered without ctrader_id (e.g. older bot/payload),
@@ -322,8 +362,15 @@ class PortfolioManager:
     def close_position(self, bot_id: str, symbol: str, exit_price: float, pnl: float,
                        account_id: str, ctrader_id: Optional[int] = None,
                        close_reason: Optional[str] = None,
-                       sl_price: Optional[float] = None, tp_price: Optional[float] = None) -> bool:
-        """Mark position as closed (single source of truth)."""
+                       sl_price: Optional[float] = None, tp_price: Optional[float] = None,
+                       side: Optional[str] = None, volume: Optional[float] = None,
+                       entry_price: Optional[float] = None, entry_time: Optional[str] = None,
+                       sl_pips: Optional[float] = None) -> bool:
+        """Mark position as closed (single source of truth).
+
+        side, volume, entry_price, entry_time and sl_pips describe the position as the bot saw
+        it at close. They are only used to book a position whose open report never arrived.
+        """
         conn = self._get_conn()
         try:
             matched = 0
@@ -360,6 +407,37 @@ class PortfolioManager:
                 # No further fallback: a row that carries a different ctrader_id is a different
                 # position. A replayed report, or one for a position whose open report never
                 # arrived, would otherwise close it with this trade's exit and P&L.
+
+                if not matched:
+                    # 3. No open row for this position: either the report is a retry of a close
+                    # already applied, or its open report never arrived (2026-09-24: two trades,
+                    # -13.53 $, ran off the books). The close carries enough to book the latter.
+                    cur = conn.execute(
+                        "SELECT status FROM positions WHERE account_id = ? AND ctrader_id = ? LIMIT 1",
+                        (account_id, ctrader_id),
+                    )
+                    existing = cur.fetchone()
+                    if existing is not None and existing[0] == "closed":
+                        logger.info(
+                            f"Duplicate close report ignored: ctrader_id={ctrader_id} by {bot_id} "
+                            f"on account {account_id}"
+                        )
+                        return False
+                    if existing is None and side and volume and entry_price:
+                        entry_ts = _utc_text(entry_time) or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                        conn.execute("""
+                            INSERT INTO positions (bot_id, symbol, side, volume, initial_volume, entry_price,
+                                                   sl_pips, entry_time, exit_time, exit_price, pnl, status,
+                                                   account_id, ctrader_id, close_reason, sl_price, tp_price)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, 'closed', ?, ?, ?, ?, ?)
+                        """, (bot_id, symbol, side, volume, volume, entry_price, sl_pips, entry_ts,
+                              exit_price, pnl, account_id, ctrader_id,
+                              f"{close_reason or 'Closed'} (recovered: open report lost)", sl_price, tp_price))
+                        matched = 1
+                        logger.warning(
+                            f"Recovered position from close report: {symbol} {side} {volume} lots by {bot_id} "
+                            f"(ctrader_id={ctrader_id}) on account {account_id}; its open report never arrived"
+                        )
             else:
                 # No ctrader_id supplied: update open position (for legacy single-position bots)
                 sql = """

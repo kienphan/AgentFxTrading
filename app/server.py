@@ -249,6 +249,9 @@ class TmsSignals(BaseModel):
     bias: str = "NEUTRAL"  # "BULLISH"/"BEARISH" cross lock; NEUTRAL only before the first confirmed cross
     bars_since_cross: int = 0
     cross_direction: Optional[str] = None
+    # FlowRsiBot: "cross_lock", or "ema" when its lock was older than MaxMacroLockAgeBars and
+    # `bias` is the macro EMA trend instead. None from bots that only send the lock.
+    bias_source: Optional[str] = None
 
     # Current signals
     cross_up: bool = False
@@ -535,6 +538,13 @@ class AgentDecision(BaseModel):
 # with the same TDI/Stochastic settings, so a FlowRSI bot can borrow a session bot's lock.
 _TMS_CROSS_LOCK_REGISTRY: Dict[str, Dict[str, dict]] = {}
 
+# A cross-lock is held until the opposite cross is confirmed, however long that takes: on
+# 2026-09-23 GBPUSD, EURUSD, AUDUSD and XAUUSD stayed BULLISH for 31-48 H1 bars while they fell.
+# Past this age a lock no longer describes the trend and does not gate. FlowRsiBot replaces such
+# a lock by its macro EMA bias itself (TmsSignals.bias_source "ema"). Keep equal to its
+# MaxMacroLockAgeBars default.
+MACRO_LOCK_MAX_AGE_BARS = 24
+
 _SUB_HOUR_TIMEFRAME_SECONDS = {"Minute": 60, "Minute5": 300, "Minute15": 900, "Minute30": 1800}
 
 
@@ -569,18 +579,24 @@ def update_tms_cross_lock(symbol: str, bias: str, bars_since_cross: int = 0,
 def get_tms_cross_lock(snapshot: MarketSnapshot) -> Tuple[str, int, str]:
     """
     Returns (locked_bias, bars_since_cross, source) of the macro TMS cross-lock.
-    1. The snapshot's own macro TMS, computed by the bot from macro bars.
+    1. The snapshot's own macro TMS, computed by the bot from macro bars: its cross-lock while
+       no older than MACRO_LOCK_MAX_AGE_BARS, or the macro EMA bias FlowRsiBot sends in its
+       place once the lock is older.
     2. Another bot's lock for the same symbol and macro timeframe, recorded during the
-       current macro bar.
+       current macro bar and no older than MACRO_LOCK_MAX_AGE_BARS.
     3. Otherwise NEUTRAL. The gate stays open rather than letting a chart-timeframe
-       cross or an EMA trend bias stand in for the macro cross-lock.
+       cross or a multi-timeframe trend_bias stand in for the macro cross-lock.
     """
     if snapshot.tms and (snapshot.tms.bias or "").upper() in ("BULLISH", "BEARISH"):
-        return snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, f"{snapshot.bot_id} (Macro TMS)"
+        if (snapshot.tms.bias_source or "").lower() == "ema":
+            return snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, f"{snapshot.bot_id} (Macro EMA)"
+        if snapshot.tms.bars_since_cross <= MACRO_LOCK_MAX_AGE_BARS:
+            return snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, f"{snapshot.bot_id} (Macro TMS)"
 
     tf = snapshot.tms_timeframe or "Hour"
     cached = _TMS_CROSS_LOCK_REGISTRY.get((snapshot.symbol or "").upper(), {}).get(tf)
-    if cached and cached["bar_bucket"] == _cross_lock_bar_bucket(tf, time.time()):
+    if (cached and cached["bar_bucket"] == _cross_lock_bar_bucket(tf, time.time())
+            and cached["bars_since_cross"] <= MACRO_LOCK_MAX_AGE_BARS):
         return cached["bias"], cached["bars_since_cross"], cached["source"]
 
     return "NEUTRAL", 0, "None"
@@ -1889,7 +1905,9 @@ async def trade_decision(snapshot: MarketSnapshot):
             "tp_price": snapshot.position.tp or snapshot.position.tp_price,
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data, account_id=account_id)
-    if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
+    # Only a cross-lock is shared: an EMA bias standing in for a stale lock is not one.
+    if (snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH")
+            and (snapshot.tms.bias_source or "").lower() != "ema"):
         update_tms_cross_lock(
             snapshot.symbol, snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross,
             source=f"{snapshot.bot_id} (Macro TMS)", timeframe=snapshot.tms_timeframe,
@@ -2523,13 +2541,18 @@ async def handle_cbot_event(request: dict):
         return {"status": "error", "message": str(e)}
 
 
-def _level_price(value) -> Optional[float]:
-    """An SL/TP price from a bot report; cTrader has no level as null, older bots send 0."""
+def _positive_number(value) -> Optional[float]:
+    """A price, size or distance from a bot report; None when missing, invalid or not positive."""
     try:
-        price = float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
-    return price if price > 0 else None
+    return number if number > 0 else None
+
+
+def _level_price(value) -> Optional[float]:
+    """An SL/TP price from a bot report; cTrader has no level as null, older bots send 0."""
+    return _positive_number(value)
 
 
 @app.post("/portfolio/report")
@@ -2672,6 +2695,12 @@ async def report_position(request: dict):
                 close_reason=close_reason,
                 sl_price=_level_price(request.get("sl_price")),
                 tp_price=_level_price(request.get("tp_price")),
+                # Lets the server book the position if its open report never arrived.
+                side=request.get("side"),
+                volume=_positive_number(request.get("volume")),
+                entry_price=_positive_number(request.get("entry_price")),
+                entry_time=request.get("entry_time"),
+                sl_pips=_positive_number(request.get("sl_pips")),
             )
             
             if success:

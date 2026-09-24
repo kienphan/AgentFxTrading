@@ -187,6 +187,11 @@ namespace cAlgo.Robots
         [Parameter("Max Dollar Risk Per Trade ($)", Group = "Guardrails", DefaultValue = 12.0, MinValue = 1.0, Step = 1.0)]
         public double MaxDollarRiskPerTrade { get; set; }
 
+        // The broker minimum lot can risk a multiple of RiskPerTradePercent on an index with a
+        // wide stop: USTEC 0.1 lot at 1190p risked 0.72% of balance against 0.2% (2026-09-24).
+        [Parameter("Max Min-Lot Risk (x target, 0=off)", Group = "Guardrails", DefaultValue = 1.5, MinValue = 0, Step = 0.1)]
+        public double MaxMinLotRiskMultiple { get; set; }
+
         [Parameter("Max SL Pips (0=auto)", Group = "Guardrails", DefaultValue = 0, MinValue = 0, Step = 10)]
         public double MaxAbsoluteSlPips { get; set; }
         [Parameter("Max Allowed Lots (0=unlimited)", Group = "Guardrails", DefaultValue = 0.20, MinValue = 0, Step = 0.01)]
@@ -444,7 +449,10 @@ namespace cAlgo.Robots
                 AccountLabel = AccountLabel.Trim().Trim('"', '\'', '“', '”', '‘', '’', '`');
             }
 
-            _httpClient = new HttpClient();
+            // uvicorn closes an idle keep-alive connection after 5 s, while .NET keeps it pooled for a
+            // minute and can reuse it just as the server closes it: a lost position report on
+            // 2026-09-24. Retire idle connections first.
+            _httpClient = new HttpClient(new SocketsHttpHandler { PooledConnectionIdleTimeout = TimeSpan.FromSeconds(4) });
             _httpClient.Timeout = TimeSpan.FromSeconds(180);
             _macroBars = MarketData.GetBars(TmsTimeFrame);
 
@@ -1978,12 +1986,15 @@ namespace cAlgo.Robots
                 };
 
                 var json = JsonSerializer.Serialize(report);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(reportUrl, content);
-                
+                int posId = position.Id;
+                string error = await PostReportAsync(reportUrl, json);
+
                 BeginInvokeOnMainThread(() =>
                 {
-                    if (ShowLogs) Print($"[Portfolio] Reported position open: {position.TradeType} {SymbolName}");
+                    if (error != null)
+                        Print($"[Portfolio] Failed to report position open: #{posId} {position.TradeType} {SymbolName}: {error}");
+                    else if (ShowLogs)
+                        Print($"[Portfolio] Reported position open: {position.TradeType} {SymbolName}");
                 });
             }
             catch (Exception ex)
@@ -2020,12 +2031,14 @@ namespace cAlgo.Robots
                 };
 
                 var json = JsonSerializer.Serialize(report);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(reportUrl, content);
+                string error = await PostReportAsync(reportUrl, json);
 
                 BeginInvokeOnMainThread(() =>
                 {
-                    if (ShowLogs) Print($"[Portfolio] Reported partial close: {SymbolName} {closedLots:F2} lots for {realizedPnl:F2}, {remainingLots:F2} lots remaining");
+                    if (error != null)
+                        Print($"[Portfolio] Failed to report partial close: #{positionId} {SymbolName} {closedLots:F2} lots for {realizedPnl:F2}: {error}");
+                    else if (ShowLogs)
+                        Print($"[Portfolio] Reported partial close: {SymbolName} {closedLots:F2} lots for {realizedPnl:F2}, {remainingLots:F2} lots remaining");
                 });
             }
             catch (Exception ex)
@@ -2042,12 +2055,20 @@ namespace cAlgo.Robots
             try
             {
                 var reportUrl = ApiUrl.Replace("/trade", "/portfolio/report");
+                double initialRiskPips;
+                _positionInitialRiskPips.TryGetValue(position.Id, out initialRiskPips);
                 var report = new
                 {
                     ctrader_id = position.Id,
                     bot_id = BotId,
                     action = "close",
                     symbol = SymbolName,
+                    // The position as opened, so the server can book it if its open report was lost.
+                    side = position.TradeType.ToString(),
+                    volume = position.VolumeInUnits / Symbol.LotSize,
+                    entry_price = position.EntryPrice,
+                    entry_time = position.EntryTime.ToUniversalTime().ToString("o"),
+                    sl_pips = Math.Round(initialRiskPips, 1),
                     exit_price = exitPrice,
                     pnl = pnl,
                     close_reason = closeReason,
@@ -2061,12 +2082,15 @@ namespace cAlgo.Robots
                 };
 
                 var json = JsonSerializer.Serialize(report);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(reportUrl, content);
-                
+                int posId = position.Id;
+                string error = await PostReportAsync(reportUrl, json);
+
                 BeginInvokeOnMainThread(() =>
                 {
-                    if (ShowLogs) Print($"[Portfolio] Reported position closed: {position.TradeType} {SymbolName}, PnL: {pnl:F2}");
+                    if (error != null)
+                        Print($"[Portfolio] Failed to report position closed: #{posId} {position.TradeType} {SymbolName}, PnL: {pnl:F2}: {error}");
+                    else if (ShowLogs)
+                        Print($"[Portfolio] Reported position closed: {position.TradeType} {SymbolName}, PnL: {pnl:F2}");
                 });
             }
             catch (Exception ex)
@@ -2076,6 +2100,37 @@ namespace cAlgo.Robots
                     if (ShowLogs) Print($"[Portfolio] Failed to report position closed: {ex.Message}");
                 });
             }
+        }
+
+        // /portfolio/report is the server's only record of a trade: on 2026-09-24 two open reports
+        // died on a reset keep-alive socket and both trades ran off the books. Retry transport
+        // errors and non-2xx answers. The server ignores a replayed open, partial close or close
+        // (matched on ctrader_id), so retrying after a lost answer cannot book a trade twice.
+        private static readonly int[] ReportRetryDelaysSeconds = { 2, 4, 8, 16 };
+
+        /// <summary>Posts a report, retrying on failure. Returns null once delivered, else the last error.</summary>
+        private async Task<string> PostReportAsync(string url, string json)
+        {
+            string lastError = null;
+            for (int attempt = 0; attempt <= ReportRetryDelaysSeconds.Length; attempt++)
+            {
+                if (attempt > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(ReportRetryDelaysSeconds[attempt - 1]));
+                try
+                {
+                    using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+                    using (var response = await _httpClient.PostAsync(url, content))
+                    {
+                        if (response.IsSuccessStatusCode) return null;
+                        lastError = $"HTTP {(int)response.StatusCode}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
+                }
+            }
+            return $"{lastError} (after {ReportRetryDelaysSeconds.Length + 1} attempts)";
         }
 
         private async Task SendAccountHeartbeatAsync()
@@ -2377,6 +2432,16 @@ namespace cAlgo.Robots
             {
                 if (ShowLogs) Print($"[Guardrail] Blocked: Order dollar risk ${finalDollarRisk:F2} exceeds MaxDollarRisk ${MaxDollarRiskPerTrade:F2}.");
                 _ = ReportGuardrailBlockedAsync("ExceedsMaxDollarRisk", $"Order risk ${finalDollarRisk:F2} > max ${MaxDollarRiskPerTrade:F2}");
+                return;
+            }
+
+            // The clamp up to the broker minimum ignores RiskPerTradePercent, and the dollar cap
+            // above is far looser than the % target on a small account.
+            if (MaxMinLotRiskMultiple > 0 && riskAmount > 0 && finalDollarRisk > riskAmount * MaxMinLotRiskMultiple)
+            {
+                string detail = $"{volume / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalDollarRisk:F2} = {finalDollarRisk / riskAmount:F1}x the {RiskPerTradePercent:F2}% target ${riskAmount:F2} (max {MaxMinLotRiskMultiple:F1}x)";
+                if (ShowLogs) Print($"[Guardrail] Blocked: {detail}");
+                _ = ReportGuardrailBlockedAsync("MinLotExceedsRiskPct", detail);
                 return;
             }
 

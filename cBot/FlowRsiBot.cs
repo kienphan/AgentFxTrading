@@ -115,6 +115,16 @@ namespace cAlgo.Robots
         [Parameter("Min Bars Between Flips", Group = "Macro TMS Trend Filter", DefaultValue = 2, MinValue = 1)]
         public int MinBarsBetweenFlips { get; set; }
 
+        // A cross-lock is held until the opposite cross is confirmed, however long that takes: on
+        // 2026-09-23 GBPUSD, EURUSD, AUDUSD and XAUUSD stayed BULLISH for 31-48 H1 bars while they
+        // fell. An older lock gives way to the macro EMA trend. Keep the default equal to the
+        // server's MACRO_LOCK_MAX_AGE_BARS, which ignores older locks at its own gate.
+        [Parameter("Max Lock Age (macro bars, 0=off)", Group = "Macro TMS Trend Filter", DefaultValue = 24, MinValue = 0)]
+        public int MaxMacroLockAgeBars { get; set; }
+
+        [Parameter("Macro EMA Period (stale lock)", Group = "Macro TMS Trend Filter", DefaultValue = 50, MinValue = 2)]
+        public int MacroEmaPeriod { get; set; }
+
         // Keep these equal to AiAgentBot's TMS settings. The server shares one cross-lock per
         // symbol and macro timeframe between both bots: a FlowRSI bot whose own lock is not yet
         // confirmed gates on the session bot's, which is only valid if both compute it alike.
@@ -140,6 +150,11 @@ namespace cAlgo.Robots
 
         [Parameter("Max Dollar Risk Per Trade ($)", Group = "Risk Management", DefaultValue = 50.0, MinValue = 5.0)]
         public double MaxRiskPerTradeMoney { get; set; }
+
+        // The broker minimum lot can risk a multiple of RiskPercentage while staying under the
+        // dollar cap: US30 0.1 lot at 1387.6p risked 0.84% of equity against 0.5% (2026-09-24).
+        [Parameter("Max Min-Lot Risk (x target, 0=off)", Group = "Risk Management", DefaultValue = 1.5, MinValue = 0, Step = 0.1)]
+        public double MaxMinLotRiskMultiple { get; set; }
 
         [Parameter("Stop Loss Mode", Group = "Risk Management", DefaultValue = StopLossType.Technical_Swing)]
         public StopLossType SlMode { get; set; }
@@ -296,6 +311,7 @@ namespace cAlgo.Robots
 
         // Macro TMS Filter (Ported from AiAgentBot.cs)
         private Bars _macroBars;
+        private ExponentialMovingAverage _macroEma;
         private TmsSignals _macroTmsCache;
         private DateTime _macroTmsCacheBucket = DateTime.MinValue;
         private string _lastConfirmedMacroBias;          // null until the first confirmed cross
@@ -315,7 +331,13 @@ namespace cAlgo.Robots
             }
         }
 
-        private readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        // uvicorn closes an idle keep-alive connection after 5 s, while .NET keeps it pooled for a
+        // minute and can reuse it just as the server closes it: "Connection reset by peer" on
+        // /trade and a lost position report on 2026-09-24. Retire idle connections first.
+        private readonly HttpClient _httpClient = new HttpClient(new SocketsHttpHandler { PooledConnectionIdleTimeout = TimeSpan.FromSeconds(4) })
+        {
+            Timeout = TimeSpan.FromSeconds(60)
+        };
 
         // AI Agent Safety Guard (aligned with Asian Range Judas Sweep AI Bot reference pattern)
         private int _isAgentQuerying = 0;
@@ -428,6 +450,8 @@ namespace cAlgo.Robots
             public double rsi { get; set; } = 50.0;
             public double tdi_red { get; set; } = 50.0;
             public string tdi_level { get; set; } = "neutral";
+            // "cross_lock", or "ema" when the lock was stale (or not yet confirmed) and bias is the macro EMA trend.
+            public string bias_source { get; set; } = "cross_lock";
         }
 
         public class MarketSnapshot
@@ -521,6 +545,7 @@ namespace cAlgo.Robots
                 if (EnableMacroTmsFilter)
                 {
                     _macroBars = MarketData.GetBars(MacroTimeFrame);
+                    _macroEma = Indicators.ExponentialMovingAverage(_macroBars.ClosePrices, MacroEmaPeriod);
                     Print($"[FlowRSI] Initialized Macro TMS on {MacroTimeFrame} for Symbol {SymbolName}.");
                 }
 
@@ -792,12 +817,12 @@ namespace cAlgo.Robots
                 {
                     if (buyCandidate && macroTms.bias == "BEARISH")
                     {
-                        if (ShowLogs) Print($"[TMS Filter] BUY candidate cancelled: Macro ({MacroTimeFrame}) TMS is LOCKED BEARISH (age={macroTms.bars_since_cross} bars). Counter-trend entry blocked.");
+                        if (ShowLogs) Print($"[TMS Filter] BUY candidate cancelled: Macro ({MacroTimeFrame}) bias is BEARISH (source={macroTms.bias_source}, lock age={macroTms.bars_since_cross} bars). Counter-trend entry blocked.");
                         buyCandidate = false;
                     }
                     if (sellCandidate && macroTms.bias == "BULLISH")
                     {
-                        if (ShowLogs) Print($"[TMS Filter] SELL candidate cancelled: Macro ({MacroTimeFrame}) TMS is LOCKED BULLISH (age={macroTms.bars_since_cross} bars). Counter-trend entry blocked.");
+                        if (ShowLogs) Print($"[TMS Filter] SELL candidate cancelled: Macro ({MacroTimeFrame}) bias is BULLISH (source={macroTms.bias_source}, lock age={macroTms.bars_since_cross} bars). Counter-trend entry blocked.");
                         sellCandidate = false;
                     }
                 }
@@ -813,7 +838,7 @@ namespace cAlgo.Robots
             if (buyCandidate || sellCandidate)
             {
                 candidateAction = buyCandidate ? "BUY" : "SELL";
-                string tmsTag = macroTms != null ? $", TMS:{macroTms.bias}({macroTms.bars_since_cross}b)" : "";
+                string tmsTag = macroTms != null ? $", TMS:{macroTms.bias}({macroTms.bias_source},{macroTms.bars_since_cross}b)" : "";
                 signalReason = $"NestedRSI-SMC ({rsiCrossSignal}, FVG:{(inBullishFvg || inBearishFvg)}, Sweep:{(sweptSsl || sweptBsl)}, Disc:{isDiscount}/Prem:{isPremium}{tmsTag})";
 
                 // 6. Calculate Technical SL and TP targets
@@ -1134,6 +1159,15 @@ namespace cAlgo.Robots
                 ? MacroBarsSince(_lockedMacroCrossBarTime)
                 : 999;
 
+            // A lock older than MaxMacroLockAgeBars, or none confirmed yet, says nothing about the
+            // trend now: the macro EMA does. The hysteresis state above keeps tracking the lock.
+            string biasSource = "cross_lock";
+            if (bias == "NEUTRAL" || (MaxMacroLockAgeBars > 0 && macroBarsSinceCross > MaxMacroLockAgeBars))
+            {
+                bias = MacroEmaBias(count - 2);
+                biasSource = "ema";
+            }
+
             string tdiLevel = "neutral";
             if (g < 32) tdiLevel = "oversold";
             else if (g > 68) tdiLevel = "overbought";
@@ -1145,7 +1179,8 @@ namespace cAlgo.Robots
                 cross_direction = macroCrossDir,
                 rsi = Math.Round(g, 2),
                 tdi_red = Math.Round(r, 2),
-                tdi_level = tdiLevel
+                tdi_level = tdiLevel,
+                bias_source = biasSource
             };
             _macroTmsCacheBucket = bucket;
 
@@ -1159,6 +1194,22 @@ namespace cAlgo.Robots
         {
             int idx = _macroBars.OpenTimes.GetIndexByExactTime(barTime);
             return idx < 0 ? 999 : Math.Max(0, (_macroBars.Count - 2) - idx);
+        }
+
+        private const int MacroEmaSlopeBars = 3;
+
+        // Trend of the macro bar at idx: its close beyond the EMA, and the EMA sloping the same
+        // way over MacroEmaSlopeBars bars. NEUTRAL when they disagree or the EMA is not ready.
+        private string MacroEmaBias(int idx)
+        {
+            if (_macroEma == null || idx - MacroEmaSlopeBars < 0) return "NEUTRAL";
+            double ema = _macroEma.Result[idx];
+            double emaBefore = _macroEma.Result[idx - MacroEmaSlopeBars];
+            double close = _macroBars.ClosePrices[idx];
+            if (double.IsNaN(ema) || double.IsNaN(emaBefore)) return "NEUTRAL";
+            if (close > ema && ema > emaBefore) return "BULLISH";
+            if (close < ema && ema < emaBefore) return "BEARISH";
+            return "NEUTRAL";
         }
         #endregion
 
@@ -1209,11 +1260,14 @@ namespace cAlgo.Robots
                 }
 
                 // ── 1. Synchronously pre-capture all cTrader COM/API objects on Main Thread ──
-                int maxBars = Math.Min(35, Bars.Count);
+                // The bar that closed: inside OnBarClosed the last bar is sometimes already the next
+                // one, a single tick old (ClosedBarIndex). Describe the bar the signal was taken on.
+                int index = ClosedBarIndex();
+                int maxBars = Math.Min(35, index + 1);
                 var barList = new List<BarInfo>();
-                for (int i = 1; i <= maxBars; i++)
+                for (int i = 0; i < maxBars; i++)
                 {
-                    int idx = Bars.Count - i;
+                    int idx = index - i;
                     barList.Add(new BarInfo
                     {
                         time = Bars.OpenTimes[idx].ToString("o"),
@@ -1225,7 +1279,6 @@ namespace cAlgo.Robots
                     });
                 }
 
-                int index = Bars.ClosePrices.Count - 1;
                 double fastRsiCurr = _fastRsi != null && _fastRsi.Result.Count > 1 ? _fastRsi.Result[index] : 50.0;
                 double slowRsiCurr = _slowRsi != null && _slowRsi.Result.Count > 1 ? _slowRsi.Result[index] : 50.0;
                 double currentAtr = _atr != null && _atr.Result.Count > 1 ? _atr.Result[index] : (Symbol.Spread * 3);
@@ -1542,7 +1595,7 @@ namespace cAlgo.Robots
                 {
                     foreach (var pos in GetBotPositions())
                     {
-                        ClosePosition(pos);
+                        CloseWithReason(pos, $"AI Close: {decision.reason}");
                     }
                     Print($"[AI Emergency Exit] Closed all positions. Reason: {decision.reason}");
                     if (EnableTelegramAlerts && RunningMode == RunningMode.RealTime)
@@ -1796,6 +1849,13 @@ namespace cAlgo.Robots
             if (finalRisk > MaxRiskPerTradeMoney)
             {
                 Print($"[Guardrail] Entry REFUSED: broker minimum {normalizedUnits / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalRisk:F2}, over MaxRiskPerTradeMoney (${MaxRiskPerTradeMoney:F2}).");
+                return 0;
+            }
+
+            // Under the dollar cap the clamped minimum can still be far above the RiskPercentage target.
+            if (MaxMinLotRiskMultiple > 0 && effectiveRiskAmount > 0 && finalRisk > effectiveRiskAmount * MaxMinLotRiskMultiple)
+            {
+                Print($"[Guardrail] Entry REFUSED: {normalizedUnits / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalRisk:F2}, {finalRisk / effectiveRiskAmount:F1}x the ${effectiveRiskAmount:F2} target (max {MaxMinLotRiskMultiple:F1}x).");
                 return 0;
             }
 
@@ -2188,7 +2248,7 @@ namespace cAlgo.Robots
                 Print($"[Circuit Breaker Triggered] Max Drawdown reached {currentDrawdownPercent:F2}% (Threshold: {HighWatermarkCutThreshold:F1}%). Halving risk & closing open positions.");
                 foreach (var pos in GetBotPositions())
                 {
-                    ClosePosition(pos);
+                    CloseWithReason(pos, "Circuit Breaker");
                 }
                 if (EnableTelegramAlerts && RunningMode == RunningMode.RealTime)
                 {
@@ -2896,7 +2956,9 @@ namespace cAlgo.Robots
                     }
                     else if (args.Reason == PositionCloseReason.Closed)
                     {
-                        reason = hasBotReason ? botReason : (pnl >= 0 ? "Closed (Take Profit Early)" : "Closed (Cut Loss Early)");
+                        // Every close this bot makes records its reason (CloseWithReason), so one
+                        // without a reason came from outside: usually the user in cTrader.
+                        reason = hasBotReason ? botReason : "Closed outside the bot (cTrader)";
                     }
 
                     ReportPositionClosed(pos, pnl, reason, exitPrice, pos.Pips);
@@ -2977,34 +3039,52 @@ namespace cAlgo.Robots
 
                 Task.Run(async () =>
                 {
-                    try
+                    string error = await PostReportAsync(reportUrl, json);
+                    if (error == null && !ShowLogs) return;
+                    BeginInvokeOnMainThread(() =>
                     {
-                        var content = new StringContent(json, Encoding.UTF8, "application/json");
-                        await _httpClient.PostAsync(reportUrl, content);
-                        if (ShowLogs)
-                        {
-                            BeginInvokeOnMainThread(() =>
-                            {
-                                Print($"[Portfolio Hub] Reported position open: #{posId} {posSide} {posSymbol}");
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (ShowLogs)
-                        {
-                            BeginInvokeOnMainThread(() =>
-                            {
-                                Print($"[Portfolio Hub] Failed to report position open: {ex.Message}");
-                            });
-                        }
-                    }
+                        if (error == null)
+                            Print($"[Portfolio Hub] Reported position open: #{posId} {posSide} {posSymbol}");
+                        else
+                            Print($"[Portfolio Hub] Failed to report position open: #{posId} {posSide} {posSymbol}: {error}");
+                    });
                 });
             }
             catch (Exception ex)
             {
                 if (ShowLogs) Print($"[ReportPositionOpen Error] {ex.Message}");
             }
+        }
+
+        // /portfolio/report is the server's only record of a trade: on 2026-09-24 two open reports
+        // died on a reset keep-alive socket and both trades ran off the books. Retry transport
+        // errors and non-2xx answers. The server ignores a replayed open, partial close or close
+        // (matched on ctrader_id), so retrying after a lost answer cannot book a trade twice.
+        private static readonly int[] ReportRetryDelaysSeconds = { 2, 4, 8, 16 };
+
+        /// <summary>Posts a report, retrying on failure. Returns null once delivered, else the last error.</summary>
+        private async Task<string> PostReportAsync(string url, string json)
+        {
+            string lastError = null;
+            for (int attempt = 0; attempt <= ReportRetryDelaysSeconds.Length; attempt++)
+            {
+                if (attempt > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(ReportRetryDelaysSeconds[attempt - 1]));
+                try
+                {
+                    using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+                    using (var response = await _httpClient.PostAsync(url, content))
+                    {
+                        if (response.IsSuccessStatusCode) return null;
+                        lastError = $"HTTP {(int)response.StatusCode}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
+                }
+            }
+            return $"{lastError} (after {ReportRetryDelaysSeconds.Length + 1} attempts)";
         }
 
         // _initialSlDistances lives in RAM and is lost on restart. The server already holds
@@ -3137,26 +3217,15 @@ namespace cAlgo.Robots
 
                 Task.Run(async () =>
                 {
-                    try
+                    string error = await PostReportAsync(reportUrl, json);
+                    if (error == null && !ShowLogs) return;
+                    BeginInvokeOnMainThread(() =>
                     {
-                        var content = new StringContent(json, Encoding.UTF8, "application/json");
-                        await _httpClient.PostAsync(reportUrl, content);
-                        if (ShowLogs)
-                        {
-                            BeginInvokeOnMainThread(() =>
-                            {
-                                Print($"[Portfolio Hub] Reported partial close: #{posId} {closedLots:F2} lots for {realizedPnl:F2}, {remainingLots:F2} lots remaining");
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (ShowLogs)
-                        {
-                            string err = ex.Message;
-                            BeginInvokeOnMainThread(() => Print($"[Portfolio Hub Error] Partial close report failed: {err}"));
-                        }
-                    }
+                        if (error == null)
+                            Print($"[Portfolio Hub] Reported partial close: #{posId} {closedLots:F2} lots for {realizedPnl:F2}, {remainingLots:F2} lots remaining");
+                        else
+                            Print($"[Portfolio Hub] Failed to report partial close: #{posId} {closedLots:F2} lots for {realizedPnl:F2}: {error}");
+                    });
                 });
             }
             catch (Exception ex)
@@ -3182,6 +3251,12 @@ namespace cAlgo.Robots
                 double? tpPrice = position.TakeProfit;
                 string entryTimeStr = position.EntryTime.ToUniversalTime().ToString("o");
                 string exitTimeStr = DateTime.UtcNow.ToString("o");
+                // The stop distance at entry, so a row the server has to rebuild (open report lost)
+                // keeps its risk for the leaderboard. 0 when this run never knew it.
+                double initialSlDistance;
+                double initialSlPips = _initialSlDistances.TryGetValue(posId, out initialSlDistance)
+                    ? Math.Round(initialSlDistance / Symbol.PipSize, 1)
+                    : 0.0;
 
                 string accNum = Account.Number.ToString();
                 string accType = Account.IsLive ? "live" : "demo";
@@ -3201,6 +3276,7 @@ namespace cAlgo.Robots
                     exit_price = resolvedExitPrice,
                     sl_price = slPrice,
                     tp_price = tpPrice,
+                    sl_pips = initialSlPips,
                     pnl = pnl,
                     pips = Math.Round(resolvedPips, 1),
                     reason = string.IsNullOrWhiteSpace(reason) ? "Closed" : reason,
@@ -3220,28 +3296,15 @@ namespace cAlgo.Robots
 
                 Task.Run(async () =>
                 {
-                    try
+                    string error = await PostReportAsync(reportUrl, json);
+                    if (error == null && !ShowLogs) return;
+                    BeginInvokeOnMainThread(() =>
                     {
-                        var content = new StringContent(json, Encoding.UTF8, "application/json");
-                        await _httpClient.PostAsync(reportUrl, content);
-                        if (ShowLogs)
-                        {
-                            BeginInvokeOnMainThread(() =>
-                            {
-                                Print($"[Portfolio Hub] Reported position closed: #{posId} {posSide} PnL: {pnl:F2}");
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (ShowLogs)
-                        {
-                            BeginInvokeOnMainThread(() =>
-                            {
-                                Print($"[Portfolio Hub] Failed to report position closed: {ex.Message}");
-                            });
-                        }
-                    }
+                        if (error == null)
+                            Print($"[Portfolio Hub] Reported position closed: #{posId} {posSide} PnL: {pnl:F2}");
+                        else
+                            Print($"[Portfolio Hub] Failed to report position closed: #{posId} {posSide} PnL: {pnl:F2}: {error}");
+                    });
                 });
             }
             catch (Exception ex)

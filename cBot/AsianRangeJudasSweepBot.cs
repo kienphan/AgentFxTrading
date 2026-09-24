@@ -538,7 +538,10 @@ namespace cAlgo.Robots
             Print($"[DST Time Sync] Rule: {dstRule} | Europe: {(isEurDst ? "Summer (BST)" : "Winter (GMT)")} -> London KZ: {lStart:D2}:00 - {lEnd:D2}:00 UTC | US: {(isUsDst ? "Summer (EDT)" : "Winter (EST)")} -> NY KZ: {nyStart:D2}:30 - {nyEnd:D2}:00 UTC");
 
 
-            _httpClient = new HttpClient();
+            // uvicorn closes an idle keep-alive connection after 5 s, while .NET keeps it pooled for a
+            // minute and can reuse it just as the server closes it: a lost position report on
+            // 2026-09-24. Retire idle connections first.
+            _httpClient = new HttpClient(new SocketsHttpHandler { PooledConnectionIdleTimeout = TimeSpan.FromSeconds(4) });
             _httpClient.Timeout = TimeSpan.FromSeconds(aiTimeoutSeconds > 0 ? aiTimeoutSeconds : 300);
             Print($"cBot Agent Template HTTP calls ENABLED in mode: {RunningMode} | AI Mode: {AiMode}");
 
@@ -3604,8 +3607,10 @@ Reply strictly with JSON object.";
                 };
 
                 var json = JsonSerializer.Serialize(report);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(reportUrl, content);
+                int posId = position.Id;
+                string error = await PostReportAsync(reportUrl, json);
+                if (error != null)
+                    BeginInvokeOnMainThread(() => Print($"[Agent Portfolio] Failed to report position open: #{posId} {SymbolName}: {error}"));
             }
             catch (Exception ex)
             {
@@ -3629,6 +3634,11 @@ Reply strictly with JSON object.";
                     bot_id = BotId,
                     action = "close",
                     symbol = SymbolName,
+                    // The position as opened, so the server can book it if its open report was lost.
+                    side = position.TradeType.ToString(),
+                    volume = position.VolumeInUnits / Symbol.LotSize,
+                    entry_price = position.EntryPrice,
+                    entry_time = position.EntryTime.ToUniversalTime().ToString("o"),
                     exit_price = exitPrice,
                     pnl = pnl,
                     close_reason = closeReason,
@@ -3642,13 +3652,46 @@ Reply strictly with JSON object.";
                 };
 
                 var json = JsonSerializer.Serialize(report);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(reportUrl, content);
+                int posId = position.Id;
+                string error = await PostReportAsync(reportUrl, json);
+                if (error != null)
+                    BeginInvokeOnMainThread(() => Print($"[Agent Portfolio] Failed to report position closed: #{posId} {SymbolName}, PnL: {pnl:F2}: {error}"));
             }
             catch (Exception ex)
             {
                 Print($"[Agent Portfolio] Failed to report position closed: {ex.Message}");
             }
+        }
+
+        // /portfolio/report is the server's only record of a trade: on 2026-09-24 two open reports
+        // died on a reset keep-alive socket and both trades ran off the books. Retry transport
+        // errors and non-2xx answers. The server ignores a replayed open or close (matched on
+        // ctrader_id), so retrying after a lost answer cannot book a trade twice.
+        private static readonly int[] ReportRetryDelaysSeconds = { 2, 4, 8, 16 };
+
+        /// <summary>Posts a report, retrying on failure. Returns null once delivered, else the last error.</summary>
+        private async Task<string> PostReportAsync(string url, string json)
+        {
+            string lastError = null;
+            for (int attempt = 0; attempt <= ReportRetryDelaysSeconds.Length; attempt++)
+            {
+                if (attempt > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(ReportRetryDelaysSeconds[attempt - 1]));
+                try
+                {
+                    using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+                    using (var response = await _httpClient.PostAsync(url, content))
+                    {
+                        if (response.IsSuccessStatusCode) return null;
+                        lastError = $"HTTP {(int)response.StatusCode}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
+                }
+            }
+            return $"{lastError} (after {ReportRetryDelaysSeconds.Length + 1} attempts)";
         }
 
         private DateTime _lastTickTelemetryTime = DateTime.MinValue;
