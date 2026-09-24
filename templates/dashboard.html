@@ -176,10 +176,12 @@
                 </div>
 
                 {# SL/TP cell: price plus the bot's P&L estimate at that level; falls back to the
-                   entry-time pip distance for rows written before prices were recorded. #}
-                {% macro sltp_line(tag, price, pnl, pips) %}
+                   entry-time pip distance for rows written before prices were recorded. no_tp: the
+                   bot has taken the TP off (a trailed runner), so the trade exits only at its stop. #}
+                {% macro sltp_line(tag, price, pnl, pips, no_tp=false) %}
                 <div class="sltp-line"><span class="sltp-tag">{{ tag }}</span>
-                    {% if price %}<span class="td-mono">{{ price }}</span>{% if pnl is not none %} <span class="{% if pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">{% if pnl > 0 %}+{% elif pnl < 0 %}-{% endif %}${{ '%.2f' | format(pnl | abs) }}</span>{% endif %}
+                    {% if price %}<span class="td-mono">{{ price }}</span>{% if pnl is not none %} <span class="{% if pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">{% if pnl > 0 %}+{% elif pnl < 0 %}-{% endif %}${{ '%.2f' | format(pnl | abs) }}</span>{% if tag == 'SL' and pnl > 0 %}{% if no_tp %}<span class="sltp-chip" title="Trailing stop: the bot moves it up behind price. The position closes when price comes back to it, keeping this profit.">trailing</span>{% else %}<span class="sltp-chip" title="Stop is past break-even: if price comes back to it the position still closes at this profit.">locked</span>{% endif %}{% endif %}{% endif %}
+                    {% elif no_tp %}<span class="sltp-none" title="No take-profit at the broker. FlowRSI removes it when it starts trailing the runner left after the partial close; the position then closes at the SL (or on an AI or manual close).">none · exits at SL</span>
                     {% elif pips %}<span class="td-dim">{{ pips }}p</span>
                     {% else %}<span class="td-dim">—</span>{% endif %}
                 </div>
@@ -259,7 +261,7 @@
                                         <td>{{ pos.volume }}L</td>
                                         <td class="td-mono">{{ pos.entry_price }}</td>
                                         <td class="td-mono td-current-price">{{ pos.current_price or pos.entry_price }}{% if pos.price_age_seconds is not none %}<span class="td-dim" title="price from the bot's last snapshot"> ·{{ (pos.price_age_seconds // 60) | int }}m</span>{% endif %}</td>
-                                        <td class="td-sltp">{{ sltp_line('SL', pos.sl_price, pos.sl_pnl, pos.sl_pips) }}{{ sltp_line('TP', pos.tp_price, pos.tp_pnl, pos.tp_pips) }}</td>
+                                        <td class="td-sltp">{{ sltp_line('SL', pos.sl_price, pos.sl_pnl, pos.sl_pips, pos.no_tp) }}{{ sltp_line('TP', pos.tp_price, pos.tp_pnl, pos.tp_pips, pos.no_tp) }}</td>
                                         <td class="td-pnl-live">
                                             {% if pos.unrealized_pnl is none %}
                                             <span class="td-dim" title="broker-reported P&L arrives with the bot's next snapshot">—</span>
@@ -1466,15 +1468,23 @@
         }
         function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
         // One SL or TP line: the price plus the bot's P&L estimate at it. Rows written before
-        // prices were recorded fall back to the entry-time pip distance. Mirrors the sltp_line macro.
-        function sltpLineHtml(tag, price, pnl, pips){
+        // prices were recorded fall back to the entry-time pip distance. noTp: the bot has taken
+        // the TP off (a trailed runner), so the trade exits only at its stop. Mirrors the sltp_line macro.
+        function sltpLineHtml(tag, price, pnl, pips, noTp){
             let body;
             if(price){
                 body=`<span class="td-mono">${escapeHtml(price)}</span>`;
                 if(pnl!==null&&pnl!==undefined){
                     const v=Number(pnl)||0;
                     body+=` <span class="${v>=0?'pnl-positive':'pnl-negative'}">${v>0?'+':(v<0?'-':'')}$${Math.abs(v).toFixed(2)}</span>`;
+                    if(tag==='SL'&&v>0){
+                        body+=noTp
+                            ? '<span class="sltp-chip" title="Trailing stop: the bot moves it up behind price. The position closes when price comes back to it, keeping this profit.">trailing</span>'
+                            : '<span class="sltp-chip" title="Stop is past break-even: if price comes back to it the position still closes at this profit.">locked</span>';
+                    }
                 }
+            } else if(noTp){
+                body='<span class="sltp-none" title="No take-profit at the broker. FlowRSI removes it when it starts trailing the runner left after the partial close; the position then closes at the SL (or on an AI or manual close).">none · exits at SL</span>';
             } else if(pips){
                 body=`<span class="td-dim">${escapeHtml(pips)}p</span>`;
             } else {
@@ -1483,8 +1493,9 @@
             return `<div class="sltp-line"><span class="sltp-tag">${tag}</span>${body}</div>`;
         }
         function sltpCellHtml(o, withPnl){
-            return sltpLineHtml('SL', o.sl_price, withPnl?o.sl_pnl:null, o.sl_pips)
-                 + sltpLineHtml('TP', o.tp_price, withPnl?o.tp_pnl:null, o.tp_pips);
+            const noTp=withPnl&&!!o.no_tp;
+            return sltpLineHtml('SL', o.sl_price, withPnl?o.sl_pnl:null, o.sl_pips, noTp)
+                 + sltpLineHtml('TP', o.tp_price, withPnl?o.tp_pnl:null, o.tp_pips, noTp);
         }
         // Mirrors the Recent Trades "Open / Close" cell: entry on one line, exit plus time in trade on the next.
         function tradeTimesHtml(t){
