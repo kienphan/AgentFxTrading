@@ -2123,7 +2123,8 @@ async def trade_decision(snapshot: MarketSnapshot):
             volume=0.01,
             account_balance=snapshot.account_balance,
             account_id=account_id,
-            used_margin=snapshot.account_margin
+            used_margin=snapshot.account_margin,
+            bot_id=snapshot.bot_id,
         )
         
         if not can_trade:
@@ -2363,7 +2364,8 @@ async def trade_decision(snapshot: MarketSnapshot):
                 volume=float(decision_dict.get("volume_lots") or 0.01),
                 account_balance=snapshot.account_balance,
                 account_id=account_id,
-                used_margin=snapshot.account_margin
+                used_margin=snapshot.account_margin,
+                bot_id=snapshot.bot_id,
             )
             if not can_trade:
                 logger.warning(

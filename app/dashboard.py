@@ -3,7 +3,7 @@ Dashboard for monitoring AgentFxTrading system.
 Provides real-time visualization of positions, P&L, and bot status.
 """
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1261,6 +1261,58 @@ def api_setup_instances(req: SetupInstancesRequest):
 async def api_watchdog_status():
     from app.cbot_watchdog import cbot_watchdog
     return cbot_watchdog.get_status()
+
+
+# ── Daily loss limits (account / strategy / container) ─────────────────────
+
+class RiskLimitUpdate(BaseModel):
+    scope: str
+    target: str
+    max_daily_loss: Optional[float] = None
+    enabled: Optional[bool] = None
+
+
+class RiskLimitsRequest(BaseModel):
+    limits: List[RiskLimitUpdate]
+
+
+RISK_CONTAINERS_SHOWN = 8
+
+
+@router.get("/api/risk-limits")
+def api_get_risk_limits():
+    """The limits and today's loss against them, per account: the account, each strategy,
+    and the containers that have lost the most."""
+    pm = get_portfolio_manager()
+    accounts = []
+    for account_id in pm.get_account_ids():
+        usage = pm.daily_loss_usage(account_id)
+        containers = sorted(
+            ({"bot_id": bot_id, **used} for bot_id, used in usage["container"].items()),
+            key=lambda c: c["total"],
+        )[:RISK_CONTAINERS_SHOWN]
+        accounts.append({
+            "account_id": account_id,
+            "account": usage["account"],
+            "strategy": usage["strategy"],
+            "containers": containers,
+        })
+    return {
+        "date": datetime.now(timezone.utc).date().isoformat(),
+        "limits": pm.get_risk_limits(),
+        "accounts": accounts,
+    }
+
+
+@router.put("/api/risk-limits")
+def api_put_risk_limits(req: RiskLimitsRequest):
+    pm = get_portfolio_manager()
+    try:
+        limits = pm.update_risk_limits([u.model_dump() for u in req.limits])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    logger.info(f"Risk limits updated: {[u.model_dump() for u in req.limits]}")
+    return {"limits": limits}
 
 # ── News Service & Macro Assessment API Endpoints ─────────────────────────
 
