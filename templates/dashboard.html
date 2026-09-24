@@ -439,15 +439,29 @@
 
                 <!-- Leaderboard Table Panel -->
                 <section class="panel">
-                    <div class="panel-header">
+                    <div class="panel-header lb-panel-header">
                         <div>
                             <span class="panel-title"><i data-lucide="trophy" class="panel-icon text-amber"></i> cBot Performance &amp; Quant Ranking</span>
-                            <span class="td-dim" style="font-size: 0.72rem; margin-left: 10px;">Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency</span>
+                            <span id="lb-weight-hint" class="td-dim" style="font-size: 0.72rem; margin-left: 10px;">Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency</span>
                         </div>
-                        <button id="lb-refresh-btn" class="log-btn" style="margin-left:auto;"><i data-lucide="refresh-cw" class="btn-icon"></i> Refresh</button>
+                        <div class="lb-toolbar">
+                            <div class="news-btn-group" id="lb-tab-group" role="tablist" aria-label="Ranking basis">
+                                <button type="button" class="news-filter-btn active" data-lb-tab="usd" role="tab" title="Scores Net P&amp;L in account currency: bigger lots score higher for the same edge">USD P&amp;L</button>
+                                <button type="button" class="news-filter-btn" data-lb-tab="lot" role="tab" title="Scores every closed trade as P&amp;L per lot: lot size drops out">Lot-Neutral</button>
+                            </div>
+                            <div class="news-btn-group" id="lb-period-group" aria-label="Look-back period">
+                                <button type="button" class="news-filter-btn" data-lb-period="1d" title="Trades closed in the last 24 hours">24H</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1w" title="Trades closed in the last 7 days">7D</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1m" title="Trades closed in the last 30 days">30D</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="6m" title="Trades closed in the last 6 months">6M</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1y" title="Trades closed in the last 12 months">1Y</button>
+                                <button type="button" class="news-filter-btn active" data-lb-period="all" title="Every closed trade">All</button>
+                            </div>
+                            <button id="lb-refresh-btn" class="log-btn"><i data-lucide="refresh-cw" class="btn-icon"></i> Refresh</button>
+                        </div>
                     </div>
                     <div class="panel-body">
-                        <div class="table-wrap">
+                        <div class="table-wrap" id="lb-pane-usd">
                             <table class="data-table">
                                 <thead>
                                     <tr>
@@ -507,6 +521,8 @@
                                             <td>
                                                 {% if bot.total_trades == 0 %}
                                                     <span class="td-dim">--</span>
+                                                {% elif bot.profit_factor is none %}
+                                                    <span class="font-mono pnl-positive" title="No losing trades yet">∞</span>
                                                 {% elif bot.profit_factor == 0 %}
                                                     <span class="font-mono pnl-negative" title="No winning trades">0.00</span>
                                                 {% else %}
@@ -526,12 +542,16 @@
                                                 ${{ "%.2f"|format(bot.floating_pnl_usd) }}
                                             </td>
                                             <td>
+                                                {% if bot.total_trades == 0 %}
+                                                    <span class="td-dim">--</span>
+                                                {% else %}
                                                 <div class="score-pill">
                                                     <span style="color: {{ bot.tier_color }};">{{ bot.composite_score }}</span>
                                                     <span class="score-bar-bg">
                                                         <span class="score-bar-fill" style="width: {{ bot.composite_score }}%; background: {{ bot.tier_color }};"></span>
                                                     </span>
                                                 </div>
+                                                {% endif %}
                                             </td>
                                         </tr>
                                         {% endfor %}
@@ -540,6 +560,28 @@
                                             <td colspan="11" class="empty-state">No bot trading history recorded yet</td>
                                         </tr>
                                     {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Lot-neutral ranking: filled by renderLeaderboard() -->
+                        <div class="table-wrap" id="lb-pane-lot" hidden>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th class="rank-cell">Rank</th>
+                                        <th>Bot Strategy</th>
+                                        <th>Symbols</th>
+                                        <th>Tier Badge</th>
+                                        <th>Win Rate</th>
+                                        <th title="Gross profit / gross loss, each closed trade taken as its P&amp;L per lot">Profit Factor</th>
+                                        <th title="Average win / average loss, per lot">Payoff</th>
+                                        <th title="Net P&amp;L per lot / max drawdown of the per-lot equity curve">Return / DD</th>
+                                        <th>Trades</th>
+                                        <th>Quant Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="leaderboard-lot-table-body">
+                                    <tr><td colspan="10" class="empty-state">Loading…</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -2103,7 +2145,28 @@
             }
         }, 10000);
         // --- Leaderboard Integration ---
+        // Two rankings (USD P&L / lot-neutral) arrive in one response; the tab only picks which
+        // table shows. The period is a rolling window applied server-side to closed trades.
+        const LB_TABS = ['usd', 'lot'];
+        const LB_PERIODS = ['1d', '1w', '1m', '6m', '1y', 'all'];
+        const LB_WEIGHT_HINTS = {
+            usd: 'Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency',
+            lot: 'Weight: 30% WinRate + 30% ProfitFactor + 20% Return/DD + 20% Consistency · closed trades as P&L per lot',
+        };
+        const LB_SMALL_SAMPLE = 10;  // fewer closed trades than this: the score is mostly noise
+        let lbTab = 'usd';
+        let lbPeriod = 'all';
+        try {
+            const savedTab = localStorage.getItem('lb-tab');
+            const savedPeriod = localStorage.getItem('lb-period');
+            if (LB_TABS.includes(savedTab)) lbTab = savedTab;
+            if (LB_PERIODS.includes(savedPeriod)) lbPeriod = savedPeriod;
+        } catch (e) { /* storage unavailable: keep the defaults */ }
+        let lbData = null;
+        let lbFetchSeq = 0;
+
         async function fetchLeaderboard() {
+            const seq = ++lbFetchSeq;
             try {
                 const accId = typeof selectedAccountId !== 'undefined' ? selectedAccountId : 'all';
                 // Rank strictly inside the active mode: take the type from the selected
@@ -2111,24 +2174,103 @@
                 const accSel = document.getElementById('account-selector');
                 const accType = (accSel && accSel.selectedOptions[0] && accSel.selectedOptions[0].dataset.type)
                     || ((currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo');
-                const res = await fetch(`/api/leaderboard?account_id=${encodeURIComponent(accId)}&account_type=${accType}`);
+                const res = await fetch(`/api/leaderboard?account_id=${encodeURIComponent(accId)}&account_type=${accType}&period=${lbPeriod}`);
                 if (!res.ok) return;
                 const data = await res.json();
+                // A slower response for a period the user has since left must not overwrite the newer one
+                if (seq !== lbFetchSeq) return;
                 renderLeaderboard(data);
             } catch(e) {
                 console.error("Error fetching leaderboard", e);
             }
         }
 
+        function applyLbControls() {
+            document.querySelectorAll('#lb-tab-group [data-lb-tab]').forEach(btn => {
+                const on = btn.dataset.lbTab === lbTab;
+                btn.classList.toggle('active', on);
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('#lb-period-group [data-lb-period]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lbPeriod === lbPeriod);
+            });
+            const usdPane = document.getElementById('lb-pane-usd');
+            const lotPane = document.getElementById('lb-pane-lot');
+            if (usdPane) usdPane.hidden = lbTab !== 'usd';
+            if (lotPane) lotPane.hidden = lbTab !== 'lot';
+            const hint = document.getElementById('lb-weight-hint');
+            if (hint) hint.textContent = LB_WEIGHT_HINTS[lbTab];
+        }
+
+        function lbRankCell(bot) {
+            if (bot.total_trades === 0) return `<span class="td-dim">${bot.rank}</span>`;
+            if (bot.rank === 1) return '<span class="rank-badge-1">🥇 1</span>';
+            if (bot.rank === 2) return '<span class="rank-badge-2">🥈 2</span>';
+            if (bot.rank === 3) return '<span class="rank-badge-3">🥉 3</span>';
+            return `<span class="td-dim">${bot.rank}</span>`;
+        }
+
+        function lbBotCells(bot) {
+            return `<td class="rank-cell">${lbRankCell(bot)}</td>
+                    <td>
+                        <div class="bot-cell">
+                            <span class="font-bold" style="color: var(--text-primary);">${bot.bot_name}</span>
+                            <span class="bot-id-text">${bot.bot_id}</span>
+                        </div>
+                    </td>
+                    <td><span class="symbols-chip">${bot.symbol_display}</span></td>
+                    <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>`;
+        }
+
+        function lbWinRateCell(bot) {
+            if (bot.total_trades === 0) return '<span class="td-dim">--</span>';
+            if (bot.total_wins === 0) {
+                return `<span class="font-mono font-bold pnl-negative">0.0%</span><div class="td-dim" style="font-size:0.65rem;">0W / ${bot.total_losses}L</div>`;
+            }
+            const color = bot.win_rate >= 60 ? 'var(--profit)' : (bot.win_rate >= 40 ? '#fbbf24' : 'var(--loss)');
+            return `<span class="font-mono font-bold" style="color: ${color};">${bot.win_rate.toFixed(1)}%</span><div class="td-dim" style="font-size:0.65rem;">${bot.total_wins}W / ${bot.total_losses}L</div>`;
+        }
+
+        function lbProfitFactorCell(bot) {
+            if (bot.total_trades === 0) return '<span class="td-dim">--</span>';
+            if (bot.profit_factor === null) return '<span class="font-mono pnl-positive" title="No losing trades yet">∞</span>';
+            if (bot.profit_factor === 0) return '<span class="font-mono pnl-negative" title="No winning trades">0.00</span>';
+            return `<span class="font-mono">${bot.profit_factor.toFixed(2)}</span>`;
+        }
+
+        function lbTradesCell(bot) {
+            const small = bot.total_trades > 0 && bot.total_trades < LB_SMALL_SAMPLE;
+            return `<td class="font-mono">${bot.total_trades}${small
+                ? `<div class="td-dim" style="font-size:0.65rem;" title="Fewer than ${LB_SMALL_SAMPLE} closed trades: too few for the score to mean much yet">small n</div>`
+                : ''}</td>`;
+        }
+
+        function lbScoreCell(bot) {
+            if (bot.total_trades === 0) return '<td><span class="td-dim">--</span></td>';
+            return `<td>
+                        <div class="score-pill">
+                            <span style="color: ${bot.tier_color};">${bot.composite_score}</span>
+                            <span class="score-bar-bg">
+                                <span class="score-bar-fill" style="width: ${Math.min(100, Math.max(0, bot.composite_score))}%; background: ${bot.tier_color};"></span>
+                            </span>
+                        </div>
+                    </td>`;
+        }
+
+        function lbEmptyRow(colspan) {
+            const msg = lbPeriod === 'all' ? 'No bot trading history recorded yet' : 'No bot activity in this period';
+            return `<tr><td colspan="${colspan}" class="empty-state">${msg}</td></tr>`;
+        }
+
         function renderLeaderboard(data) {
             if (!data) return;
+            lbData = data;
+            applyLbControls();
+            const lot = data.lot_neutral || { top_performer: null, rankings: [] };
+            const top = lbTab === 'lot' ? lot.top_performer : data.top_performer;
             const topPerfEl = document.getElementById('lb-top-performer');
             if (topPerfEl) {
-                if (data.top_performer) {
-                    topPerfEl.textContent = `${data.top_performer.bot_name} (${data.top_performer.composite_score}/100)`;
-                } else {
-                    topPerfEl.textContent = 'N/A';
-                }
+                topPerfEl.textContent = top ? `${top.bot_name} (${top.composite_score}/100)` : 'N/A';
             }
             const fleetWinrateEl = document.getElementById('lb-fleet-winrate');
             if (fleetWinrateEl) {
@@ -2146,71 +2288,84 @@
             }
 
             const tbody = document.getElementById('leaderboard-table-body');
-            if (!tbody) return;
-
-            if (!data.rankings || data.rankings.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No bot trading history recorded yet</td></tr>';
-                return;
+            if (tbody) {
+                if (!data.rankings || data.rankings.length === 0) {
+                    tbody.innerHTML = lbEmptyRow(11);
+                } else {
+                    tbody.innerHTML = data.rankings.map(bot => {
+                        const closedPnlClass = bot.closed_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
+                        const floatingPnlClass = bot.floating_pnl_usd > 0 ? 'pnl-positive' : (bot.floating_pnl_usd < 0 ? 'pnl-negative' : 'td-dim');
+                        return `<tr>
+                            ${lbBotCells(bot)}
+                            <td>${lbWinRateCell(bot)}</td>
+                            <td>${lbProfitFactorCell(bot)}</td>
+                            ${lbTradesCell(bot)}
+                            <td>
+                                <span class="pnl-chip ${bot.total_pnl_usd > 0 ? 'pnl-chip--profit' : (bot.total_pnl_usd < 0 ? 'pnl-chip--loss' : 'td-dim')}">
+                                    ${bot.total_pnl_usd > 0 ? '+' : ''}$${bot.total_pnl_usd.toFixed(2)}
+                                </span>
+                            </td>
+                            <td class="font-mono ${closedPnlClass}">$${bot.closed_pnl_usd.toFixed(2)}</td>
+                            <td class="font-mono ${floatingPnlClass}">$${bot.floating_pnl_usd.toFixed(2)}</td>
+                            ${lbScoreCell(bot)}
+                        </tr>`;
+                    }).join('');
+                }
             }
 
-            let html = '';
-            data.rankings.forEach(bot => {
-                let rankDisplay = `<span class="td-dim">${bot.rank}</span>`;
-                if (bot.rank === 1) rankDisplay = '<span class="rank-badge-1">🥇 1</span>';
-                else if (bot.rank === 2) rankDisplay = '<span class="rank-badge-2">🥈 2</span>';
-                else if (bot.rank === 3) rankDisplay = '<span class="rank-badge-3">🥉 3</span>';
-
-                const winRateColor = bot.win_rate >= 60 ? 'var(--profit)' : (bot.win_rate >= 40 ? '#fbbf24' : 'var(--loss)');
-                const closedPnlClass = bot.closed_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
-                const floatingPnlClass = bot.floating_pnl_usd > 0 ? 'pnl-positive' : (bot.floating_pnl_usd < 0 ? 'pnl-negative' : 'td-dim');
-                const totalPnlClass = bot.total_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
-
-                html += `<tr>
-                    <td class="rank-cell">${rankDisplay}</td>
-                    <td>
-                        <div class="bot-cell">
-                            <span class="font-bold" style="color: var(--text-primary);">${bot.bot_name}</span>
-                            <span class="bot-id-text">${bot.bot_id}</span>
-                        </div>
-                    </td>
-                    <td><span class="symbols-chip">${bot.symbol_display}</span></td>
-                    <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>
-                    <td>
-                        ${bot.total_trades === 0
-                            ? '<span class="td-dim">--</span>'
-                            : bot.total_wins === 0
-                                ? `<span class="font-mono font-bold pnl-negative">0.0%</span><div class="td-dim" style="font-size:0.65rem;">0W / ${bot.total_losses}L</div>`
-                                : `<span class="font-mono font-bold" style="color: ${winRateColor};">${bot.win_rate.toFixed(1)}%</span><div class="td-dim" style="font-size:0.65rem;">${bot.total_wins}W / ${bot.total_losses}L</div>`
+            const lotBody = document.getElementById('leaderboard-lot-table-body');
+            if (lotBody) {
+                if (!lot.rankings || lot.rankings.length === 0) {
+                    lotBody.innerHTML = lbEmptyRow(10);
+                } else {
+                    lotBody.innerHTML = lot.rankings.map(bot => {
+                        const none = bot.total_trades === 0;
+                        const payoff = none ? '<span class="td-dim">--</span>'
+                            : bot.payoff_ratio === null ? '<span class="font-mono pnl-positive" title="No losing trades yet">∞</span>'
+                            : `<span class="font-mono">${bot.payoff_ratio.toFixed(2)}</span>`;
+                        const ddTitle = `Net ${bot.net_per_lot.toFixed(2)} / lot · Max DD ${bot.max_dd_per_lot.toFixed(2)} / lot`;
+                        let returnDd;
+                        if (none) {
+                            returnDd = '<span class="td-dim">--</span>';
+                        } else if (bot.return_dd === null) {
+                            returnDd = bot.net_per_lot > 0
+                                ? `<span class="font-mono pnl-positive" title="No drawdown yet · ${ddTitle}">∞</span>`
+                                : `<span class="font-mono td-dim" title="${ddTitle}">0.00</span>`;
+                        } else {
+                            const cls = bot.return_dd > 0 ? 'pnl-positive' : (bot.return_dd < 0 ? 'pnl-negative' : 'td-dim');
+                            returnDd = `<span class="font-mono ${cls}" title="${ddTitle}">${bot.return_dd.toFixed(2)}</span>`;
                         }
-                    </td>
-                    <td>
-                        ${bot.total_trades === 0
-                            ? '<span class="td-dim">--</span>'
-                            : bot.profit_factor === 0
-                                ? '<span class="font-mono pnl-negative" title="No winning trades">0.00</span>'
-                                : `<span class="font-mono">${bot.profit_factor.toFixed(2)}</span>`
-                        }
-                    </td>
-                    <td class="font-mono">${bot.total_trades}</td>
-                    <td>
-                        <span class="pnl-chip ${bot.total_pnl_usd > 0 ? 'pnl-chip--profit' : (bot.total_pnl_usd < 0 ? 'pnl-chip--loss' : 'td-dim')}">
-                            ${bot.total_pnl_usd > 0 ? '+' : ''}$${bot.total_pnl_usd.toFixed(2)}
-                        </span>
-                    </td>
-                    <td class="font-mono ${closedPnlClass}">$${bot.closed_pnl_usd.toFixed(2)}</td>
-                    <td class="font-mono ${floatingPnlClass}">$${bot.floating_pnl_usd.toFixed(2)}</td>
-                    <td>
-                        <div class="score-pill">
-                            <span style="color: ${bot.tier_color};">${bot.composite_score}</span>
-                            <span class="score-bar-bg">
-                                <span class="score-bar-fill" style="width: ${Math.min(100, Math.max(0, bot.composite_score))}%; background: ${bot.tier_color};"></span>
-                            </span>
-                        </div>
-                    </td>
-                </tr>`;
-            });
-            tbody.innerHTML = html;
+                        return `<tr>
+                            ${lbBotCells(bot)}
+                            <td>${lbWinRateCell(bot)}</td>
+                            <td>${lbProfitFactorCell(bot)}</td>
+                            <td>${payoff}</td>
+                            <td>${returnDd}</td>
+                            ${lbTradesCell(bot)}
+                            ${lbScoreCell(bot)}
+                        </tr>`;
+                    }).join('');
+                }
+            }
         }
+
+        document.querySelectorAll('#lb-tab-group [data-lb-tab]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                lbTab = btn.dataset.lbTab;
+                try { localStorage.setItem('lb-tab', lbTab); } catch (e) { /* not persisted */ }
+                // Both rankings are already loaded: switching tabs needs no request
+                if (lbData) renderLeaderboard(lbData); else applyLbControls();
+            });
+        });
+        document.querySelectorAll('#lb-period-group [data-lb-period]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                lbPeriod = btn.dataset.lbPeriod;
+                try { localStorage.setItem('lb-period', lbPeriod); } catch (e) { /* not persisted */ }
+                applyLbControls();
+                fetchLeaderboard();
+            });
+        });
+        applyLbControls();
 
         const lbRefreshBtn = document.getElementById('lb-refresh-btn');
         if (lbRefreshBtn) {

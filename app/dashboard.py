@@ -662,12 +662,14 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 
 @router.get("/api/leaderboard")
 @router.get("/api/dashboard/leaderboard")
-async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None):
+async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None,
+                                    period: str = "all"):
     """API endpoint for bot performance leaderboard and quant tier ranking.
 
     ``account_type`` (live|demo) keeps the ranking inside the active trading mode.
+    ``period`` (1d|1w|1m|6m|1y|all) keeps the trades closed inside that rolling window.
     """
-    return compute_bot_leaderboard(account_id, account_type=account_type)
+    return compute_bot_leaderboard(account_id, account_type=account_type, period=period)
 @router.get("/api/dashboard/sessions")
 async def api_dashboard_sessions():
     """API endpoint for trading sessions, killzones, and market status."""
