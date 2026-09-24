@@ -1,0 +1,53 @@
+{
+  "main": {"symbol": "EURUSD", "period": "m15", "cBotName": "FlowRsiBot", "depositAsset": "USD",
+           "roi": -0.01, "netProfit": -0.98, "startingCapital": 10000, "endingEquity": 9999.02,
+           "endingBalance": 9999.02, "testingPeriod": {"formatted": "10d (24/07/2026 - 03/08/2026)"}},
+  "equity": {
+    "points": [
+      {"balance": 10000, "minEquity": 10000, "maxEquity": 10000, "timestamp": 1784851200000},
+      {"balance": 10025.02, "minEquity": 10020.5, "maxEquity": 10025.02, "timestamp": 1785148200000},
+      {"balance": 10055.02, "minEquity": 10050.0, "maxEquity": 10056.1, "timestamp": 1785254400000},
+      {"balance": 10011.02, "minEquity": 9990.4, "maxEquity": 10030.0, "timestamp": 1785290400000},
+      {"balance": 9999.02, "minEquity": 9995.1, "maxEquity": 10012.0, "timestamp": 1785718800000}
+    ],
+    "maxBalanceDrawdownPercent": 0.4376, "maxEquityDrawdownPercent": 0.6533,
+    "maxBalanceDrawdownAbsolute": 44.0, "maxEquityDrawdownAbsolute": 65.7, "defaultXAxisMode": "time"
+  },
+  "tradeStatistics": {
+    "netProfit": {"all": -0.98, "long": -14.0, "short": 13.02},
+    "profitFactor": {"all": 0.98, "long": 0.68, "short": 2.08},
+    "commissions": {"all": -4.2, "long": -2.32, "short": -1.88},
+    "swaps": {"all": -0.5, "long": -0.5, "short": 0},
+    "totalTrades": {"all": 4, "long": 2, "short": 2},
+    "winningTrades": {"all": 2, "long": 1, "short": 1},
+    "maxConsecutiveWinningTrades": {"all": 2, "long": 1, "short": 1},
+    "largestWinningTrade": {"all": 30.0, "long": 30.0, "short": 25.02},
+    "losingTrades": {"all": 2, "long": 1, "short": 1},
+    "maxConsecutiveLosingTrades": {"all": 2, "long": 1, "short": 1},
+    "largestLosingTrade": {"all": -44.0, "long": -44.0, "short": -12.0},
+    "averageTrade": {"all": -0.25, "long": -7.0, "short": 6.51}
+  },
+  "parameters": [
+    {"group": "General", "displayName": "Bot ID", "propertyName": "BotId", "value": "bt-7"},
+    {"group": "Risk Management", "displayName": "Target Risk-to-Reward Ratio", "propertyName": "TargetRiskReward", "value": "1.5"},
+    {"group": "Risk Management", "displayName": "Stop Loss Mode", "propertyName": "SlMode", "value": "Technical_Swing"}
+  ],
+  "history": {
+    "columns": ["id", "symbol", "direction", "net", "gross", "entryTime", "closeTime", "entryPrice", "closePrice",
+                "swaps", "commissions", "volume", "label", "comment", "quantity", "pips"],
+    "items": [
+      {"id": 2, "symbol": "EURUSD", "direction": "sell", "net": 25.02, "gross": 26.18, "entryTime": 1785139200000,
+       "closeTime": 1785148200000, "entryPrice": 1.13901, "closePrice": 1.13747, "swaps": 0, "commissions": -1.16,
+       "volume": 17000, "label": "bt-7", "comment": "bt-7", "quantity": 0.17, "pips": 15.4},
+      {"id": 4, "symbol": "EURUSD", "direction": "buy", "net": -44.0, "gross": -42.34, "entryTime": 1785246300000,
+       "closeTime": 1785290400000, "entryPrice": 1.141, "closePrice": 1.1385, "swaps": -0.5, "commissions": -1.16,
+       "volume": 17000, "label": "bt-7", "comment": "bt-7", "quantity": 0.17, "pips": -25.0},
+      {"id": 3, "symbol": "EURUSD", "direction": "buy", "net": 30.0, "gross": 31.16, "entryTime": 1785244500000,
+       "closeTime": 1785254400000, "entryPrice": 1.14, "closePrice": 1.1418, "swaps": 0, "commissions": -1.16,
+       "volume": 17000, "label": "bt-7", "comment": "bt-7", "quantity": 0.17, "pips": 18.0},
+      {"id": 5, "symbol": "EURUSD", "direction": "sell", "net": -12.0, "gross": -11.28, "entryTime": 1785533400000,
+       "closeTime": 1785718800000, "entryPrice": 1.135, "closePrice": 1.1356, "swaps": 0, "commissions": -0.72,
+       "volume": 20000, "label": "bt-7", "comment": "bt-7", "quantity": 0.2, "pips": -6.0}
+    ]
+  }
+}

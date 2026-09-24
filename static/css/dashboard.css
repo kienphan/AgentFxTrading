@@ -1627,3 +1627,48 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     border: 1px solid var(--border-subtle);
 }
 
+/* --- Backtest page (static/js/backtest.js) --- */
+.bt-form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;margin-bottom:12px}
+.bt-field{display:flex;flex-direction:column;gap:4px;font-size:0.72rem;color:var(--text-muted)}
+.bt-field--wide{grid-column:span 2}
+.bt-params{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.bt-group{border:1px solid var(--border);border-radius:6px;background:var(--bg-surface)}
+.bt-group summary{cursor:pointer;padding:8px 12px;font-size:0.75rem;font-weight:600;color:var(--accent-bright)}
+.bt-changed-count{color:#ffa726;font-weight:500}
+.bt-param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px;padding:4px 12px 12px}
+.bt-param-row{display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text-muted)}
+.bt-param-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-param-row .bt-param{width:120px}
+.bt-param-row--changed .bt-param{border-color:#ffa726;color:#ffa726}
+.bt-param-hint{font-size:0.65rem;color:var(--text-dim);white-space:nowrap}
+.bt-reset{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;padding:0 2px}
+.bt-locked{font-size:0.7rem;color:var(--text-dim);margin-bottom:8px;word-break:break-word}
+.bt-warning{font-size:0.72rem;color:#ffa726;background:rgba(255,167,38,0.08);border:1px solid rgba(255,167,38,0.3);border-radius:6px;padding:6px 10px;margin-bottom:10px}
+.bt-form-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.bt-form-msg{font-size:0.75rem;color:var(--text-muted)}
+.bt-form-msg--error{color:var(--loss)}
+.bt-run-btn{background:var(--accent-soft);color:var(--accent-bright);border-color:var(--accent)}
+.bt-chip{display:inline-block;font-size:0.65rem;padding:1px 6px;margin:1px 0;border-radius:10px;border:1px solid var(--border);background:var(--bg-surface);white-space:nowrap}
+.bt-small{font-size:0.65rem}
+.bt-note{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.bt-actions{display:flex;gap:4px}
+.bt-status{font-size:0.68rem;font-weight:600;text-transform:uppercase}
+.bt-status--done{color:var(--profit)}
+.bt-status--failed{color:var(--loss);cursor:help}
+.bt-status--running{color:#4fc3f7}
+.bt-status--queued,.bt-status--cancelled{color:var(--text-dim)}
+.bt-progress{height:4px;width:110px;background:var(--bg-surface);border-radius:2px;margin-top:3px;overflow:hidden}
+.bt-progress div{height:100%;background:#4fc3f7}
+.bt-detail-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.bt-detail-head .log-btn{margin-left:auto}
+.bt-charts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.bt-chart{position:relative;height:220px}
+.bt-chart--wide{grid-column:1 / -1;height:260px}
+.bt-detail-meta{font-size:0.72rem;color:var(--text-muted);margin-bottom:10px}
+.bt-detail-meta a{color:var(--accent-bright)}
+.bt-trades{max-height:420px;overflow:auto}
+.bt-error{white-space:pre-wrap;font-size:0.72rem;color:var(--loss);background:var(--bg-surface);padding:10px;border-radius:6px;max-height:320px;overflow:auto}
+.bt-best{font-weight:700;color:var(--accent-bright)}
+.bt-subtitle{margin:14px 0 6px;font-size:0.75rem;color:var(--accent-bright)}
+@media (max-width:640px){.bt-field--wide{grid-column:auto}.bt-charts{grid-template-columns:1fr}.bt-param-grid{grid-template-columns:1fr}}
+

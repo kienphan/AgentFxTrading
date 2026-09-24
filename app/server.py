@@ -183,6 +183,13 @@ async def lifespan(app: FastAPI):
     from app.cbot_watchdog import cbot_watchdog
     watchdog_task = asyncio.create_task(cbot_watchdog.run_loop())
 
+    # Backtest worker. Never under pytest: it removes every container labelled agentfx.backtest whose
+    # job is not running in *its* DB, and a test run points at a throwaway SQLite file.
+    from app.backtest_worker import backtest_worker
+    backtest_task = None
+    if not is_running_under_test():
+        backtest_task = asyncio.create_task(backtest_worker.run_loop())
+
     yield
 
     # Shutdown watchdog cleanly
@@ -192,6 +199,13 @@ async def lifespan(app: FastAPI):
         await watchdog_task
     except asyncio.CancelledError:
         pass
+    if backtest_task:
+        backtest_worker.stop()
+        backtest_task.cancel()
+        try:
+            await backtest_task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(title="TMS+ORB Agent Server", lifespan=lifespan)
 
@@ -200,6 +214,8 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="
 
 # Mount dashboard router
 app.include_router(dashboard_router)
+from app.backtest_api import router as backtest_router
+app.include_router(backtest_router)
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     favicon_path = PROJECT_ROOT / "static" / "favicon.png"

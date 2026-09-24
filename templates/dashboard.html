@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260921_setup_installed">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260925_backtest">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/backtest.js?v=20260925" defer></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body class="app-shell">
@@ -80,6 +81,10 @@
             <a href="#" class="nav-item" data-target="view-leaderboard" title="Leaderboard">
                 <span class="nav-icon"><i data-lucide="trophy"></i></span>
                 <span class="nav-label">Leaderboard</span>
+            </a>
+            <a href="#" class="nav-item" data-target="view-backtest" title="Backtest">
+                <span class="nav-icon"><i data-lucide="flask-conical"></i></span>
+                <span class="nav-label">Backtest</span>
             </a>
             <a href="#" class="nav-item" data-target="view-risk" title="Daily Loss Limits">
                 <span class="nav-icon"><i data-lucide="shield-alert"></i></span>
@@ -515,6 +520,63 @@
                 </section>
             </div>
             
+            <!-- Backtest View (static/js/backtest.js) -->
+            <div id="view-backtest" class="view-section">
+                <section class="panel" id="bt-form-panel">
+                    <div class="panel-header">
+                        <span class="panel-title"><i data-lucide="flask-conical" class="panel-icon text-blue"></i> New Backtest</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="bt-form-grid">
+                            <label class="bt-field bt-field--wide">Bot <select id="bt-bot" class="log-select"></select></label>
+                            <label class="bt-field">From (UTC) <input id="bt-start" type="date" class="log-input"></label>
+                            <label class="bt-field">To (UTC) <input id="bt-end" type="date" class="log-input"></label>
+                            <label class="bt-field">Data
+                                <select id="bt-data-mode" class="log-select">
+                                    <option value="ticks" selected>ticks (real spread)</option>
+                                    <option value="m1">m1 bars (fixed spread)</option>
+                                </select>
+                            </label>
+                            <label class="bt-field" id="bt-spread-wrap" style="display:none;">Spread (pips) <input id="bt-spread" type="number" step="0.1" min="0.1" class="log-input"></label>
+                            <label class="bt-field">Balance <input id="bt-balance" type="number" min="100" step="100" value="10000" class="log-input"></label>
+                            <label class="bt-field bt-field--wide">Note <input id="bt-note" type="text" maxlength="200" class="log-input" placeholder="What does this run try?"></label>
+                        </div>
+                        <div id="bt-params" class="bt-params"></div>
+                        <div id="bt-locked" class="bt-locked"></div>
+                        <div class="bt-warning">⚠ Technical logic only: backtests run with the AI gate off, while the live bot lets the AI filter its entries.</div>
+                        <div class="bt-form-actions">
+                            <span id="bt-form-msg" class="bt-form-msg"></span>
+                            <button id="bt-run-btn" class="log-btn bt-run-btn"><i data-lucide="play" class="btn-icon"></i> Run backtest</button>
+                        </div>
+                    </div>
+                </section>
+                <section class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title"><i data-lucide="list" class="panel-icon text-blue"></i> Runs</span>
+                        <button id="bt-compare-btn" class="log-btn" disabled>Compare (0)</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th></th><th>#</th><th>Symbol</th><th>Range</th><th>Changes</th><th>Status</th><th>Net</th><th>PF</th><th>Win %</th><th>Max DD %</th><th>Trades</th><th>Note</th><th></th></tr></thead>
+                            <tbody id="bt-jobs-tbody"></tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="panel" id="bt-detail-panel" style="display:none;">
+                    <div class="panel-header">
+                        <span class="panel-title"><i data-lucide="line-chart" class="panel-icon text-blue"></i> Run Detail</span>
+                    </div>
+                    <div class="panel-body" id="bt-detail"></div>
+                </section>
+                <section class="panel" id="bt-compare-panel" style="display:none;">
+                    <div class="panel-header">
+                        <span class="panel-title"><i data-lucide="columns" class="panel-icon text-blue"></i> Compare</span>
+                        <button id="bt-compare-close" class="log-btn">Close</button>
+                    </div>
+                    <div class="panel-body" id="bt-compare"></div>
+                </section>
+            </div>
+
             <!-- Docker Bots View -->
             <div id="view-docker" class="view-section">
                 <section class="panel" id="bot-management-section">
@@ -893,6 +955,8 @@
                     fetchNewsCalendar();
                 } else if (targetId === 'view-risk') {
                     fetchRiskLimits();
+                } else if (targetId === 'view-backtest') {
+                    btOnShow();
                 }
             }
         }

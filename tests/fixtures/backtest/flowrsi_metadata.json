@@ -1,0 +1,28 @@
+{
+  "Name": "FlowRsiBot", "Type": "cBot", "AccessRights": "FullAccess", "BuildTime": "2026-09-24T16:34:43.3439105Z",
+  "Parameters": [
+    {"PropertyName": "BotId", "FriendlyName": "Bot ID", "GroupName": "General", "Type": "String", "DefaultValue": "FlowRSI"},
+    {"PropertyName": "AccountLabel", "FriendlyName": "Account Identifier", "GroupName": "General", "Type": "String", "DefaultValue": "FlowRSI-Standard"},
+    {"PropertyName": "ShowLogs", "FriendlyName": "Show Detailed Logs", "GroupName": "General", "Type": "Boolean", "DefaultValue": true},
+    {"PropertyName": "FastRsiPeriod", "FriendlyName": "Fast RSI Period", "GroupName": "Nested RSI Engine", "Type": "Integer", "DefaultValue": 7, "MinValue": 2, "MaxValue": 50},
+    {"PropertyName": "RsiBullishCrossMin", "FriendlyName": "Bullish Cross Min (Oversold Floor)", "GroupName": "Nested RSI Engine", "Type": "Double", "DefaultValue": 25.0, "MinValue": 10.0, "MaxValue": 45.0},
+    {"PropertyName": "EnableSmcFilter", "FriendlyName": "Enable SMC Structural Filter", "GroupName": "SMC & ICT Market Structure", "Type": "Boolean", "DefaultValue": true},
+    {"PropertyName": "MacroTimeFrame", "FriendlyName": "Macro TimeFrame", "GroupName": "Macro TMS Trend Filter", "Type": "TimeFrame", "DefaultValue": {"Type": 0, "Size": 60}},
+    {"PropertyName": "RiskPercentage", "FriendlyName": "Risk per Trade (% Equity)", "GroupName": "Risk Management", "Type": "Double", "DefaultValue": 0.5, "MinValue": 0.01, "MaxValue": 10.0},
+    {"PropertyName": "SlMode", "FriendlyName": "Stop Loss Mode", "GroupName": "Risk Management", "Type": "Enum", "DefaultValue": 0, "EnumValues": {"Technical_Swing": 0, "ATR_Multiplier": 1, "Fixed_Pips": 2}},
+    {"PropertyName": "TargetRiskReward", "FriendlyName": "Target Risk-to-Reward Ratio", "GroupName": "Risk Management", "Type": "Double", "DefaultValue": 1.5, "MinValue": 1.0},
+    {"PropertyName": "UseAiGateMode", "FriendlyName": "Enable AI Gate Mode", "GroupName": "AI Agent Integration", "Type": "Boolean", "DefaultValue": true},
+    {"PropertyName": "ApiUrl", "FriendlyName": "Agent API URL", "GroupName": "AI Agent Integration", "Type": "String", "DefaultValue": "http://127.0.0.1:8000/trade"},
+    {"PropertyName": "AiTelemetryUrl", "FriendlyName": "Telemetry Endpoint", "GroupName": "AI Agent Integration", "Type": "String", "DefaultValue": "http://127.0.0.1:8000/api/tick"},
+    {"PropertyName": "AiReportUrl", "FriendlyName": "Portfolio Report Endpoint", "GroupName": "AI Agent Integration", "Type": "String", "DefaultValue": "http://127.0.0.1:8000/portfolio/report"},
+    {"PropertyName": "CommandPollMs", "FriendlyName": "Command Poll (ms, 0=off)", "GroupName": "AI Agent Integration", "Type": "Integer", "DefaultValue": 2000, "MinValue": 0},
+    {"PropertyName": "AiConfidenceThreshold", "FriendlyName": "AI Minimum Confidence (%)", "GroupName": "AI Agent Integration", "Type": "Double", "DefaultValue": 65.0, "MinValue": 50.0, "MaxValue": 100.0},
+    {"PropertyName": "EnableNewsFilter", "FriendlyName": "Enable News Filter", "GroupName": "News Filter", "Type": "Boolean", "DefaultValue": true},
+    {"PropertyName": "MinsBeforeNews", "FriendlyName": "Minutes Before News", "GroupName": "News Filter", "Type": "Integer", "DefaultValue": 30, "MinValue": 5},
+    {"PropertyName": "EnableTelegramAlerts", "FriendlyName": "Enable Telegram Alerts", "GroupName": "Telegram Integration", "Type": "Boolean", "DefaultValue": false},
+    {"PropertyName": "TelegramBotToken", "FriendlyName": "Telegram Bot Token", "GroupName": "Telegram Integration", "Type": "String"},
+    {"PropertyName": "TelegramChatId", "FriendlyName": "Telegram Chat ID", "GroupName": "Telegram Integration", "Type": "String"},
+    {"PropertyName": "SendChartScreenshot", "FriendlyName": "Send Chart Screenshot", "GroupName": "Telegram Integration", "Type": "Boolean", "DefaultValue": false},
+    {"PropertyName": "SendAiAdjustAlerts", "FriendlyName": "Send AI ADJUST Alerts", "GroupName": "Telegram Integration", "Type": "Boolean", "DefaultValue": true}
+  ]
+}
