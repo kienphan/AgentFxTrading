@@ -8,7 +8,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from app.leaderboard import calculate_quant_score, compute_bot_leaderboard, period_start
+import app.leaderboard as leaderboard_module
+from app.leaderboard import (FULL_SAMPLE_TRADES, calculate_quant_score, compute_bot_leaderboard,
+                             period_start)
 from app.server import app
 
 
@@ -238,11 +240,11 @@ def _utc_ago(**delta) -> str:
 
 
 def _add_closed(conn, bot_id, pnl, volume=0.1, exit_time="2026-09-01 10:00:00",
-                account_id="acc_demo_1", symbol="XAUUSD"):
+                account_id="acc_demo_1", symbol="XAUUSD", sl_pips=None):
     conn.execute("""
-        INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, exit_time, entry_time, account_id)
-        VALUES (?, ?, 'BUY', ?, 2500.0, ?, 'closed', ?, ?, ?)
-    """, (bot_id, symbol, volume, pnl, exit_time, exit_time, account_id))
+        INSERT INTO positions (bot_id, symbol, side, volume, entry_price, sl_pips, pnl, status, exit_time, entry_time, account_id)
+        VALUES (?, ?, 'BUY', ?, 2500.0, ?, ?, 'closed', ?, ?, ?)
+    """, (bot_id, symbol, volume, sl_pips, pnl, exit_time, exit_time, account_id))
 
 
 def test_profit_factor_without_losses_is_unbounded(temp_db):
@@ -285,8 +287,8 @@ def test_lot_neutral_ranking_ignores_lot_size(temp_db):
     assert usd["BigLotBot"]["rank"] == 1
 
     # Lot-neutral: identical figures and score
-    keys = ("total_trades", "win_rate", "profit_factor", "payoff_ratio", "net_per_lot",
-            "max_dd_per_lot", "return_dd", "composite_score", "tier_badge")
+    keys = ("total_trades", "win_rate", "profit_factor", "payoff_ratio", "net_units",
+            "max_dd_units", "return_dd", "composite_score", "tier_badge")
     assert {k: lot["BigLotBot"][k] for k in keys} == {k: lot["MicroLotBot"][k] for k in keys}
 
 
@@ -308,21 +310,23 @@ def test_lot_neutral_stats_values(temp_db):
     assert bot["win_rate"] == 50.0
     assert bot["profit_factor"] == 3.0     # 300 / 100
     assert bot["payoff_ratio"] == 3.0      # avg win 150 / avg loss 50
-    assert bot["net_per_lot"] == 200.0
-    assert bot["max_dd_per_lot"] == 100.0  # peak 100 -> trough 0
+    assert bot["basis"] == "lot"          # no stop distance on record: per lot
+    assert bot["net_units"] == 200.0
+    assert bot["max_dd_units"] == 100.0  # peak 100 -> trough 0
     assert bot["return_dd"] == 2.0
 
 
 def test_leaderboard_period_filter(temp_db):
-    """A period keeps only the trades closed inside its rolling window; open positions always count."""
+    """A period keeps the trades closed, and the positions opened, inside its rolling window."""
     conn = sqlite3.connect(str(temp_db))
     conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
     for ago in (dict(hours=2), dict(days=3), dict(days=20), dict(days=100), dict(days=300), dict(days=800)):
         _add_closed(conn, "PeriodBot", 10.0, exit_time=_utc_ago(**ago))
-    conn.execute("""
-        INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, entry_time, account_id)
-        VALUES ('PeriodBot', 'XAUUSD', 'BUY', 0.1, 2500.0, 5.0, 'open', ?, 'acc_demo_1')
-    """, (_utc_ago(days=900),))
+    for pnl, ago in ((5.0, dict(days=900)), (3.0, dict(hours=1))):
+        conn.execute("""
+            INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, entry_time, account_id)
+            VALUES ('PeriodBot', 'XAUUSD', 'BUY', 0.1, 2500.0, ?, 'open', ?, 'acc_demo_1')
+        """, (pnl, _utc_ago(**ago)))
     conn.commit()
     conn.close()
 
@@ -332,7 +336,10 @@ def test_leaderboard_period_filter(temp_db):
         assert res["period"] == period
         assert res["fleet_total_trades"] == trades, period
         assert res["lot_neutral"]["rankings"][0]["total_trades"] == trades, period
-        assert res["rankings"][0]["floating_pnl_usd"] == 5.0, period
+        # The position opened 900 days ago built its floating P&L outside every window but "all"
+        bot = res["rankings"][0]
+        assert bot["floating_pnl_usd"] == (8.0 if period == "all" else 3.0), period
+        assert bot["open_positions_count"] == (2 if period == "all" else 1), period
     assert compute_bot_leaderboard(account_id="demo", db_path=temp_db, period="all")["period_start"] is None
 
     # An unknown period falls back to all time
@@ -372,15 +379,49 @@ def test_bots_without_closed_trades_rank_last(temp_db):
     assert idle_only["lot_neutral"]["top_performer"] is None
 
 
-def test_api_leaderboard_period_and_lot_neutral():
+def _use_leaderboard_db(monkeypatch, db_file):
+    """Point the leaderboard (API and page) at a test database."""
+    real = leaderboard_module.get_db_connection
+    monkeypatch.setattr(leaderboard_module, "get_db_connection", lambda db_path=None: real(db_file))
+
+
+def test_api_leaderboard_period_and_lot_neutral(temp_db, monkeypatch):
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    for pnl in (20.0, 30.0):
+        _add_closed(conn, "WinnerBot", pnl, sl_pips=25.0, exit_time=_utc_ago(days=2))
+    conn.commit()
+    conn.close()
+    _use_leaderboard_db(monkeypatch, temp_db)
+
     client = TestClient(app)
-    resp = client.get("/api/leaderboard?account_id=all&period=1w")
+    resp = client.get("/api/leaderboard?account_id=all&account_type=demo&period=1w")
     assert resp.status_code == 200
     data = resp.json()
     assert data["period"] == "1w"
     assert data["period_start"]
-    assert "rankings" in data["lot_neutral"]
-    assert "top_performer" in data["lot_neutral"]
+    assert data["full_sample_trades"] == FULL_SAMPLE_TRADES
+    usd, lot = data["rankings"][0], data["lot_neutral"]["rankings"][0]
+    assert usd["profit_factor"] is None          # unbounded PF travels as null, never as a number
+    assert lot["profit_factor"] is None and lot["payoff_ratio"] is None
+    assert lot["basis"] == "risk"
+    assert data["lot_neutral"]["top_performer"]["bot_id"] == "WinnerBot"
+
+
+def test_dashboard_page_embeds_leaderboard_escaped(temp_db, monkeypatch):
+    """The page hands its ranking to the table renderer as JSON; a bot_id from a bot's report
+    must not come out as markup."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "<img src=x onerror=alert(1)>", 12.0)
+    conn.commit()
+    conn.close()
+    _use_leaderboard_db(monkeypatch, temp_db)
+
+    html = TestClient(app).get("/demo/dashboard").text
+    assert "const lbInitial = {" in html
+    assert "<img src=x onerror" not in html.lower()
+    assert "\\u003cimg src=x onerror" in html
 
 
 def test_dashboard_page_renders_leaderboard_tabs():
@@ -392,3 +433,102 @@ def test_dashboard_page_renders_leaderboard_tabs():
     for period in ("1d", "1w", "1m", "6m", "1y", "all"):
         assert f'data-lb-period="{period}"' in html
     assert 'id="leaderboard-lot-table-body"' in html
+
+
+def test_small_sample_is_pulled_toward_neutral(temp_db):
+    """Three lucky winners (unbounded PF, no drawdown) must not outrank a long, profitable record."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    for i in range(3):
+        _add_closed(conn, "LuckyBot", 0.1, volume=0.01, sl_pips=20.0, exit_time=f"2026-09-0{i + 1} 10:00:00")
+    # 40 trades, 60% winners at 1.5R against 1R losers
+    for i in range(40):
+        pnl = 30.0 if i % 5 in (0, 1, 3) else -20.0
+        _add_closed(conn, "SteadyBot", pnl, volume=0.1, sl_pips=20.0,
+                    exit_time=f"2026-08-{1 + i // 2:02d} {10 + i % 2}:00:00")
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_leaderboard(account_id="demo", db_path=temp_db)
+    for rankings, top in ((res["rankings"], res["top_performer"]),
+                          (res["lot_neutral"]["rankings"], res["lot_neutral"]["top_performer"])):
+        by_id = {r["bot_id"]: r for r in rankings}
+        assert top["bot_id"] == "SteadyBot"
+        assert by_id["LuckyBot"]["tier_badge"] not in ("TIER_S", "TIER_A")
+
+    # The weighting fades out at FULL_SAMPLE_TRADES: from there the score is the plain weighted sum
+    def raw(n):  # WR 60%, PF 3.0, +$500, n trades
+        return 0.30 * 75.0 + 0.30 * 100.0 + 0.20 * 100.0 + 0.20 * min(100.0, 40.0 + 3.0 * n)
+    full, half = FULL_SAMPLE_TRADES, FULL_SAMPLE_TRADES // 2
+    assert calculate_quant_score(60.0, 3.0, 500.0, full)[0] == pytest.approx(raw(full), abs=0.05)
+    assert calculate_quant_score(60.0, 3.0, 500.0, half)[0] == pytest.approx(50 + (raw(half) - 50) / 2, abs=0.05)
+
+
+def test_lot_neutral_takes_trades_over_their_risk(temp_db):
+    """Risk-sized trades: a tight-stop winner on big lots and a wide-stop loser on small lots.
+
+    Per lot the loser weighs four times the winner (PF 0.5); over the risk each took they are +2R
+    and -1R (PF 2.0), which is what the bot actually did with its money.
+    """
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    # $100 risked each time: 1.0 lot on a 10-pip stop, 0.25 lot on a 40-pip stop ($10/pip/lot)
+    _add_closed(conn, "RiskBot", 200.0, volume=1.0, sl_pips=10.0, exit_time="2026-09-01 10:00:00")
+    _add_closed(conn, "RiskBot", -100.0, volume=0.25, sl_pips=40.0, exit_time="2026-09-02 10:00:00")
+    conn.commit()
+    conn.close()
+
+    bot = compute_bot_leaderboard(account_id="demo", db_path=temp_db)["lot_neutral"]["rankings"][0]
+    assert bot["basis"] == "risk"
+    assert bot["profit_factor"] == 2.0
+    assert bot["payoff_ratio"] == 2.0
+    assert bot["return_dd"] == 1.0  # +2R then -1R: net 1R over a 1R drawdown
+    # One trade without a stop distance: the whole bot falls back to per lot, never mixing units
+    conn = sqlite3.connect(str(temp_db))
+    _add_closed(conn, "RiskBot", 50.0, volume=0.5, sl_pips=None, exit_time="2026-09-03 10:00:00")
+    conn.commit()
+    conn.close()
+    bot = compute_bot_leaderboard(account_id="demo", db_path=temp_db)["lot_neutral"]["rankings"][0]
+    assert bot["basis"] == "lot"
+    assert bot["profit_factor"] == round((200.0 + 100.0) / 400.0, 2)
+
+
+def test_same_second_exits_walk_in_id_order(temp_db):
+    """A close-all stamps several trades with one exit time: the equity curve follows the row id,
+    so the drawdown does not change from one refresh to the next."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "BasketBot", 100.0, volume=1.0, exit_time="2026-09-01 10:00:00")
+    _add_closed(conn, "BasketBot", -30.0, volume=1.0, exit_time="2026-09-02 10:00:00")
+    for pnl in (-50.0, 100.0):  # ids 3, 4: same second
+        _add_closed(conn, "BasketBot", pnl, volume=1.0, exit_time="2026-09-03 10:00:00")
+    conn.commit()
+    conn.close()
+
+    bot = compute_bot_leaderboard(account_id="demo", db_path=temp_db)["lot_neutral"]["rankings"][0]
+    # 100 -> 70 -> 20 -> 120: the -50 (lower id) comes first, a drawdown of 80 from the peak of 100
+    assert bot["max_dd_units"] == 80.0
+    assert bot["return_dd"] == 1.5
+
+    # Whatever order the DB hands the tied rows back in
+    tied = [{"id": 4, "exit_time": "2026-09-03 10:00:00"}, {"id": 3, "exit_time": "2026-09-03 10:00:00"},
+            {"id": 9, "exit_time": "2026-09-01 10:00:00"}]
+    assert [t["id"] for t in leaderboard_module._oldest_first(tied)] == [9, 3, 4]
+
+
+def test_portfolio_summary_profit_factor_without_losses(temp_db, monkeypatch):
+    """The Overview's PF follows the leaderboard: no loss yet is unbounded (None), not the gross profit."""
+    import app.dashboard as dashboard_module
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("ALTER TABLE accounts ADD COLUMN last_balance REAL")
+    conn.execute("ALTER TABLE accounts ADD COLUMN last_equity REAL")
+    conn.execute("INSERT INTO accounts (account_id, account_type, label, is_configured) VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    for pnl in (0.2, 0.3, 0.3):
+        _add_closed(conn, "MicroBot", pnl, volume=0.01)
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(dashboard_module, "get_db", lambda: leaderboard_module.get_db_connection(temp_db))
+
+    summary = dashboard_module.get_portfolio_summary("acc_demo_1")
+    assert summary["total_trades"] == 3
+    assert summary["profit_factor"] is None

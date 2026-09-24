@@ -7,19 +7,26 @@ Win Rate %, Profit Factor, Net PnL, Tier Badges: Tier S/A/B/C) across all cBots.
 Two rankings come out of the same trades:
 - the USD ranking scores Net PnL in account currency, so a bot trading bigger lots scores
   higher for the same edge;
-- the lot-neutral ranking scores every closed trade as its P&L per lot, so lot size (often
-  arbitrary on demo accounts) drops out.
-Both can be narrowed to a rolling look-back window (LEADERBOARD_PERIODS).
+- the lot-neutral ranking scores every closed trade over the risk it took (lots x stop
+  distance), so position size (often arbitrary on demo accounts) drops out.
+Both can be narrowed to a rolling look-back window (LEADERBOARD_PERIODS), and both pull a
+small sample's score toward the neutral 50 (FULL_SAMPLE_TRADES).
 """
 
 from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 from app.db import get_db_connection as _get_unified_db
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "portfolio.db"
+
+# Closed trades a score needs before it counts in full. Below that the composite is pulled toward
+# the neutral 50 in proportion (3 trades keep 30% of their distance from it): a short run of
+# winners has no loss and no drawdown yet, so its PF and Return/DD read as unbounded and score the
+# top of both curves; unweighted, three lucky trades would outrank a long, proven record.
+FULL_SAMPLE_TRADES = 10
 
 # Rolling look-back windows for the period filter, in days (None = all time). Rolling rather
 # than calendar periods: on a Monday morning "this week" would hold almost no trades, and a bot
@@ -50,7 +57,7 @@ def period_start(period: str, now: Optional[datetime.datetime] = None) -> Option
     return (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _profit_factor(gross_profit: float, gross_loss: float, total_trades: int) -> Optional[float]:
+def compute_profit_factor(gross_profit: float, gross_loss: float, total_trades: int) -> Optional[float]:
     """Gross profit over gross loss. None means profit with no loss yet, an unbounded PF.
 
     It used to fall back to the gross profit itself, which tied the value to the money amount:
@@ -81,6 +88,12 @@ def _activity_score(total_trades: int) -> float:
     return min(100.0, 40.0 + min(total_trades * 3.0, 60.0))
 
 
+def _sample_weighted(raw_score: float, total_trades: int) -> float:
+    """Pull a composite toward the neutral 50 while the sample is under FULL_SAMPLE_TRADES."""
+    confidence = min(1.0, total_trades / FULL_SAMPLE_TRADES)
+    return 50.0 + (raw_score - 50.0) * confidence
+
+
 def _classify_tier(composite_score: float, win_rate: float, total_trades: int) -> tuple[str, str, str]:
     """Tier badge, label and color for a composite score."""
     if total_trades == 0:
@@ -107,6 +120,7 @@ def calculate_quant_score(
     - Profit Factor Score (30%): Non-linear curve based on PF benchmarks
     - PnL Performance Score (20%): Normalized against baseline
     - Consistency/Activity Score (20%): Rewards statistically significant sample size
+    The weighted sum is then pulled toward 50 below FULL_SAMPLE_TRADES closed trades.
     """
     # 1. Win Rate Score (30%)
     score_winrate = min(100.0, max(0.0, win_rate * 1.25))
@@ -123,10 +137,10 @@ def calculate_quant_score(
     # 4. Consistency & Activity Score (20%)
     score_activity = _activity_score(total_trades)
 
-    composite_score = round(
+    composite_score = round(_sample_weighted(
         0.30 * score_winrate + 0.30 * score_pf + 0.20 * score_pnl + 0.20 * score_activity,
-        1
-    )
+        total_trades
+    ), 1)
     tier_badge, tier_label, tier_color = _classify_tier(composite_score, win_rate, total_trades)
     return composite_score, tier_badge, tier_label, tier_color
 
@@ -135,24 +149,26 @@ def calculate_lot_neutral_score(
     win_rate: float,
     profit_factor: Optional[float],
     return_dd: Optional[float],
-    net_per_lot: float,
+    net_units: float,
     total_trades: int,
 ) -> tuple[float, str, str, str]:
     """
-    Composite Quant Score (0.0 - 100.0) with lot size taken out:
+    Composite Quant Score (0.0 - 100.0) with position size taken out:
     - Win Rate Score (30%): as in calculate_quant_score
-    - Profit Factor Score (30%): same curve, fed a PF computed on P&L per lot
-    - Return/Drawdown Score (20%): replaces Net PnL in USD. Net P&L per lot over the max
-      drawdown of the per-lot equity curve: a ratio of two figures in the same unit, so neither
-      the lot size nor the symbol's value per lot survives it. None = no drawdown yet.
+    - Profit Factor Score (30%): same curve, fed a PF computed on size-neutral results
+      (see _size_neutral_units)
+    - Return/Drawdown Score (20%): replaces Net PnL in USD. Net result over the max drawdown of
+      the size-neutral equity curve: a ratio of two figures in the same unit, so neither the
+      position size nor the symbol's value per lot survives it. None = no drawdown yet.
     - Consistency/Activity Score (20%): as in calculate_quant_score
+    The weighted sum is then pulled toward 50 below FULL_SAMPLE_TRADES closed trades.
     """
     score_winrate = min(100.0, max(0.0, win_rate * 1.25))
     score_pf = _profit_factor_score(profit_factor)
 
     if return_dd is None:
         # No drawdown yet: all profit, or nothing but break-evens
-        score_rdd = 100.0 if net_per_lot > 0 else 50.0
+        score_rdd = 100.0 if net_units > 0 else 50.0
     elif return_dd > 0:
         score_rdd = min(100.0, 50.0 + return_dd * 50.0 / 3.0)  # 3x the drawdown scores the top
     else:
@@ -160,33 +176,63 @@ def calculate_lot_neutral_score(
 
     score_activity = _activity_score(total_trades)
 
-    composite_score = round(
+    composite_score = round(_sample_weighted(
         0.30 * score_winrate + 0.30 * score_pf + 0.20 * score_rdd + 0.20 * score_activity,
-        1
-    )
+        total_trades
+    ), 1)
     tier_badge, tier_label, tier_color = _classify_tier(composite_score, win_rate, total_trades)
     return composite_score, tier_badge, tier_label, tier_color
 
 
-def _lot_neutral_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Win/loss statistics on P&L per lot for one bot's closed trades, oldest first.
+def _size_neutral_units(trades: List[Dict[str, Any]]) -> Tuple[str, List[float]]:
+    """Each closed trade's result with its position size taken out, in the given order, plus
+    the basis used.
+
+    "risk": P&L / (lots x stop distance in pips). The bots size by risk (lots = risk money / stop
+    distance), so P&L per lot alone would keep the stop distance in: a wide-stop trade, opened
+    on fewer lots, would weigh several times a tight-stop one risking the same money. Over the
+    risk it is the trade's R-multiple times the symbol's pip value per lot, a constant for one
+    bot's symbol that cancels in every ratio scored here.
+    "lot": P&L per lot, the fallback when any trade lacks a stop distance (rows from before the
+    bots reported one), so one bot's trades never mix the two units.
 
     `pnl` on a closed row carries every partial-close slice and `volume` is restored to the
-    opening size, so pnl / volume is the whole trade's result per lot. A row without a volume
-    cannot be normalised and is left out.
+    opening size, so both bases cover the whole trade. A row without a volume cannot be
+    normalised and is left out.
     """
+    sized = [t for t in trades if float(t.get("volume") or 0.0) > 0]
+    basis = "risk" if sized and all(float(t.get("sl_pips") or 0.0) > 0 for t in sized) else "lot"
     units = [
-        float(t.get("pnl") or 0.0) / float(t["volume"])
-        for t in trades
-        if t.get("volume") and float(t["volume"]) > 0
+        float(t.get("pnl") or 0.0)
+        / (float(t["volume"]) * (float(t["sl_pips"]) if basis == "risk" else 1.0))
+        for t in sized
     ]
-    total = len(units)
+    return basis, units
+
+
+def _oldest_first(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Closed trades in the order they closed.
+
+    Exit times only have second resolution (a close-all stamps several trades with one) and the
+    DB returns ties in no fixed order, so the row id breaks them: otherwise the equity curve, its
+    drawdown and the score could change from one refresh to the next with no new trade.
+    """
+    return sorted(trades, key=lambda t: (str(t.get("exit_time") or t.get("entry_time") or ""), t.get("id") or 0))
+
+
+def _size_neutral_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """PF, payoff and Return/DD on size-neutral results for one bot's closed trades, oldest first.
+
+    Win/loss counts are left to the caller: dividing by a positive size keeps every trade's sign,
+    so they equal the USD figures.
+    """
+    basis, units = _size_neutral_units(trades)
     win_units = [u for u in units if u > 0]
     loss_units = [u for u in units if u < 0]
     gross_profit = sum(win_units)
     gross_loss = abs(sum(loss_units))
 
-    # Max drawdown of the per-lot equity curve, measured from the running peak (starting at 0)
+    # Max drawdown of the equity curve, measured from the running peak (starting at 0)
     equity = peak = max_dd = 0.0
     for u in units:
         equity += u
@@ -201,15 +247,11 @@ def _lot_neutral_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         payoff = 0.0
 
     return {
-        "total_trades": total,
-        "total_wins": len(win_units),
-        "total_losses": len(loss_units),
-        "total_breakevens": total - len(win_units) - len(loss_units),
-        "win_rate": round(len(win_units) / total * 100.0, 1) if total else 0.0,
-        "profit_factor": _profit_factor(gross_profit, gross_loss, total),
+        "basis": basis,
+        "profit_factor": compute_profit_factor(gross_profit, gross_loss, len(units)),
         "payoff_ratio": payoff,
-        "net_per_lot": round(equity, 2),
-        "max_dd_per_lot": round(max_dd, 2),
+        "net_units": round(equity, 2),
+        "max_dd_units": round(max_dd, 2),
         "return_dd": round(equity / max_dd, 2) if max_dd > 0 else None,
     }
 
@@ -238,9 +280,11 @@ def compute_bot_leaderboard(
     narrows further to a single account and "all" ranks everything; passing "live" or
     "demo" as the account_id stays supported as shorthand for the type filter.
 
-    ``period`` (a LEADERBOARD_PERIODS key) keeps only the trades closed inside that rolling
-    window; open positions are current and always count. The result carries the USD ranking
-    under "rankings" and the lot-neutral one under "lot_neutral".
+    ``period`` (a LEADERBOARD_PERIODS key) keeps what happened inside that rolling window: the
+    trades closed in it and the positions opened in it that are still open. An older open
+    position's floating P&L mostly built up before the window, so it stays out of the window's
+    Net PnL and score. The result carries the USD ranking under "rankings" and the lot-neutral
+    one under "lot_neutral".
     """
     if account_type not in ("live", "demo"):
         account_type = account_id if account_id in ("live", "demo") else None
@@ -260,31 +304,34 @@ def compute_bot_leaderboard(
             params.append(account_id)
         account_filter = "".join(f" AND {clause}" for clause in filters)
 
-        # 1. Fetch closed trades (inside the look-back window, if any)
-        period_filter = ""
-        closed_params = list(params)
+        # 1. Fetch closed trades (closed inside the look-back window, if any). Spelled out rather
+        # than COALESCE(exit_time, entry_time) so each branch can use its column's index.
+        closed_filter, closed_params = "", list(params)
+        open_filter, open_params = "", list(params)
         if since:
-            period_filter = " AND COALESCE(exit_time, entry_time) >= ?"
-            closed_params.append(since)
+            closed_filter = " AND (exit_time >= ? OR (exit_time IS NULL AND entry_time >= ?))"
+            closed_params += [since, since]
+            open_filter = " AND entry_time >= ?"
+            open_params.append(since)
         query_closed = f"""
             SELECT id, bot_id, symbol, side, volume, entry_price, exit_price,
-                   pnl, entry_time, exit_time, account_id
+                   pnl, sl_pips, entry_time, exit_time, account_id
             FROM positions
-            WHERE status = 'closed'{account_filter}{period_filter}
+            WHERE status = 'closed'{account_filter}{closed_filter}
             ORDER BY exit_time DESC
         """
         cursor = conn.execute(query_closed, tuple(closed_params))
         closed_trades = [dict(r) for r in cursor.fetchall()]
 
-        # 2. Fetch active positions
+        # 2. Fetch active positions (opened inside the look-back window, if any)
         query_open = f"""
             SELECT id, bot_id, symbol, side, volume, entry_price,
                    pnl, entry_time, account_id
             FROM positions
-            WHERE status = 'open'{account_filter}
+            WHERE status = 'open'{account_filter}{open_filter}
             ORDER BY entry_time DESC
         """
-        cursor = conn.execute(query_open, tuple(params))
+        cursor = conn.execute(query_open, tuple(open_params))
         open_positions = [dict(r) for r in cursor.fetchall()]
 
         # 3. Fetch any registered bot names from cbot_configs or distinct bot_ids
@@ -325,7 +372,7 @@ def compute_bot_leaderboard(
             # Profit Factor
             gross_profit = sum(float(t.get("pnl") or 0.0) for t in wins)
             gross_loss = abs(sum(float(t.get("pnl") or 0.0) for t in losses))
-            profit_factor = _profit_factor(gross_profit, gross_loss, total_trades)
+            profit_factor = compute_profit_factor(gross_profit, gross_loss, total_trades)
 
             # List symbols traded
             symbols = list(set([t["symbol"] for t in b_trades if t.get("symbol")] + [p["symbol"] for p in b_open if p.get("symbol")]))
@@ -367,21 +414,24 @@ def compute_bot_leaderboard(
 
             # Lot-neutral view of the same closed trades (open positions carry no final result).
             # The drawdown walks the equity curve, so it needs them oldest first.
-            stats = _lot_neutral_stats(
-                sorted(b_trades, key=lambda t: str(t.get("exit_time") or t.get("entry_time") or ""))
-            )
+            stats = _size_neutral_stats(_oldest_first(b_trades))
             ln_score, ln_badge, ln_label, ln_color = calculate_lot_neutral_score(
-                win_rate=stats["win_rate"],
+                win_rate=win_rate,
                 profit_factor=stats["profit_factor"],
                 return_dd=stats["return_dd"],
-                net_per_lot=stats["net_per_lot"],
-                total_trades=stats["total_trades"],
+                net_units=stats["net_units"],
+                total_trades=total_trades,
             )
             lot_neutral_rankings.append({
                 "bot_id": b_id,
                 "bot_name": bot_name_clean,
                 "symbols": symbols,
                 "symbol_display": symbol_display,
+                "total_trades": total_trades,
+                "total_wins": total_wins,
+                "total_losses": total_losses,
+                "total_breakevens": len(breakevens),
+                "win_rate": win_rate,
                 **stats,
                 "composite_score": ln_score,
                 "tier_badge": ln_badge,
@@ -389,7 +439,8 @@ def compute_bot_leaderboard(
                 "tier_color": ln_color,
             })
 
-        # Sort Rankings: bots with closed trades first, then composite_score DESC, then total_pnl_usd DESC
+        # Sort Rankings: bots with closed trades first, then composite_score DESC, then the
+        # tiebreak DESC (USD: total_pnl_usd, lot-neutral: win_rate)
         top_performer = _rank(bot_rankings, "total_pnl_usd")
         lot_neutral_top = _rank(lot_neutral_rankings, "win_rate")
 
@@ -405,6 +456,7 @@ def compute_bot_leaderboard(
             "account_type": account_type,
             "period": period,
             "period_start": since,
+            "full_sample_trades": FULL_SAMPLE_TRADES,
             "total_bots": len(bot_rankings),
             "fleet_total_trades": fleet_total_trades,
             "fleet_win_rate": fleet_win_rate,

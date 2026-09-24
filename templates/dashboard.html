@@ -445,17 +445,17 @@
                             <span id="lb-weight-hint" class="td-dim" style="font-size: 0.72rem; margin-left: 10px;">Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency</span>
                         </div>
                         <div class="lb-toolbar">
-                            <div class="news-btn-group" id="lb-tab-group" role="tablist" aria-label="Ranking basis">
-                                <button type="button" class="news-filter-btn active" data-lb-tab="usd" role="tab" title="Scores Net P&amp;L in account currency: bigger lots score higher for the same edge">USD P&amp;L</button>
-                                <button type="button" class="news-filter-btn" data-lb-tab="lot" role="tab" title="Scores every closed trade as P&amp;L per lot: lot size drops out">Lot-Neutral</button>
+                            <div class="news-btn-group" id="lb-tab-group" role="group" aria-label="Ranking basis">
+                                <button type="button" class="news-filter-btn active" data-lb-tab="usd" aria-pressed="true" title="Scores Net P&amp;L in account currency: bigger lots score higher for the same edge">USD P&amp;L</button>
+                                <button type="button" class="news-filter-btn" data-lb-tab="lot" aria-pressed="false" title="Scores every closed trade over the risk it took (lots × stop distance): position size drops out">Lot-Neutral</button>
                             </div>
-                            <div class="news-btn-group" id="lb-period-group" aria-label="Look-back period">
-                                <button type="button" class="news-filter-btn" data-lb-period="1d" title="Trades closed in the last 24 hours">24H</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1w" title="Trades closed in the last 7 days">7D</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1m" title="Trades closed in the last 30 days">30D</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="6m" title="Trades closed in the last 6 months">6M</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1y" title="Trades closed in the last 12 months">1Y</button>
-                                <button type="button" class="news-filter-btn active" data-lb-period="all" title="Every closed trade">All</button>
+                            <div class="news-btn-group" id="lb-period-group" role="group" aria-label="Look-back period">
+                                <button type="button" class="news-filter-btn" data-lb-period="1d" aria-pressed="false" title="Trades closed, and positions opened, in the last 24 hours">24H</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1w" aria-pressed="false" title="Trades closed, and positions opened, in the last 7 days">7D</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1m" aria-pressed="false" title="Trades closed, and positions opened, in the last 30 days">30D</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="6m" aria-pressed="false" title="Trades closed, and positions opened, in the last 6 months">6M</button>
+                                <button type="button" class="news-filter-btn" data-lb-period="1y" aria-pressed="false" title="Trades closed, and positions opened, in the last 12 months">1Y</button>
+                                <button type="button" class="news-filter-btn active" data-lb-period="all" aria-pressed="true" title="Every trade and open position">All</button>
                             </div>
                             <button id="lb-refresh-btn" class="log-btn"><i data-lucide="refresh-cw" class="btn-icon"></i> Refresh</button>
                         </div>
@@ -479,91 +479,11 @@
                                     </tr>
                                 </thead>
                                 <tbody id="leaderboard-table-body">
-                                    {% if leaderboard and leaderboard.rankings %}
-                                        {% for bot in leaderboard.rankings %}
-                                        <tr>
-                                            <td class="rank-cell">
-                                                {% if bot.rank == 1 %}
-                                                    <span class="rank-badge-1">🥇 1</span>
-                                                {% elif bot.rank == 2 %}
-                                                    <span class="rank-badge-2">🥈 2</span>
-                                                {% elif bot.rank == 3 %}
-                                                    <span class="rank-badge-3">🥉 3</span>
-                                                {% else %}
-                                                    <span class="td-dim">{{ bot.rank }}</span>
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                <div class="bot-cell">
-                                                    <span class="font-bold" style="color: var(--text-primary);">{{ bot.bot_name }}</span>
-                                                    <span class="bot-id-text">{{ bot.bot_id }}</span>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="symbols-chip">{{ bot.symbol_display }}</span>
-                                            </td>
-                                            <td>
-                                                <span class="tier-badge tier-badge--{{ bot.tier_badge }}">{{ bot.tier_label }}</span>
-                                            </td>
-                                            <td>
-                                                {% if bot.total_trades == 0 %}
-                                                    <span class="td-dim">--</span>
-                                                {% elif bot.total_wins == 0 %}
-                                                    <span class="font-mono font-bold pnl-negative">0.0%</span>
-                                                    <div class="td-dim" style="font-size:0.65rem;">0W / {{ bot.total_losses }}L</div>
-                                                {% else %}
-                                                    <span class="font-mono font-bold" style="color: {% if bot.win_rate >= 60 %}var(--profit){% elif bot.win_rate >= 40 %}#fbbf24{% else %}var(--loss){% endif %};">
-                                                        {{ "%.1f"|format(bot.win_rate) }}%
-                                                    </span>
-                                                    <div class="td-dim" style="font-size:0.65rem;">{{ bot.total_wins }}W / {{ bot.total_losses }}L</div>
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                {% if bot.total_trades == 0 %}
-                                                    <span class="td-dim">--</span>
-                                                {% elif bot.profit_factor is none %}
-                                                    <span class="font-mono pnl-positive" title="No losing trades yet">∞</span>
-                                                {% elif bot.profit_factor == 0 %}
-                                                    <span class="font-mono pnl-negative" title="No winning trades">0.00</span>
-                                                {% else %}
-                                                    <span class="font-mono">{{ "%.2f"|format(bot.profit_factor) }}</span>
-                                                {% endif %}
-                                            </td>
-                                            <td class="font-mono">{{ bot.total_trades }}</td>
-                                            <td>
-                                                <span class="pnl-chip {% if bot.total_pnl_usd > 0 %}pnl-chip--profit{% elif bot.total_pnl_usd < 0 %}pnl-chip--loss{% else %}td-dim{% endif %}">
-                                                    {% if bot.total_pnl_usd > 0 %}+{% endif %}${{ "%.2f"|format(bot.total_pnl_usd) }}
-                                                </span>
-                                            </td>
-                                            <td class="font-mono {% if bot.closed_pnl_usd >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
-                                                ${{ "%.2f"|format(bot.closed_pnl_usd) }}
-                                            </td>
-                                            <td class="font-mono {% if bot.floating_pnl_usd > 0 %}pnl-positive{% elif bot.floating_pnl_usd < 0 %}pnl-negative{% else %}td-dim{% endif %}">
-                                                ${{ "%.2f"|format(bot.floating_pnl_usd) }}
-                                            </td>
-                                            <td>
-                                                {% if bot.total_trades == 0 %}
-                                                    <span class="td-dim">--</span>
-                                                {% else %}
-                                                <div class="score-pill">
-                                                    <span style="color: {{ bot.tier_color }};">{{ bot.composite_score }}</span>
-                                                    <span class="score-bar-bg">
-                                                        <span class="score-bar-fill" style="width: {{ bot.composite_score }}%; background: {{ bot.tier_color }};"></span>
-                                                    </span>
-                                                </div>
-                                                {% endif %}
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    {% else %}
-                                        <tr>
-                                            <td colspan="11" class="empty-state">No bot trading history recorded yet</td>
-                                        </tr>
-                                    {% endif %}
+                                    <tr><td colspan="11" class="empty-state">Loading…</td></tr>
                                 </tbody>
                             </table>
                         </div>
-                        <!-- Lot-neutral ranking: filled by renderLeaderboard() -->
+                        <!-- Lot-neutral ranking; both tables are filled by renderLeaderboard() -->
                         <div class="table-wrap" id="lb-pane-lot" hidden>
                             <table class="data-table">
                                 <thead>
@@ -573,9 +493,9 @@
                                         <th>Symbols</th>
                                         <th>Tier Badge</th>
                                         <th>Win Rate</th>
-                                        <th title="Gross profit / gross loss, each closed trade taken as its P&amp;L per lot">Profit Factor</th>
-                                        <th title="Average win / average loss, per lot">Payoff</th>
-                                        <th title="Net P&amp;L per lot / max drawdown of the per-lot equity curve">Return / DD</th>
+                                        <th title="Gross profit / gross loss, each closed trade taken over its risk at entry (lots × stop pips)">Profit Factor</th>
+                                        <th title="Average win / average loss, over the risk at entry">Payoff</th>
+                                        <th title="Net result / max drawdown of the equity curve, both over the risk at entry">Return / DD</th>
                                         <th>Trades</th>
                                         <th>Quant Score</th>
                                     </tr>
@@ -2146,14 +2066,13 @@
         }, 10000);
         // --- Leaderboard Integration ---
         // Two rankings (USD P&L / lot-neutral) arrive in one response; the tab only picks which
-        // table shows. The period is a rolling window applied server-side to closed trades.
+        // table shows. The period is a rolling window applied server-side.
         const LB_TABS = ['usd', 'lot'];
         const LB_PERIODS = ['1d', '1w', '1m', '6m', '1y', 'all'];
         const LB_WEIGHT_HINTS = {
             usd: 'Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency',
-            lot: 'Weight: 30% WinRate + 30% ProfitFactor + 20% Return/DD + 20% Consistency · closed trades as P&L per lot',
+            lot: 'Weight: 30% WinRate + 30% ProfitFactor + 20% Return/DD + 20% Consistency · each closed trade over its risk at entry',
         };
-        const LB_SMALL_SAMPLE = 10;  // fewer closed trades than this: the score is mostly noise
         let lbTab = 'usd';
         let lbPeriod = 'all';
         try {
@@ -2162,37 +2081,83 @@
             if (LB_TABS.includes(savedTab)) lbTab = savedTab;
             if (LB_PERIODS.includes(savedPeriod)) lbPeriod = savedPeriod;
         } catch (e) { /* storage unavailable: keep the defaults */ }
-        let lbData = null;
-        let lbFetchSeq = 0;
+        let lbData = null;       // the response on screen
+        let lbShownQuery = null; // the selection it was fetched for
+        // One request at a time: a burst of WS updates (one per account scope) collapses into a
+        // single follow-up request instead of one full recompute each.
+        let lbInFlight = false;
+        let lbQueued = false;
+
+        function lbViewActive() {
+            const view = document.getElementById('view-leaderboard');
+            return !!(view && view.classList.contains('active'));
+        }
+
+        // The current selection (account, mode, period) as the query string that fetches it
+        function lbQuery() {
+            const accId = typeof selectedAccountId !== 'undefined' ? selectedAccountId : 'all';
+            // Rank strictly inside the active mode: take the type from the selected
+            // option (data-type) and fall back to the page mode itself.
+            const accSel = document.getElementById('account-selector');
+            const accType = (accSel && accSel.selectedOptions[0] && accSel.selectedOptions[0].dataset.type)
+                || ((currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo');
+            return `account_id=${encodeURIComponent(accId)}&account_type=${accType}&period=${lbPeriod}`;
+        }
 
         async function fetchLeaderboard() {
-            const seq = ++lbFetchSeq;
+            // Nothing to refresh while the view is hidden: opening it fetches
+            if (!lbViewActive()) return;
+            if (lbInFlight) { lbQueued = true; return; }
+            lbInFlight = true;
+            const query = lbQuery();
             try {
-                const accId = typeof selectedAccountId !== 'undefined' ? selectedAccountId : 'all';
-                // Rank strictly inside the active mode: take the type from the selected
-                // option (data-type) and fall back to the page mode itself.
-                const accSel = document.getElementById('account-selector');
-                const accType = (accSel && accSel.selectedOptions[0] && accSel.selectedOptions[0].dataset.type)
-                    || ((currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo');
-                const res = await fetch(`/api/leaderboard?account_id=${encodeURIComponent(accId)}&account_type=${accType}&period=${lbPeriod}`);
-                if (!res.ok) return;
+                const res = await fetch(`/api/leaderboard?${query}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                // A slower response for a period the user has since left must not overwrite the newer one
-                if (seq !== lbFetchSeq) return;
-                renderLeaderboard(data);
-            } catch(e) {
+                // The selection changed meanwhile: the queued request fetches the new one
+                if (query === lbQuery()) {
+                    lbShownQuery = query;
+                    renderLeaderboard(data);
+                }
+            } catch (e) {
                 console.error("Error fetching leaderboard", e);
+                if (query === lbQuery()) lbShowFetchError(query);
+            } finally {
+                lbInFlight = false;
+                if (lbQueued) {
+                    lbQueued = false;
+                    fetchLeaderboard();
+                }
             }
+        }
+
+        // Rows already on screen for this same selection stay (a failed poll is not news), but rows
+        // for the previous period or account must not sit under the new one.
+        function lbShowFetchError(query) {
+            if (lbShownQuery === query) return;
+            lbData = null;
+            lbShownQuery = null;
+            const row = colspan => `<tr><td colspan="${colspan}" class="empty-state">Could not load the leaderboard, retrying…</td></tr>`;
+            const tbody = document.getElementById('leaderboard-table-body');
+            const lotBody = document.getElementById('leaderboard-lot-table-body');
+            if (tbody) tbody.innerHTML = row(11);
+            if (lotBody) lotBody.innerHTML = row(10);
+            ['lb-top-performer', 'lb-fleet-winrate', 'lb-fleet-pnl', 'lb-total-bots'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = '--';
+            });
         }
 
         function applyLbControls() {
             document.querySelectorAll('#lb-tab-group [data-lb-tab]').forEach(btn => {
                 const on = btn.dataset.lbTab === lbTab;
                 btn.classList.toggle('active', on);
-                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
             document.querySelectorAll('#lb-period-group [data-lb-period]').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.lbPeriod === lbPeriod);
+                const on = btn.dataset.lbPeriod === lbPeriod;
+                btn.classList.toggle('active', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
             const usdPane = document.getElementById('lb-pane-usd');
             const lotPane = document.getElementById('lb-pane-lot');
@@ -2210,15 +2175,16 @@
             return `<span class="td-dim">${bot.rank}</span>`;
         }
 
+        // bot_id comes from the bot's own reports: escape it and everything derived from it
         function lbBotCells(bot) {
             return `<td class="rank-cell">${lbRankCell(bot)}</td>
                     <td>
                         <div class="bot-cell">
-                            <span class="font-bold" style="color: var(--text-primary);">${bot.bot_name}</span>
-                            <span class="bot-id-text">${bot.bot_id}</span>
+                            <span class="font-bold" style="color: var(--text-primary);">${escapeHtml(bot.bot_name)}</span>
+                            <span class="bot-id-text">${escapeHtml(bot.bot_id)}</span>
                         </div>
                     </td>
-                    <td><span class="symbols-chip">${bot.symbol_display}</span></td>
+                    <td><span class="symbols-chip">${escapeHtml(bot.symbol_display)}</span></td>
                     <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>`;
         }
 
@@ -2239,9 +2205,10 @@
         }
 
         function lbTradesCell(bot) {
-            const small = bot.total_trades > 0 && bot.total_trades < LB_SMALL_SAMPLE;
+            const full = (lbData && lbData.full_sample_trades) || 10;
+            const small = bot.total_trades > 0 && bot.total_trades < full;
             return `<td class="font-mono">${bot.total_trades}${small
-                ? `<div class="td-dim" style="font-size:0.65rem;" title="Fewer than ${LB_SMALL_SAMPLE} closed trades: too few for the score to mean much yet">small n</div>`
+                ? `<div class="td-dim" style="font-size:0.65rem;" title="Fewer than ${full} closed trades: the score is pulled toward 50 until the sample is big enough">small n</div>`
                 : ''}</td>`;
         }
 
@@ -2255,6 +2222,25 @@
                             </span>
                         </div>
                     </td>`;
+        }
+
+        function lbReturnDdCell(bot) {
+            if (bot.total_trades === 0) return '<span class="td-dim">--</span>';
+            const unit = bot.basis === 'risk' ? 'P&amp;L per lot per stop pip' : 'P&amp;L per lot';
+            const title = `Net ${bot.net_units.toFixed(2)} · Max DD ${bot.max_dd_units.toFixed(2)} (${unit})`;
+            let cell;
+            if (bot.return_dd === null) {
+                cell = bot.net_units > 0
+                    ? `<span class="font-mono pnl-positive" title="No drawdown yet · ${title}">∞</span>`
+                    : `<span class="font-mono td-dim" title="${title}">0.00</span>`;
+            } else {
+                const cls = bot.return_dd > 0 ? 'pnl-positive' : (bot.return_dd < 0 ? 'pnl-negative' : 'td-dim');
+                cell = `<span class="font-mono ${cls}" title="${title}">${bot.return_dd.toFixed(2)}</span>`;
+            }
+            if (bot.basis === 'lot') {
+                cell += '<div class="td-dim" style="font-size:0.65rem;" title="Some trades have no stop distance on record, so every trade is taken per lot instead">per lot</div>';
+            }
+            return cell;
         }
 
         function lbEmptyRow(colspan) {
@@ -2319,28 +2305,15 @@
                     lotBody.innerHTML = lbEmptyRow(10);
                 } else {
                     lotBody.innerHTML = lot.rankings.map(bot => {
-                        const none = bot.total_trades === 0;
-                        const payoff = none ? '<span class="td-dim">--</span>'
+                        const payoff = bot.total_trades === 0 ? '<span class="td-dim">--</span>'
                             : bot.payoff_ratio === null ? '<span class="font-mono pnl-positive" title="No losing trades yet">∞</span>'
                             : `<span class="font-mono">${bot.payoff_ratio.toFixed(2)}</span>`;
-                        const ddTitle = `Net ${bot.net_per_lot.toFixed(2)} / lot · Max DD ${bot.max_dd_per_lot.toFixed(2)} / lot`;
-                        let returnDd;
-                        if (none) {
-                            returnDd = '<span class="td-dim">--</span>';
-                        } else if (bot.return_dd === null) {
-                            returnDd = bot.net_per_lot > 0
-                                ? `<span class="font-mono pnl-positive" title="No drawdown yet · ${ddTitle}">∞</span>`
-                                : `<span class="font-mono td-dim" title="${ddTitle}">0.00</span>`;
-                        } else {
-                            const cls = bot.return_dd > 0 ? 'pnl-positive' : (bot.return_dd < 0 ? 'pnl-negative' : 'td-dim');
-                            returnDd = `<span class="font-mono ${cls}" title="${ddTitle}">${bot.return_dd.toFixed(2)}</span>`;
-                        }
                         return `<tr>
                             ${lbBotCells(bot)}
                             <td>${lbWinRateCell(bot)}</td>
                             <td>${lbProfitFactorCell(bot)}</td>
                             <td>${payoff}</td>
-                            <td>${returnDd}</td>
+                            <td>${lbReturnDdCell(bot)}</td>
                             ${lbTradesCell(bot)}
                             ${lbScoreCell(bot)}
                         </tr>`;
@@ -2367,6 +2340,14 @@
         });
         applyLbControls();
 
+        // First paint from the page's own payload (all time, the page's account scope) when the
+        // saved period is "all"; otherwise the view's first fetch fills the tables.
+        const lbInitial = {{ leaderboard | tojson }};
+        if (lbInitial && lbInitial.period === lbPeriod) {
+            lbShownQuery = lbQuery();
+            renderLeaderboard(lbInitial);
+        }
+
         const lbRefreshBtn = document.getElementById('lb-refresh-btn');
         if (lbRefreshBtn) {
             lbRefreshBtn.addEventListener('click', () => fetchLeaderboard());
@@ -2374,8 +2355,7 @@
 
         // Periodic refresh for leaderboard if active
         setInterval(() => {
-            const lbView = document.getElementById('view-leaderboard');
-            if (lbView && lbView.classList.contains('active') && !document.hidden) {
+            if (lbViewActive() && !document.hidden) {
                 fetchLeaderboard();
             }
         }, 8000);

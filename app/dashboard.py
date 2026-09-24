@@ -15,7 +15,7 @@ import asyncio
 from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from app.accounts import get_account_registry
-from app.leaderboard import compute_bot_leaderboard
+from app.leaderboard import compute_bot_leaderboard, compute_profit_factor
 import logging
 from app import news_service
 
@@ -232,14 +232,8 @@ def get_portfolio_summary(account_id: str = "all") -> Dict:
         )
         gross_loss = cursor.fetchone()[0] or 0.0
 
-        if total_trades == 0:
-            profit_factor = None
-        elif gross_loss > 0:
-            profit_factor = round(gross_profit / gross_loss, 2)
-        elif gross_profit > 0:
-            profit_factor = round(gross_profit, 2)
-        else:
-            profit_factor = 0.0
+        # None: no closed trade yet, or profit with no loss yet (an unbounded PF)
+        profit_factor = compute_profit_factor(gross_profit, gross_loss, total_trades) if total_trades else None
         # Fetch account balance/equity
         account_balance = None
         account_equity = None
