@@ -9,13 +9,13 @@ from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from app.accounts import get_account_registry
 from app.db import get_db_connection, INTEGRITY_ERRORS
+from app import risk_limits
 
 logger = logging.getLogger(__name__)
 
 
 class PortfolioConfig:
-    """Portfolio risk limits."""
-    MAX_DAILY_LOSS = -200.0  # USD
+    """Portfolio risk limits. Daily loss limits live in the risk_limits table (app/risk_limits.py)."""
     MAX_MARGIN_USAGE_PCT = 50.0  # % of account
     
 US_INDEX_SYMBOLS = {"US30", "DJ30", "USTEC", "NAS100", "US500", "SPX500"}
@@ -165,6 +165,7 @@ class PortfolioManager:
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            risk_limits.init_schema(conn)
             conn.commit()
             logger.info(f"Portfolio database initialized (target: {self.db_path or 'PostgreSQL'})")
         finally:
@@ -390,7 +391,8 @@ class PortfolioManager:
             conn.close()
     def check_risk(self, symbol: str, side: Optional[str], volume: float,
                    account_balance: float = 10000.0, account_id: str = "default",
-                   used_margin: Optional[float] = None) -> Tuple[bool, str]:
+                   used_margin: Optional[float] = None,
+                   bot_id: Optional[str] = None) -> Tuple[bool, str]:
         """
         Check if new trade is safe at portfolio level.
         Returns (allowed: bool, reason: str)
@@ -398,6 +400,8 @@ class PortfolioManager:
         used_margin is the broker's own figure (cTrader Account.Margin) when the cBot sends it.
         side is None when the direction is not known yet (the capacity check before the LLM
         picks one): the US-index alignment check is skipped then and runs on the final decision.
+        bot_id selects the strategy and container daily loss limits; without it only the
+        account's applies.
         """
         conn = self._get_conn()
         try:
@@ -417,17 +421,11 @@ class PortfolioManager:
                         if pos_side != side.upper():
                             return False, f"US Index alignment conflict: cannot open {side.upper()} {symbol} while {pos_sym} has open {pos_side} position"
 
-            # 4. Daily loss limit
-            today = date.today().isoformat()
-            cursor = conn.execute(
-                "SELECT SUM(pnl) FROM positions WHERE status = 'closed' AND DATE(COALESCE(exit_time, entry_time)) = ? AND account_id = ?",
-                (today, account_id)
-            )
-            row = cursor.fetchone()
-            if row and row[0] is not None:
-                daily_pnl = row[0]
-                if daily_pnl <= self.config.MAX_DAILY_LOSS:
-                    return False, f"Daily loss limit reached ({daily_pnl:.2f})"
+            # 4. Daily loss limits: container, strategy, account
+            reason = risk_limits.breached(
+                risk_limits.load(conn), self._daily_loss_usage(conn, account_id), bot_id)
+            if reason:
+                return False, reason
             # 5. Margin usage. Prefer the margin the broker reports. The fallback prices every
             # lot at $1000 whatever the instrument, so 0.4 lots of ETHUSD and 0.3 of DE40 counted
             # like forex lots and blocked US30/USTEC/XAUUSD entries on 2026-09-23 at a "64.4%"
@@ -450,6 +448,69 @@ class PortfolioManager:
             return False, f"Risk check error: {e}"
         finally:
             conn.close()
+    def get_risk_limits(self) -> List[Dict]:
+        """The daily loss limits, as edited on the dashboard."""
+        conn = self._get_conn()
+        try:
+            return risk_limits.load(conn)
+        finally:
+            conn.close()
+
+    def update_risk_limits(self, updates: List[Dict]) -> List[Dict]:
+        """Save limit edits (all or nothing; ValueError if any is invalid) and return the limits."""
+        conn = self._get_conn()
+        try:
+            risk_limits.save(conn, updates)
+            conn.commit()
+            return risk_limits.load(conn)
+        finally:
+            conn.close()
+
+    def get_account_ids(self) -> List[str]:
+        """Every account that has recorded a position."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("SELECT DISTINCT account_id FROM positions ORDER BY account_id").fetchall()
+            return [row[0] for row in rows]
+        finally:
+            conn.close()
+
+    def daily_loss_usage(self, account_id: str) -> Dict:
+        """Today's loss of the account, of each strategy on it and of each of its bots."""
+        conn = self._get_conn()
+        try:
+            return self._daily_loss_usage(conn, account_id)
+        finally:
+            conn.close()
+
+    def _daily_loss_usage(self, conn, account_id: str) -> Dict:
+        today = datetime.now(timezone.utc).date().isoformat()
+        closed = conn.execute(
+            "SELECT bot_id, pnl FROM positions WHERE account_id = ? AND status = 'closed' "
+            "AND DATE(COALESCE(exit_time, entry_time)) = ?",
+            (account_id, today),
+        ).fetchall()
+        open_bots = conn.execute(
+            "SELECT DISTINCT bot_id FROM positions WHERE account_id = ? AND status = 'open'",
+            (account_id,),
+        ).fetchall()
+        open_risk = {row[0]: self._open_risk(row[0], account_id) for row in open_bots}
+        return risk_limits.usage_by_scope([(row[0], row[1]) for row in closed], open_risk)
+
+    def _open_risk(self, bot_id: str, account_id: str) -> float:
+        """What the bot's open position would add to the day at its stop.
+
+        The bot's own estimate (sl_pnl) when it has sent one; until then the current P&L,
+        counted only when it is a loss, since an open profit is not yet locked in.
+        """
+        cache = getattr(self, "_bot_positions_cache", {})
+        report = cache.get(f"{account_id}:{bot_id}") or cache.get(bot_id) or {}
+        if report.get("sl_pnl") is not None:
+            return float(report["sl_pnl"])
+        if report.get("unrealized_pnl") is not None:
+            return min(float(report["unrealized_pnl"]), 0.0)
+        return 0.0
+
     def _get_open_symbols(self, conn, account_id: str) -> List[Tuple[str, str]]:
         """Get list of (symbol, side) for open positions."""
         cursor = conn.execute("""
