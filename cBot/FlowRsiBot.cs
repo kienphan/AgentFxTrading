@@ -325,6 +325,12 @@ namespace cAlgo.Robots
         private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
         private readonly HashSet<int> _partialCloseApplied = new HashSet<int>();
         private readonly Dictionary<int, double> _initialSlDistances = new Dictionary<int, double>();
+        // RestoreInitialSlDistances runs until the server has answered once. A restart while the
+        // server was busy timed out the only attempt and left the position on the fallback R.
+        private volatile bool _slRestoreDone;
+        private int _slRestoreInFlight;
+        private DateTime _nextSlRestoreAttempt = DateTime.MinValue;
+        private const int SlRestoreRetrySeconds = 30;
 
         private double _highWatermarkEquity;
         private bool _circuitBreakerTriggered;
@@ -540,7 +546,7 @@ namespace cAlgo.Robots
                 Print($"[FlowRSI] Initialized Successfully! FastRSI({FastRsiPeriod}), SlowRSI({SlowRsiPeriod}), SMC Filter: {EnableSmcFilter}");
 
                 // 6. Recover initial SL distances for positions that survived the restart
-                _ = RestoreInitialSlDistances();
+                RestoreInitialSlDistancesIfDue();
 
                 // 7. Dispatch initial boot snapshot to AI Server
                 if (UseAiGateMode && RunningMode == RunningMode.RealTime)
@@ -1810,14 +1816,23 @@ namespace cAlgo.Robots
                 }
                 else
                 {
-                    // No recorded distance (restart, and the server lookup found no match). The
-                    // CURRENT stop is not the initial risk: on a position already moved to
+                    // No recorded distance (restart, and the server lookup found no match or has
+                    // not answered yet - it is retried until it does). The CURRENT stop is the
+                    // initial risk only while it is still on the losing side of entry. At
                     // break-even it is ~0.5p, which would inflate currentRr ~50x and fire the
-                    // trailing stop on the first tick. Floor it at the same minimum the entry
-                    // sizing uses so R stays bounded.
-                    double measured = pos.StopLoss.HasValue
-                        ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize
-                        : 20.0;
+                    // trailing stop on the first tick. Trailed past entry it is locked profit
+                    // that grows with every move, and the trail distance below grew with it:
+                    // AUDJPY #675464477 after the 2026-09-24 06:25 restart had its stop rising
+                    // at half the pace of price. Floor it at the same minimum the entry sizing
+                    // uses so R stays bounded.
+                    RestoreInitialSlDistancesIfDue();
+
+                    bool stopOnRiskSide = pos.StopLoss.HasValue && (pos.TradeType == TradeType.Buy
+                        ? pos.StopLoss.Value < pos.EntryPrice
+                        : pos.StopLoss.Value > pos.EntryPrice);
+                    double measured = !pos.StopLoss.HasValue
+                        ? 20.0
+                        : (stopOnRiskSide ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize : 0.0);
 
                     double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
                     string symUpperRestore = SymbolName.ToUpperInvariant();
@@ -2996,9 +3011,26 @@ namespace cAlgo.Robots
         // the stop distance reported at entry, so recover it rather than re-deriving R from
         // whatever stop the position carries now - which for a position already at break-even
         // is near zero and inflates currentRr by an order of magnitude.
+        //
+        // Starts a lookup unless one is running, the server has already answered, or the last
+        // attempt failed less than SlRestoreRetrySeconds ago. Called from OnStart and, while a
+        // position has no recorded distance, from ManageExits.
+        private void RestoreInitialSlDistancesIfDue()
+        {
+            if (_slRestoreDone || RunningMode != RunningMode.RealTime) return;
+            if (DateTime.UtcNow < _nextSlRestoreAttempt) return;
+            if (Interlocked.CompareExchange(ref _slRestoreInFlight, 1, 0) != 0) return;
+            _ = RestoreInitialSlDistances();
+        }
+
+        private void ScheduleSlRestoreRetry(string reason)
+        {
+            _nextSlRestoreAttempt = DateTime.UtcNow.AddSeconds(SlRestoreRetrySeconds);
+            if (ShowLogs) Print($"[RestoreInitialSlDistances Error] {reason} Retrying in {SlRestoreRetrySeconds} s while a position has no recorded stop distance.");
+        }
+
         private async Task RestoreInitialSlDistances()
         {
-            if (RunningMode != RunningMode.RealTime || _httpClient == null) return;
             try
             {
                 var baseUri = !string.IsNullOrWhiteSpace(AiReportUrl)
@@ -3007,8 +3039,14 @@ namespace cAlgo.Robots
                 string url = $"{baseUri}/portfolio/open-positions?bot_id={Uri.EscapeDataString(BotId)}&account_number={Account.Number}";
 
                 var response = await _httpClient.GetAsync(url);
-                if (!response.IsSuccessStatusCode) return;
+                if (!response.IsSuccessStatusCode)
+                {
+                    ScheduleSlRestoreRetry($"HTTP {(int)response.StatusCode}.");
+                    return;
+                }
                 string body = await response.Content.ReadAsStringAsync();
+                // Answered: a position without a matching row stays on the floored fallback.
+                _slRestoreDone = true;
 
                 BeginInvokeOnMainThread(() =>
                 {
@@ -3053,7 +3091,11 @@ namespace cAlgo.Robots
             }
             catch (Exception ex)
             {
-                if (ShowLogs) Print($"[RestoreInitialSlDistances Error] {ex.Message}");
+                ScheduleSlRestoreRetry(ex.Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _slRestoreInFlight, 0);
             }
         }
 
