@@ -240,8 +240,25 @@ def test_active_positions_rows_have_a_close_button():
     assert "did not pick up the command within 15 s" in html
 
 
+def test_a_failed_close_re_enables_the_button_on_screen():
+    """The table can be re-rendered while a close waits, drawing a new "Closing…" button:
+    a failure must reset the button in the table now, not only the detached one clicked."""
+    html = client.get("/demo/dashboard").text
+    failure = html[html.index("async function closePosition(btn)"):]
+    failure = failure[failure.index("} catch (err) {"):failure.index("} finally {")]
+    assert "document.querySelectorAll(`#positions-table .action-close-pos[data-id=\"${d.id}\"]`)" in failure
+    assert failure.index("closingPositions.delete(String(d.id));") < failure.index("querySelectorAll")
+
+
 def test_bots_tab_has_pause_resume_and_close_and_stop():
     html = client.get("/demo/dashboard").text
     for snippet in ("action-pause", "action-resume", "action-close-stop", "Close &amp; Stop",
                     "Pausing…", "Resuming…", "Closing & stopping…", "/close-and-stop", ">PAUSED</span>"):
         assert snippet in html, snippet
+
+
+def test_bots_tab_flags_running_containers_that_do_not_poll():
+    html = client.get("/demo/dashboard").text
+    assert "(isRunning && !b.polling)" in html
+    assert ">NOT POLLING</span>" in html
+    assert "${statusHtml}${pausedHtml}${notPollingHtml}" in html

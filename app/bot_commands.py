@@ -11,6 +11,9 @@ touch the DB. That relies on the single-worker service (`uvicorn app.server:app`
 
 An expired command is never handed out: a bot that restarts hours later must not act on a stale
 close. The bot also skips command ids it has already run.
+
+The queue also remembers when each bot last polled, so the Bots tab can flag a running container
+that never asks (NOT POLLING): its Close / Close & Stop would only expire.
 """
 
 import asyncio
@@ -25,6 +28,7 @@ RESULT_TIMEOUT_S = 30.0       # delivered but no report by then -> unconfirmed
 RETAIN_S = 600.0              # finished commands stay readable for the dashboard this long
 WAIT_POLL_S = 0.5             # wait_for_final's polling interval
 CLOSE_AND_STOP_WAIT_S = 20.0  # how long Close & Stop waits for the bot's close_all result
+POLL_STALE_S = 10.0           # no poll for longer than this -> the Bots tab shows NOT POLLING
 
 ACTIONS = ("close_position", "close_all")
 FINAL_STATUSES = ("done", "failed", "expired", "unconfirmed")
@@ -68,6 +72,7 @@ class CommandQueue:
         self._clock = clock
         self._lock = threading.Lock()
         self._commands: Dict[str, Command] = {}
+        self._last_poll: Dict[str, float] = {}
 
     def enqueue(self, bot_id: str, action: str, position_id: Optional[int] = None) -> Command:
         """Queue a command; the same one still in flight (a double click) is returned instead."""
@@ -88,9 +93,11 @@ class CommandQueue:
             return replace(cmd)
 
     def take_pending(self, bot_id: str) -> List[Command]:
-        """The bot's pending commands, marked delivered: each is handed out once."""
+        """The bot's pending commands, marked delivered: each is handed out once. Called only by
+        the bot's poll, so it also records when the bot last polled."""
         with self._lock:
             now = self._clock()
+            self._last_poll[bot_id] = now
             taken = []
             for cmd in self._commands.values():
                 if cmd.bot_id != bot_id:
@@ -126,6 +133,12 @@ class CommandQueue:
                 return None
             self._age(cmd, self._clock())
             return replace(cmd)
+
+    def seconds_since_poll(self, bot_id: str) -> Optional[float]:
+        """Seconds since `bot_id` last polled, or None if it has not polled since the service started."""
+        with self._lock:
+            last = self._last_poll.get(bot_id)
+            return None if last is None else self._clock() - last
 
     # Module constants are read at call time so tests can shorten them.
     def _age(self, cmd: Command, now: float) -> None:

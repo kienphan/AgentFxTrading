@@ -247,6 +247,27 @@ def test_bots_list_shows_pause_and_open_positions(fake_docker, bot_config, clean
     assert bot["bot_id"] == NAME and bot["paused"] is True and bot["open_positions"] == 2
 
 
+def test_bots_list_says_whether_the_bot_polls(fake_docker, bot_config, monkeypatch):
+    """A container whose bot never polls (old .algo, CommandPollMs=0, a BotId that differs from
+    its --BotId) can't receive Close / Close & Stop: /api/bots says so for the NOT POLLING badge."""
+    from app.cbot_watchdog import cbot_watchdog
+    monkeypatch.setattr(cbot_watchdog, "last_health", lambda name: None)
+    now = [1000.0]
+    monkeypatch.setattr(dashboard_module, "command_queue", CommandQueue(clock=lambda: now[0]))
+
+    bot = _bot(NAME)
+    assert bot["polling"] is False and bot["last_poll_age_s"] is None
+
+    _poll(NAME)
+    now[0] += 3
+    bot = _bot(NAME)
+    assert bot["polling"] is True and bot["last_poll_age_s"] == 3
+
+    now[0] += bot_commands.POLL_STALE_S
+    bot = _bot(NAME)
+    assert bot["polling"] is False and bot["last_poll_age_s"] == 3 + bot_commands.POLL_STALE_S
+
+
 class BotThread:
     """Stands in for the cBot: polls the queue and answers every command it is handed."""
 

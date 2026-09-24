@@ -1066,6 +1066,11 @@ def api_get_bots():
         cfg["bot_id"] = bot_id_for_config(cfg)
         cfg["paused"] = pm.is_bot_paused(cfg["bot_id"])
         cfg["open_positions"] = open_counts.get(cfg["bot_id"], 0)
+        # A running bot polls /api/cbot/commands every 2 s; without that, Close and Close & Stop
+        # can't reach it (NOT POLLING badge in the Bots tab).
+        poll_age = command_queue.seconds_since_poll(cfg["bot_id"])
+        cfg["polling"] = poll_age is not None and poll_age <= bot_commands.POLL_STALE_S
+        cfg["last_poll_age_s"] = None if poll_age is None else round(poll_age)
         status_info = docker_manager.get_container_status(cfg["name"])
         status = status_info.get("status", "unknown")
         cfg["status"] = status

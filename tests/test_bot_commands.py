@@ -113,6 +113,17 @@ def test_returned_commands_are_copies(queue):
     assert queue.get(cmd.id).status == "pending"
 
 
+def test_the_queue_remembers_when_each_bot_last_polled(queue, clock):
+    """Feeds the Bots tab's NOT POLLING badge: a bot that never asks can't be reached."""
+    assert queue.seconds_since_poll("bot-a") is None          # not since the service started
+    queue.enqueue("bot-a", "close_all")
+    assert queue.seconds_since_poll("bot-a") is None          # queuing for a bot is not a poll
+    queue.take_pending("bot-a")
+    clock.now += 7.5
+    assert queue.seconds_since_poll("bot-a") == 7.5
+    assert queue.seconds_since_poll("bot-b") is None
+
+
 def test_wait_for_final_returns_once_the_bot_reports(monkeypatch):
     monkeypatch.setattr(bot_commands, "WAIT_POLL_S", 0.01)
     queue = CommandQueue()

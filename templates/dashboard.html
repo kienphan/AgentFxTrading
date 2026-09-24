@@ -998,6 +998,14 @@
                 const pausedHtml = b.paused
                     ? ' <span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b;" title="New entries blocked from the dashboard; open positions are still managed">PAUSED</span>'
                     : '';
+                // A running bot asks /api/cbot/commands every 2 s. One that doesn't can't be reached
+                // by Close / Close & Stop (they expire), and its own pause guard never hears of a Pause.
+                const lastPoll = (b.last_poll_age_s === null || b.last_poll_age_s === undefined)
+                    ? 'since the service started' : `for ${b.last_poll_age_s} s`;
+                const notPollingTitle = `No command poll from bot_id "${b.bot_id}" ${lastPoll}. Close and Close & Stop can't reach this bot and Pause may not stop its entries. Usual causes: still logging in, an .algo built before the command poll, CommandPollMs=0, or the bot reports a BotId other than this container's --BotId.`;
+                const notPollingHtml = (isRunning && !b.polling)
+                    ? ` <span class="badge" style="background:rgba(229,57,53,0.12); color:var(--loss);" title="${escapeHtml(notPollingTitle)}">NOT POLLING</span>`
+                    : '';
                 const pauseBtn = b.paused
                     ? `<button class="log-btn action-resume" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit); margin-right:4px;">Resume</button>`
                     : `<button class="log-btn action-pause" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Pause</button>`;
@@ -1008,7 +1016,7 @@
                 html += `<tr>
                     <td><strong>${b.name}</strong></td>
                     <td>${modeBadge}</td>
-                    <td>${statusHtml}${pausedHtml}</td>
+                    <td>${statusHtml}${pausedHtml}${notPollingHtml}</td>
                     <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
                     <td class="td-dim">${b.description || "-"}</td>
                     <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
@@ -1998,9 +2006,12 @@
                 if (cmd.status !== 'done') throw new Error(commandFailureText(cmd));
                 refreshDashboardData();   // the broadcast normally removes the row first
             } catch (err) {
+                closingPositions.delete(String(d.id));
+                // updateDashboard() may have re-rendered the table while this waited, so `btn` can be
+                // a detached copy: re-enable whichever button shows this row now.
+                document.querySelectorAll(`#positions-table .action-close-pos[data-id="${d.id}"]`)
+                    .forEach(b => { b.disabled = false; b.textContent = 'Close'; });
                 alert(String((err && err.message) || err));
-                btn.disabled = false;
-                btn.textContent = 'Close';
             } finally {
                 closingPositions.delete(String(d.id));
             }
