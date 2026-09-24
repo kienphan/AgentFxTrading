@@ -31,12 +31,15 @@ except ImportError:
 INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError) if HAS_PSYCOPG2 else (sqlite3.IntegrityError,)
 
 
-def _adapt_query_for_pg(sql: str) -> str:
+def _adapt_query_for_pg(sql: str, escape_percent: bool = False) -> str:
     """
     Adapts SQLite query dialect to PostgreSQL:
     - Replaces parameter placeholders '?' with '%s' (when not inside string literals).
     - Replaces SQLite datetime('now') with CURRENT_TIMESTAMP.
     - Replaces AUTOINCREMENT with SERIAL.
+    - With escape_percent, doubles a '%' inside string literals. Pass it when the query goes out
+      with parameters: psycopg2 then formats it client-side, where a lone '%' (LIKE 'EUR%') is a
+      broken placeholder. Without parameters psycopg2 sends the query as written.
     """
     # Ignore SQLite PRAGMAs
     stripped = sql.strip()
@@ -62,7 +65,7 @@ def _adapt_query_for_pg(sql: str) -> str:
     while i < len(adapted):
         char = adapted[i]
         if in_quote:
-            parts.append(char)
+            parts.append("%%" if char == "%" and escape_percent else char)
             if char == in_quote:
                 # Check for escaped quote (e.g. '')
                 if i + 1 < len(adapted) and adapted[i + 1] == in_quote:
@@ -136,7 +139,7 @@ class PostgresCursorWrapper:
         self._cursor = cursor
 
     def execute(self, sql: str, params: Optional[Union[Tuple, List, Dict]] = None):
-        adapted_sql = _adapt_query_for_pg(sql)
+        adapted_sql = _adapt_query_for_pg(sql, escape_percent=params is not None)
         try:
             if params is not None:
                 if isinstance(params, (list, tuple)):
