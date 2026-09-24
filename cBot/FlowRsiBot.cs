@@ -1898,7 +1898,9 @@ namespace cAlgo.Robots
                     double trailStepPrice = Math.Max(1.0, effectiveTrailDistPips * trailStepFraction) * Symbol.PipSize;
 
                     double candidateTrailSL;
-                    bool shouldRemoveTp = RemoveTpOnTrailing;
+                    // Option B: Only remove Take Profit if partial close has already locked in profits.
+                    // If the position is 0.01 lot (indivisible), retain the fixed Take Profit (e.g. 1.5R) to guarantee taking profits.
+                    bool shouldRemoveTp = RemoveTpOnTrailing && _partialCloseApplied.Contains(pos.Id);
                     double? targetTp = shouldRemoveTp ? null : pos.TakeProfit;
 
                     if (pos.TradeType == TradeType.Buy)
