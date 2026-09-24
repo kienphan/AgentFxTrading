@@ -1,7 +1,7 @@
 """
 Tests for FlowRSI TMS Cross-Lock Directional Bias Gatekeeper and Swing Market Structure.
 Ensures:
-1. TMS cross lock is properly tracked, cached, and computed from bars.
+1. A bot's macro TMS cross lock is shared per (symbol, macro timeframe) until the macro bar closes.
 2. True fractal swing market structure is detected (fixing the false BULLISH_HH_HL bug).
 3. Pre-LLM gatekeeper blocks counter-trend entries (BUY when BEARISH, SELL when BULLISH).
 4. Post-LLM guard intercepts and overrides any counter-trend hallucinations.
@@ -18,8 +18,7 @@ from app.server import (
     TmsSignals,
     trade_decision,
     update_tms_cross_lock,
-    get_or_compute_tms_cross_lock,
-    compute_tms_cross_lock_from_bars,
+    get_tms_cross_lock,
     detect_swing_market_structure,
     _TMS_CROSS_LOCK_REGISTRY,
     app,
@@ -29,6 +28,13 @@ from fastapi.testclient import TestClient
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _clear_cross_lock_registry():
+    _TMS_CROSS_LOCK_REGISTRY.clear()
+    yield
+    _TMS_CROSS_LOCK_REGISTRY.clear()
+
+
 def _mock_llm(monkeypatch, payload: dict):
     import app.server as server_mod
     monkeypatch.setattr(
@@ -36,11 +42,21 @@ def _mock_llm(monkeypatch, payload: dict):
     )
 
 
+def _flowrsi_snapshot(symbol="EURUSD", **extra):
+    return MarketSnapshot(
+        bot_id=f"cbot-demo-demo-{symbol.lower()}-all-flowrsi",
+        symbol=symbol,
+        timeframe="Minute15",
+        bid=1.1000,
+        ask=1.1001,
+        **extra,
+    )
+
+
 def test_update_and_get_tms_cross_lock():
     update_tms_cross_lock("TESTUSD", "BEARISH", bars_since_cross=5, source="Test Bot")
-    assert "TESTUSD" in _TMS_CROSS_LOCK_REGISTRY
-    assert _TMS_CROSS_LOCK_REGISTRY["TESTUSD"]["bias"] == "BEARISH"
-    assert _TMS_CROSS_LOCK_REGISTRY["TESTUSD"]["bars_since_cross"] == 5
+    assert _TMS_CROSS_LOCK_REGISTRY["TESTUSD"]["Hour"]["bias"] == "BEARISH"
+    assert _TMS_CROSS_LOCK_REGISTRY["TESTUSD"]["Hour"]["bars_since_cross"] == 5
 
     snap = MarketSnapshot(
         bot_id="FlowRSI-TESTUSD-M15",
@@ -49,7 +65,7 @@ def test_update_and_get_tms_cross_lock():
         bid=1.2000,
         ask=1.2002,
     )
-    bias, age, src = get_or_compute_tms_cross_lock(snap)
+    bias, age, src = get_tms_cross_lock(snap)
     assert bias == "BEARISH"
     assert age == 5
     assert src == "Test Bot"
@@ -244,5 +260,75 @@ def test_api_tms_cross_locks_endpoint():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert "EURUSD" in data["cross_locks"]
-    assert data["cross_locks"]["EURUSD"]["bias"] == "BULLISH"
+    assert data["cross_locks"]["EURUSD"]["Hour"]["bias"] == "BULLISH"
+
+
+def test_cross_lock_expires_when_the_macro_bar_closes(monkeypatch):
+    """A bot's H1 lock describes the H1 bars closed so far; once the next H1 bar
+    closes it may have flipped, so it must not keep gating (it used to for 4 hours)."""
+    import app.server as server_mod
+    top_of_hour = 1_790_000_000 // 3600 * 3600
+    monkeypatch.setattr(server_mod.time, "time", lambda: top_of_hour + 3590)
+    update_tms_cross_lock("EURUSD", "BEARISH", bars_since_cross=4, source="session bot")
+    assert get_tms_cross_lock(_flowrsi_snapshot())[0] == "BEARISH"
+
+    monkeypatch.setattr(server_mod.time, "time", lambda: top_of_hour + 3610)
+    assert get_tms_cross_lock(_flowrsi_snapshot())[0] == "NEUTRAL"
+
+
+def test_cross_lock_is_keyed_by_macro_timeframe():
+    update_tms_cross_lock("EURUSD", "BEARISH", bars_since_cross=4, source="H4 bot", timeframe="Hour4")
+    assert get_tms_cross_lock(_flowrsi_snapshot(tms_timeframe="Hour"))[0] == "NEUTRAL"
+    assert get_tms_cross_lock(_flowrsi_snapshot(tms_timeframe="Hour4"))[0] == "BEARISH"
+
+
+@pytest.mark.anyio
+async def test_trade_decision_records_lock_under_the_senders_macro_timeframe():
+    snap = _flowrsi_snapshot(
+        tms_timeframe="Hour4",
+        tms=TmsSignals(bias="BEARISH", bars_since_cross=3),
+        candidate_action="NONE",
+    )
+    await trade_decision(snap)
+    assert _TMS_CROSS_LOCK_REGISTRY["EURUSD"]["Hour4"]["bias"] == "BEARISH"
+    assert "Hour" not in _TMS_CROSS_LOCK_REGISTRY["EURUSD"]
+
+
+def test_bot_own_lock_wins_over_registry():
+    update_tms_cross_lock("EURUSD", "BEARISH", bars_since_cross=4, source="session bot")
+    snap = _flowrsi_snapshot(tms=TmsSignals(bias="BULLISH", bars_since_cross=2))
+    assert get_tms_cross_lock(snap)[:2] == ("BULLISH", 2)
+
+
+def test_neutral_own_lock_falls_back_to_another_bots_lock():
+    update_tms_cross_lock("EURUSD", "BEARISH", bars_since_cross=4, source="session bot")
+    snap = _flowrsi_snapshot(tms=TmsSignals(bias="NEUTRAL"))
+    assert get_tms_cross_lock(snap) == ("BEARISH", 4, "session bot")
+
+
+def test_h1_trend_bias_does_not_stand_in_for_the_cross_lock():
+    """Audit 3.1 repro: a trend_bias from multi_timeframe was cached as the lock and
+    returned for hours after H1 had turned the other way."""
+    def snap(h1_bias):
+        return MarketSnapshot.model_validate({
+            "request_id": "x", "bot_id": "cbot-demo-demo-eurusd-all-flowrsi", "symbol": "EURUSD",
+            "timeframe": "Minute15", "bid": 1.1, "ask": 1.1001,
+            "multi_timeframe": {"h1_tf": {"timeframe": "Hour", "trend_bias": h1_bias}},
+        })
+
+    get_tms_cross_lock(snap("BEARISH"))
+    assert get_tms_cross_lock(snap("BULLISH"))[0] == "NEUTRAL"
+    assert _TMS_CROSS_LOCK_REGISTRY == {}
+
+
+def test_chart_bars_do_not_stand_in_for_the_macro_lock():
+    """FlowRSI sends its M15 bars; a cross-lock computed from them is an M15 signal,
+    not the H1 lock the gate claims to apply."""
+    bars, p = [], 1.1000
+    for i in range(35):
+        p += 0.0006 if i % 6 < 4 else -0.0003
+        bars.append(BarData(time=f"2026-09-24T00:{i:02d}:00Z", open=p - 0.0002,
+                            high=p + 0.0003, low=p - 0.0004, close=p, volume=100.0))
+    snap = _flowrsi_snapshot(bars=list(reversed(bars)))
+    assert get_tms_cross_lock(snap)[0] == "NEUTRAL"
+    assert _TMS_CROSS_LOCK_REGISTRY == {}

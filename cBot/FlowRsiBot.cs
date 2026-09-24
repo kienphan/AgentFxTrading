@@ -114,6 +114,24 @@ namespace cAlgo.Robots
 
         [Parameter("Min Bars Between Flips", Group = "Macro TMS Trend Filter", DefaultValue = 2, MinValue = 1)]
         public int MinBarsBetweenFlips { get; set; }
+
+        // Keep these equal to AiAgentBot's TMS settings. The server shares one cross-lock per
+        // symbol and macro timeframe between both bots: a FlowRSI bot whose own lock is not yet
+        // confirmed gates on the session bot's, which is only valid if both compute it alike.
+        [Parameter("Macro RSI Period", Group = "Macro TMS Trend Filter", DefaultValue = 6, MinValue = 1)]
+        public int MacroRsiPeriod { get; set; }
+
+        [Parameter("Macro Red (Signal) Period", Group = "Macro TMS Trend Filter", DefaultValue = 6, MinValue = 1)]
+        public int MacroRedPeriod { get; set; }
+
+        [Parameter("Macro Stoch %K Period", Group = "Macro TMS Trend Filter", DefaultValue = 6, MinValue = 1)]
+        public int MacroStochKPeriod { get; set; }
+
+        [Parameter("Macro Stoch %D Period", Group = "Macro TMS Trend Filter", DefaultValue = 6, MinValue = 1)]
+        public int MacroStochDPeriod { get; set; }
+
+        [Parameter("Macro Stoch Slowing", Group = "Macro TMS Trend Filter", DefaultValue = 4, MinValue = 1)]
+        public int MacroStochSlowing { get; set; }
         #endregion
 
         #region Risk Management Engine
@@ -275,10 +293,11 @@ namespace cAlgo.Robots
         private Bars _macroBars;
         private TmsSignals _macroTmsCache;
         private DateTime _macroTmsCacheBucket = DateTime.MinValue;
-        private string _lastConfirmedMacroBias = "NEUTRAL";
+        private string _lastConfirmedMacroBias;          // null until the first confirmed cross
         private DateTime _lastMacroFlipBarTime = DateTime.MinValue;
         private string _lastMacroCrossDir = "none";
         private DateTime _lastMacroCrossBarTime = DateTime.MinValue;
+        private DateTime _lockedMacroCrossBarTime = DateTime.MinValue; // the cross behind the confirmed bias
 
         private bool IsM5OrLower
         {
@@ -406,6 +425,7 @@ namespace cAlgo.Robots
             public string bot_id { get; set; }
             public string symbol { get; set; }
             public string timeframe { get; set; }
+            public string tms_timeframe { get; set; }
             public double ask { get; set; }
             public double bid { get; set; }
             public double current_bid { get; set; }
@@ -905,9 +925,9 @@ namespace cAlgo.Robots
 
         private TmsSignals CalculateMacroTmsSignals()
         {
-            if (_macroBars == null || _macroBars.Count < 25)
+            if (_macroBars == null || _macroBars.Count < MacroRsiPeriod + MacroRedPeriod + 35)
             {
-                return new TmsSignals { bias = _lastConfirmedMacroBias ?? "NEUTRAL", bars_since_cross = 0 };
+                return new TmsSignals { bias = "NEUTRAL", tdi_level = "neutral" };
             }
 
             int count = _macroBars.Count;
@@ -943,12 +963,12 @@ namespace cAlgo.Robots
                 haLow[k] = Math.Min(_macroBars[bIdx].Low, Math.Min(haOpen[k], haClose[k]));
             }
 
-            // 2. Calculate RSI(13) on Heikin Ashi Closes
-            const int rsiPeriod = 13;
-            const int redPeriod = 7;
-            const int stochKPeriod = 8;
-            const int stochDPeriod = 3;
-            const int stochSlowing = 3;
+            // 2. Calculate RSI on Heikin Ashi Closes
+            int rsiPeriod = MacroRsiPeriod;
+            int redPeriod = MacroRedPeriod;
+            int stochKPeriod = MacroStochKPeriod;
+            int stochDPeriod = MacroStochDPeriod;
+            int stochSlowing = MacroStochSlowing;
 
             double[] rsi = new double[lookback];
             double avgGain = 0, avgLoss = 0;
@@ -982,7 +1002,7 @@ namespace cAlgo.Robots
                 }
             }
 
-            // 3. Calculate TDI Red Line (SMA 7 of RSI)
+            // 3. Calculate TDI Red Line (SMA of RSI over redPeriod)
             double[] red = new double[lookback];
             for (int k = 0; k < lookback; k++)
             {
@@ -1063,20 +1083,15 @@ namespace cAlgo.Robots
                 }
             }
 
-            int macroBarsSinceCross = _lastMacroCrossBarTime != DateTime.MinValue
-                ? Math.Max(0, (int)Math.Round((closedMacroTime - _lastMacroCrossBarTime).TotalHours))
-                : 999;
-            string macroCrossDir = _lastMacroCrossDir;
-
-            string bias = macroCrossDir == "up" ? "BULLISH"
-                        : macroCrossDir == "down" ? "BEARISH"
-                        : "NEUTRAL";
+            string candidateBias = _lastMacroCrossDir == "up" ? "BULLISH"
+                                 : _lastMacroCrossDir == "down" ? "BEARISH"
+                                 : "NEUTRAL";
 
             // ---- Bias hysteresis: no directional flip without separation + lockout ----
-            string candidateBias = bias;
+            string bias;
             bool separationOk = Math.Abs(g - r) >= MinTdiFlipSeparation;
             bool lockoutOk = _lastMacroFlipBarTime == DateTime.MinValue
-                             || (closedMacroTime - _lastMacroFlipBarTime).TotalHours >= MinBarsBetweenFlips;
+                             || MacroBarsSince(_lastMacroFlipBarTime) >= MinBarsBetweenFlips;
 
             if (candidateBias == "NEUTRAL")
             {
@@ -1084,17 +1099,27 @@ namespace cAlgo.Robots
             }
             else if (candidateBias == _lastConfirmedMacroBias)
             {
-                // unchanged
+                bias = candidateBias;
+                _lockedMacroCrossBarTime = _lastMacroCrossBarTime;
             }
             else if (_lastConfirmedMacroBias == null || (separationOk && lockoutOk))
             {
+                bias = candidateBias;
                 _lastConfirmedMacroBias = candidateBias;
                 _lastMacroFlipBarTime = closedMacroTime;
+                _lockedMacroCrossBarTime = _lastMacroCrossBarTime;
             }
             else
             {
                 bias = _lastConfirmedMacroBias; // premature flip ignored
             }
+
+            // Describe the cross behind the bias actually held, not a newer one whose flip was
+            // just ignored, so bias, cross_direction and bars_since_cross always agree.
+            string macroCrossDir = bias == "BULLISH" ? "up" : bias == "BEARISH" ? "down" : "none";
+            int macroBarsSinceCross = _lockedMacroCrossBarTime != DateTime.MinValue
+                ? MacroBarsSince(_lockedMacroCrossBarTime)
+                : 999;
 
             string tdiLevel = "neutral";
             if (g < 32) tdiLevel = "oversold";
@@ -1112,6 +1137,15 @@ namespace cAlgo.Robots
             _macroTmsCacheBucket = bucket;
 
             return _macroTmsCache;
+        }
+
+        // Closed macro bars from the bar opened at barTime up to the last closed one. Counted on
+        // the series rather than in hours: TotalHours only equals a bar count on H1, and even
+        // there it counts every weekend gap as bars.
+        private int MacroBarsSince(DateTime barTime)
+        {
+            int idx = _macroBars.OpenTimes.GetIndexByExactTime(barTime);
+            return idx < 0 ? 999 : Math.Max(0, (_macroBars.Count - 2) - idx);
         }
         #endregion
 
@@ -1247,6 +1281,7 @@ namespace cAlgo.Robots
                 var snapshot = new MarketSnapshot
                 {
                     tms = macroTms,
+                    tms_timeframe = MacroTimeFrame.Name,
                     request_id = currentRequestId,
                     bot_id = BotId,
                     symbol = SymbolName,
