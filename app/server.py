@@ -131,19 +131,32 @@ def setup_agent_logging(level=logging.INFO, log_filename: Optional[str] = None):
 
 setup_agent_logging(logging.INFO)
 logger = logging.getLogger("AgentFxTrading")
+
+
+class SkipCommandPollAccessLog(logging.Filter):
+    """Drop uvicorn's access line for the cBots' command poll (GET /api/cbot/commands).
+
+    45 containers poll every 2 s: ~22 lines a second, ~1.9 M a day in journald, none of them
+    telling anything. Their result POSTs and every other route are still logged. uvicorn
+    configures its loggers before importing the app and dictConfig keeps existing filters.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and args[1] == "GET" \
+                and str(args[2]).startswith("/api/cbot/commands"):
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(SkipCommandPollAccessLog())
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 
-def sanitize_bot_id(bot_id: Optional[str]) -> str:
-    if not bot_id:
-        return "default"
-    cleaned = str(bot_id).strip().strip("\"'“”‘’`")
-    if " --" in cleaned:
-        cleaned = cleaned.split(" --")[0].strip()
-    return cleaned.strip("\"'“”‘’`") or "default"
+from app.bot_controls import sanitize_bot_id  # shared with the dashboard's bot-facing routes
 from app.llm_client import create_llm_client, JSONResponseParser, describe_llm_error, _clean_env_float, _clean_env_int, _clean_env_bool
 from app.portfolio import init_portfolio, get_portfolio_manager, is_us_index
 from app.dashboard import router as dashboard_router, broadcast_update, broadcast_tick, broadcast_event, broadcast_decision, record_ai_decision, manager as ws_manager, WebSocketLogHandler, tick_levels

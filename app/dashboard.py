@@ -286,7 +286,7 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
     positions = []
     try:
         query = """
-            SELECT p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
+            SELECT p.id, p.ctrader_id, p.bot_id, p.symbol, UPPER(p.side) as side, p.volume, p.entry_price, p.sl_pips, p.tp_pips, p.entry_time,
                    p.sl_price, p.tp_price, p.account_id, a.account_type, a.label as account_label
             FROM positions p
             LEFT JOIN accounts a ON p.account_id = a.account_id
@@ -1059,9 +1059,13 @@ def api_get_bots():
     from app.cbot_watchdog import cbot_watchdog
     pm = get_portfolio_manager()
     configs = pm.get_cbot_configs()
+    open_counts = pm.open_position_counts()
     # enrich with status; health comes from the watchdog's last cycle (one docker inspect per
     # bot here instead of inspect+logs per bot per 10 s poll)
     for cfg in configs:
+        cfg["bot_id"] = bot_id_for_config(cfg)
+        cfg["paused"] = pm.is_bot_paused(cfg["bot_id"])
+        cfg["open_positions"] = open_counts.get(cfg["bot_id"], 0)
         status_info = docker_manager.get_container_status(cfg["name"])
         status = status_info.get("status", "unknown")
         cfg["status"] = status
@@ -1150,6 +1154,153 @@ def api_remove_bot(name: str):
 def api_restart_bot(name: str):
     result = docker_manager.restart_container(name)
     return result
+
+
+# --- Dashboard -> cBot commands: manual close, pause, Close & Stop (spec 2026-09-24) ---
+# The server cannot reach a cBot: each bot polls GET /api/cbot/commands every 2 s and reports on
+# POST /api/cbot/commands/{id}/result. See app/bot_commands.py and app/bot_controls.py.
+from app import bot_commands
+from app.bot_commands import command_queue, CommandNotFound, CommandNotOwned
+from app.bot_controls import bot_id_for_config, sanitize_bot_id
+
+
+class CommandResultRequest(BaseModel):
+    bot_id: str
+    status: str
+    message: str = ""
+    closed: int = 0
+    failed: int = 0
+
+
+@router.get("/api/cbot/commands")
+async def api_cbot_poll_commands(bot_id: str):
+    """Polled by every cBot every 2 s: its pause flag and its pending commands.
+
+    `async def` and memory-only on purpose: 45 containers make ~22 calls a second, and a DB read
+    here (the old HTTP /api/tick cost ~86 ms a call) would saturate the single uvicorn worker.
+    """
+    bot_id = sanitize_bot_id(bot_id)
+    return {
+        "paused": get_portfolio_manager().is_bot_paused(bot_id),
+        "commands": [cmd.for_bot() for cmd in command_queue.take_pending(bot_id)],
+    }
+
+
+@router.post("/api/cbot/commands/{command_id}/result")
+async def api_cbot_command_result(command_id: str, req: CommandResultRequest):
+    """A cBot reports what came of a command it polled."""
+    if req.status not in ("done", "failed"):
+        return _error(422, "status must be 'done' or 'failed'")
+    try:
+        cmd = command_queue.record_result(command_id, sanitize_bot_id(req.bot_id), req.status,
+                                          req.message, req.closed, req.failed)
+    except CommandNotFound:
+        return _error(404, "Unknown command")
+    except CommandNotOwned:
+        return _error(409, "The command belongs to another bot")
+    log = logger.warning if cmd.status == "failed" else logger.info
+    log(f"[MANUAL] {cmd.bot_id} {cmd.action} {cmd.id[:8]}: {cmd.status} ({cmd.message})")
+    return {"ok": True}
+
+
+@router.get("/api/bot-commands/{command_id}")
+async def api_get_bot_command(command_id: str):
+    """Status of a command, polled by the dashboard after a Close click."""
+    cmd = command_queue.get(command_id)
+    if cmd is None:
+        return _error(404, "Unknown command")
+    return cmd.for_dashboard()
+
+
+def _config_for_bot(pm, bot_id: str) -> Optional[Dict]:
+    """The cbot_configs row whose container reports `bot_id`, or None."""
+    return next((cfg for cfg in pm.get_cbot_configs() if bot_id_for_config(cfg) == bot_id), None)
+
+
+@router.post("/api/positions/{position_id}/close")
+def api_close_position(position_id: int):
+    """Ask the position's bot to close it at market (Close button in Active Positions)."""
+    pm = get_portfolio_manager()
+    pos = pm.get_open_position(position_id)
+    if not pos:
+        return _error(404, "Position not found or already closed")
+    if pos.get("ctrader_id") is None:
+        return _error(409, "This position has no cTrader id recorded; close it in cTrader")
+    cfg = _config_for_bot(pm, pos["bot_id"])
+    if cfg:
+        status = docker_manager.get_container_status(cfg["name"]).get("status")
+        if status != "running":
+            return _error(409, f"Container {cfg['name']} is {status}; close the position in cTrader")
+    cmd = command_queue.enqueue(pos["bot_id"], "close_position", int(pos["ctrader_id"]))
+    logger.warning(f"[MANUAL] Close requested from the dashboard: {pos['side']} {pos['symbol']} "
+                   f"{pos['volume']}L #{pos['ctrader_id']} of {pos['bot_id']} (command {cmd.id[:8]})")
+    return {"success": True, "command_id": cmd.id, "status": cmd.status}
+
+
+def _set_paused(name: str, paused: bool):
+    pm = get_portfolio_manager()
+    cfg = pm.get_cbot_config(name)
+    if not cfg:
+        return _error(404, "Bot config not found")
+    bot_id = bot_id_for_config(cfg)
+    pm.set_bot_paused(bot_id, paused)
+    verb = "Paused" if paused else "Resumed"
+    logger.warning(f"[MANUAL] {verb} new entries for {name} (bot_id {bot_id})")
+    return {"success": True, "bot_id": bot_id, "paused": paused, "message": f"{verb} new entries for {name}"}
+
+
+@router.post("/api/bots/{name}/pause")
+def api_pause_bot(name: str):
+    """Block the container's new entries; it keeps running and managing its open positions."""
+    return _set_paused(name, True)
+
+
+@router.post("/api/bots/{name}/resume")
+def api_resume_bot(name: str):
+    return _set_paused(name, False)
+
+
+@router.post("/api/bots/{name}/close-and-stop")
+async def api_close_and_stop_bot(name: str):
+    """Pause the bot, have it close every position it holds, then stop its container.
+
+    The container is stopped only once the bot reports every close done: stopping it with
+    positions still open would leave them at the broker with nobody managing their stops. On any
+    failure it keeps running, paused, and the message says what is left to close in cTrader.
+    Docker and DB calls go through asyncio.to_thread so the wait never blocks the event loop.
+    """
+    pm = get_portfolio_manager()
+    cfg = await asyncio.to_thread(pm.get_cbot_config, name)
+    if not cfg:
+        return _error(404, "Bot config not found")
+    status = (await asyncio.to_thread(docker_manager.get_container_status, name)).get("status")
+    if status != "running":
+        return _error(409, f"Container {name} is {status}; its positions can't be closed from here, use cTrader")
+
+    bot_id = bot_id_for_config(cfg)
+    await asyncio.to_thread(pm.set_bot_paused, bot_id, True)
+    cmd = command_queue.enqueue(bot_id, "close_all")
+    logger.warning(f"[MANUAL] Close & Stop requested for {name}: paused, close_all command {cmd.id[:8]}")
+
+    final = await bot_commands.wait_for_final(command_queue, cmd.id, bot_commands.CLOSE_AND_STOP_WAIT_S)
+    if final is None or final.status != "done" or final.failed:
+        why = (final.message or final.status) if final else "command lost"
+        message = (f"{name} was NOT stopped: its positions could not all be closed ({why}). "
+                   f"It keeps running, paused, and still manages its stops. Close what is left in cTrader.")
+        logger.warning(f"[MANUAL] {message}")
+        return {"success": False, "stage": "close", "paused": True, "message": message}
+
+    stopped = await asyncio.to_thread(docker_manager.stop_container, name)
+    if not stopped.get("success"):
+        message = (f"Closed {final.closed} position(s) of {name}, but the container did not stop: "
+                   f"{stopped.get('message', 'docker error')}")
+        logger.warning(f"[MANUAL] {message}")
+        return {"success": False, "stage": "stop", "paused": True, "closed": final.closed, "message": message}
+
+    message = (f"Closed {final.closed} position(s) and stopped {name}. "
+               f"It stays paused: after Start, click Resume to trade again.")
+    logger.warning(f"[MANUAL] {message}")
+    return {"success": True, "closed": final.closed, "paused": True, "message": message}
 
 # --- cTrader accounts & preset-based instance setup (Setup Instances screen) ---
 from fastapi.responses import JSONResponse

@@ -226,3 +226,22 @@ def test_position_pips_are_read_from_every_alias_a_cbot_sends():
 
     # A genuine zero is not mistaken for "absent" and replaced by a later alias
     assert PositionInfo(unrealized_pnl_pips=0.0, pnl_pips=-9.0).resolved_pnl_pips == 0.0
+
+
+def test_active_positions_rows_have_a_close_button():
+    html = client.get("/demo/dashboard").text
+    assert "action-close-pos" in html
+    assert "fetch(`/api/positions/${d.id}/close`" in html
+    assert "fetch(`/api/bot-commands/${id}`)" in html
+    assert 'colspan="11" class="empty-state">No active positions' in html
+    assert 'colspan="10" class="empty-state">No active positions' not in html
+    # delegated once on the tbody, so rows re-rendered by updateDashboard() keep working
+    assert "document.getElementById('positions-table').addEventListener('click'" in html
+    assert "did not pick up the command within 15 s" in html
+
+
+def test_bots_tab_has_pause_resume_and_close_and_stop():
+    html = client.get("/demo/dashboard").text
+    for snippet in ("action-pause", "action-resume", "action-close-stop", "Close &amp; Stop",
+                    "Pausing…", "Resuming…", "Closing & stopping…", "/close-and-stop", ">PAUSED</span>"):
+        assert snippet in html, snippet

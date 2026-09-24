@@ -213,6 +213,7 @@
                                         <th>SL / TP</th>
                                         <th>Unrealized P&amp;L</th>
                                         <th>Open Time</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="positions-table">
@@ -271,9 +272,12 @@
                                             {% endif %}
                                         </td>
                                         <td class="td-dim">{{ pos.entry_time }}</td>
+                                        <td class="td-actions">
+                                            <button class="log-btn action-close-pos" data-id="{{ pos.id }}" data-bot="{{ pos.bot_id }}" data-symbol="{{ pos.symbol }}" data-side="{{ pos.side }}" data-volume="{{ pos.volume }}" data-live="{{ '1' if pos.account_type == 'live' else '0' }}"{% if not pos.ctrader_id %} disabled title="No cTrader id recorded for this position - close it in cTrader"{% endif %} style="background:rgba(229,57,53,0.15); color:var(--loss);">Close</button>
+                                        </td>
                                     </tr>
                                     {% else %}
-                                    <tr><td colspan="10" class="empty-state">No active positions</td></tr>
+                                    <tr><td colspan="11" class="empty-state">No active positions</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -990,16 +994,26 @@
                 const modeBadge = (b.account_type === 'live')
                     ? '<span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>'
                     : '<span class="badge badge--demo"><span class="badge-dot"></span>DEMO</span>';
+                // Pause blocks new entries only; the container keeps managing its open positions.
+                const pausedHtml = b.paused
+                    ? ' <span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b;" title="New entries blocked from the dashboard; open positions are still managed">PAUSED</span>'
+                    : '';
+                const pauseBtn = b.paused
+                    ? `<button class="log-btn action-resume" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit); margin-right:4px;">Resume</button>`
+                    : `<button class="log-btn action-pause" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Pause</button>`;
+                const closeStopBtn = isRunning
+                    ? `<button class="log-btn action-close-stop" data-name="${b.name}" data-open="${b.open_positions || 0}" data-live="${b.account_type === 'live' ? '1' : '0'}" style="background:var(--loss); color:#fff; margin-right:4px;">Close &amp; Stop</button>`
+                    : '';
                 
                 html += `<tr>
                     <td><strong>${b.name}</strong></td>
                     <td>${modeBadge}</td>
-                    <td>${statusHtml}</td>
+                    <td>${statusHtml}${pausedHtml}</td>
                     <td class="td-dim">${b.container_id ? b.container_id.substring(0,12) : "-"}</td>
                     <td class="td-dim">${b.description || "-"}</td>
                     <td class="td-dim" style="font-family:monospace; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapedCmd}">${b.run_command}</td>
                     <td style="text-align:right; white-space:nowrap;">
-                        ${isRunning 
+                        ${pauseBtn}${closeStopBtn}${isRunning 
                             ? `<button class="log-btn action-restart" data-name="${b.name}" style="background:rgba(255,193,7,0.15); color:#f59e0b; margin-right:4px;">Restart</button><button class="log-btn action-stop" data-name="${b.name}" style="background:rgba(229,57,53,0.15); color:var(--loss);">Stop</button>`
                             : `<button class="log-btn action-start" data-name="${b.name}" style="background:rgba(125,189,30,0.15); color:var(--profit);">Start</button>`
                         }
@@ -1014,6 +1028,9 @@
             document.querySelectorAll(".action-stop").forEach(btn => btn.addEventListener("click", e => actionBot(e.currentTarget.dataset.name, "stop", e.currentTarget)));
             document.querySelectorAll(".action-delete").forEach(btn => btn.addEventListener("click", e => deleteBot(e.currentTarget.dataset.name, e.currentTarget)));
             document.querySelectorAll(".action-restart").forEach(btn => btn.addEventListener("click", e => actionBot(e.currentTarget.dataset.name, "restart", e.currentTarget)));
+            document.querySelectorAll(".action-pause").forEach(btn => btn.addEventListener("click", e => actionBot(e.currentTarget.dataset.name, "pause", e.currentTarget)));
+            document.querySelectorAll(".action-resume").forEach(btn => btn.addEventListener("click", e => actionBot(e.currentTarget.dataset.name, "resume", e.currentTarget)));
+            document.querySelectorAll(".action-close-stop").forEach(btn => btn.addEventListener("click", e => closeAndStopBot(e.currentTarget)));
             document.querySelectorAll(".action-edit").forEach(btn => btn.addEventListener("click", e => {
                 const bName = btn.dataset.name;
                 const bDesc = btn.dataset.desc;
@@ -1032,7 +1049,8 @@
                 document.getElementById("bot-cmd").focus();
             }));
         }
-        const BOT_ACTION_PENDING = { start: "Starting…", stop: "Stopping…", restart: "Restarting…", delete: "Deleting…" };
+        const BOT_ACTION_PENDING = { start: "Starting…", stop: "Stopping…", restart: "Restarting…", delete: "Deleting…",
+                                     pause: "Pausing…", resume: "Resuming…", "close-and-stop": "Closing & stopping…" };
         // Docker stop/restart wait up to 10 s for the cBot to exit; lock the row and say so meanwhile.
         function lockBotRow(btn, action) {
             const buttons = btn ? Array.from(btn.closest("tr").querySelectorAll("button")) : [];
@@ -1047,6 +1065,21 @@
                 const res = await fetch(`/api/bots/${name}/${action}`, { method: "POST" });
                 const data = await res.json();
                 if(!data.success) alert(data.message || "Error");
+            } catch(e) { alert("Error: " + e); }
+            finally { unlock(); }
+        }
+        // Kill switch: pause, close every position the bot holds, then stop the container. The server
+        // stops it only when the bot confirms every close; otherwise it keeps running, paused.
+        async function closeAndStopBot(btn) {
+            const name = btn.dataset.name;
+            const n = btn.dataset.open || '0';
+            const prefix = btn.dataset.live === '1' ? '[LIVE] ' : '';
+            if (!confirm(`${prefix}Close ${n} open position(s) of ${name} at market, then stop the container?\n\nThe bot is paused first. If a position cannot be closed, the container keeps running (paused) so it still manages its stops.`)) return;
+            const unlock = lockBotRow(btn, "close-and-stop");
+            try {
+                const res = await fetch(`/api/bots/${name}/close-and-stop`, { method: "POST" });
+                const data = await res.json();
+                alert(data.message || (data.success ? "Done" : "Error"));
             } catch(e) { alert("Error: " + e); }
             finally { unlock(); }
         }
@@ -1894,7 +1927,7 @@
 
             const tb=document.getElementById('positions-table'),ah=isMultiAcc?'':'hidden';
             if(!positions.length){
-                tb.innerHTML='<tr><td colspan="10" class="empty-state">No active positions</td></tr>';
+                tb.innerHTML='<tr><td colspan="11" class="empty-state">No active positions</td></tr>';
             } else {
                 tb.innerHTML=positions.map(p=>{
                     const curPrice = (p.current_price !== undefined && p.current_price !== null) ? p.current_price : p.entry_price;
@@ -1912,6 +1945,7 @@
                         <td class="td-sltp">${sltpCellHtml(p, true)}</td>
                         <td class="td-pnl-live">${pnlCell}</td>
                         <td class="td-dim">${p.entry_time}</td>
+                        <td class="td-actions">${closeButtonHtml(p)}</td>
                     </tr>`;
                 }).join('');
             }
@@ -1919,6 +1953,62 @@
                 updateExposureChart(positions);
             }
         }
+        // --- Manual close (Close button in Active Positions) ---
+        // The dashboard queues the close; the position's bot picks it up within ~2 s, closes it at
+        // market and reports back. The existing broadcast then removes the row.
+        const closingPositions = new Set();   // row ids with a close in flight (survives re-renders)
+        const COMMAND_FAILURE_TEXT = {
+            expired: 'The bot did not pick up the command within 15 s - it may be stuck or running an old build. Close the position in cTrader.',
+            unconfirmed: 'The bot received the command but never reported back. Check the position in cTrader.',
+        };
+        function commandFailureText(cmd) {
+            return COMMAND_FAILURE_TEXT[cmd.status] || `Close failed: ${cmd.message || cmd.status}`;
+        }
+        function closeButtonHtml(p) {
+            const closing = closingPositions.has(String(p.id));
+            const noId = !p.ctrader_id;
+            const title = noId ? ' title="No cTrader id recorded for this position - close it in cTrader"' : '';
+            return `<button class="log-btn action-close-pos" data-id="${p.id}" data-bot="${escapeHtml(p.bot_id||'')}" data-symbol="${escapeHtml(p.symbol||'')}" data-side="${escapeHtml(p.side||'')}" data-volume="${p.volume}" data-live="${p.account_type==='live'?'1':'0'}"${(noId||closing)?' disabled':''}${title} style="background:rgba(229,57,53,0.15); color:var(--loss);">${closing?'Closing…':'Close'}</button>`;
+        }
+        async function waitForBotCommand(id, maxSeconds = 35) {
+            for (let i = 0; i < maxSeconds; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                const res = await fetch(`/api/bot-commands/${id}`);
+                if (!res.ok) continue;
+                const cmd = await res.json();
+                if (['done', 'failed', 'expired', 'unconfirmed'].includes(cmd.status)) return cmd;
+            }
+            return { status: 'unconfirmed', message: '' };
+        }
+        async function closePosition(btn) {
+            const d = btn.dataset;
+            const tr = btn.closest('tr');
+            const pnlCell = tr ? tr.querySelector('.td-pnl-live') : null;
+            const pnlText = pnlCell ? pnlCell.textContent.trim() : '';
+            const prefix = d.live === '1' ? '[LIVE] ' : '';
+            if (!confirm(`${prefix}Close ${d.side} ${d.symbol} ${d.volume}L of ${d.bot} at market?\nCurrent P&L: ${pnlText || 'n/a'}`)) return;
+            closingPositions.add(String(d.id));
+            btn.disabled = true;
+            btn.textContent = 'Closing…';
+            try {
+                const res = await fetch(`/api/positions/${d.id}/close`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message || 'Close refused');
+                const cmd = await waitForBotCommand(data.command_id);
+                if (cmd.status !== 'done') throw new Error(commandFailureText(cmd));
+                refreshDashboardData();   // the broadcast normally removes the row first
+            } catch (err) {
+                alert(String((err && err.message) || err));
+                btn.disabled = false;
+                btn.textContent = 'Close';
+            } finally {
+                closingPositions.delete(String(d.id));
+            }
+        }
+        document.getElementById('positions-table').addEventListener('click', e => {
+            const btn = e.target.closest('.action-close-pos');
+            if (btn && !btn.disabled) closePosition(btn);
+        });
 
         // Periodic Session & Killzone Status Refresher
         async function refreshMarketSessions() {
