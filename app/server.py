@@ -659,16 +659,18 @@ def get_or_compute_tms_cross_lock(snapshot: MarketSnapshot) -> Tuple[str, int, s
     5. Falls back to NEUTRAL if undetermined.
     """
     sym = (snapshot.symbol or "").upper()
-    cached = _TMS_CROSS_LOCK_REGISTRY.get(sym)
-    if cached and (time.time() - cached.get("timestamp", 0) < 14400):
-        return cached["bias"], cached.get("bars_since_cross", 0), cached.get("source", "TMS Bot")
-
+    # 1. Authoritative: snapshot directly carries bot-calculated Macro TMS
     if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
         b = snapshot.tms.bias.upper()
         age = snapshot.tms.bars_since_cross
-        src = f"{snapshot.bot_id} (Direct TMS)"
+        src = f"{snapshot.bot_id} (Macro TMS)"
         update_tms_cross_lock(sym, b, age, source=src)
         return b, age, src
+
+    # 2. Check cached registry
+    cached = _TMS_CROSS_LOCK_REGISTRY.get(sym)
+    if cached and (time.time() - cached.get("timestamp", 0) < 14400):
+        return cached["bias"], cached.get("bars_since_cross", 0), cached.get("source", "TMS Bot")
 
     if snapshot.multi_timeframe and snapshot.multi_timeframe.h1_tf and snapshot.multi_timeframe.h1_tf.trend_bias:
         h1_bias = snapshot.multi_timeframe.h1_tf.trend_bias.upper()
