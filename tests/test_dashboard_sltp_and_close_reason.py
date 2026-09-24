@@ -121,7 +121,7 @@ def test_tick_levels_parses_both_payload_shapes():
 
     # WebSocket tick (AiAgentBot, Judas): sl / tp / sl_pnl / tp_pnl
     assert tick_levels({"sl": 2490.0, "tp": None, "sl_pnl": -101.234, "tp_pnl": None}) == {
-        "sl_price": 2490.0, "tp_price": None, "sl_pnl": -101.23, "tp_pnl": None}
+        "sl_price": 2490.0, "tp_price": None, "sl_pnl": -101.23, "tp_pnl": None, "no_tp": True}
     # FlowRsiBot position entry: sl_price / tp_price
     assert tick_levels({"sl_price": 1.1, "tp_price": 1.2, "sl_pnl": -5, "tp_pnl": 10})["tp_price"] == 1.2
     # A bot build without levels -> None, so the cached levels are left alone

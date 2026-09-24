@@ -109,6 +109,10 @@ def _attach_live_metrics(pos: Dict, bot_report: Optional[Dict], price_info: Opti
             pos[pnl_key] = report.get(pnl_key)
         else:
             pos[pnl_key] = None
+    # With the TP gone at the broker, the entry-time one in the row is not where the trade exits.
+    pos["no_tp"] = _no_live_tp(report)
+    if pos["no_tp"]:
+        pos["tp_price"] = None
 
     if bot_report and bot_report.get("unrealized_pnl") is not None:
         pos["unrealized_pnl"] = round(bot_report["unrealized_pnl"], 2)
@@ -146,12 +150,24 @@ def tick_levels(payload: Any) -> Optional[Dict]:
             return round(num, 2) if not positive else num
         return None
 
-    return {
+    levels = {
         "sl_price": number("sl_price", "sl", positive=True),
         "tp_price": number("tp_price", "tp", positive=True),
         "sl_pnl": number("sl_pnl"),
         "tp_pnl": number("tp_pnl"),
     }
+    levels["no_tp"] = _no_live_tp(levels)
+    return levels
+
+
+def _no_live_tp(levels: Dict) -> bool:
+    """A bot's live levels hold a stop but no target: the broker has no TP on the position.
+
+    FlowRSI takes the TP off when it starts trailing the runner left after its partial close,
+    so the trade then exits only at its stop. Bots send SL and TP as a pair, so a report without
+    a stop says nothing about the TP.
+    """
+    return bool(levels.get("sl_price")) and not levels.get("tp_price")
 
 
 logger = logging.getLogger(__name__)

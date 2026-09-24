@@ -120,6 +120,8 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .td-times{white-space:nowrap}.td-times .sltp-tag{min-width:26px}
 .duration-chip{display:inline-block;margin-left:4px;padding:0 6px;border-radius:4px;background:rgba(56,189,248,0.12);color:#38bdf8;font-family:var(--font-mono);font-size:0.68rem;font-weight:600}
 .sltp-tag{display:inline-block;min-width:18px;color:var(--text-muted);font-size:0.62rem;font-weight:700;letter-spacing:0.04em}
+.sltp-chip{display:inline-block;margin-left:2px;padding:0 5px;border-radius:4px;background:var(--profit-soft);color:var(--profit);font-size:0.6rem;font-weight:700;letter-spacing:0.03em;cursor:help}
+.sltp-none{color:var(--text-muted);border-bottom:1px dotted currentColor;cursor:help}
 .td-reason{max-width:220px}
 .reason-chip{display:inline-block;max-width:100%;padding:2px 6px;border-radius:3px;font-size:0.68rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;background:rgba(160,160,160,0.12);color:var(--text-muted);border:1px solid rgba(160,160,160,0.25)}
 .reason-chip--profit{background:var(--profit-soft);color:var(--profit);border-color:rgba(125,189,30,0.3)}

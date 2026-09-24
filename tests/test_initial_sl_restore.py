@@ -89,3 +89,38 @@ def test_fallback_refuses_to_treat_a_break_even_stop_as_initial_risk():
         "The fallback still uses the raw current stop distance. On a position already "
         "at break-even that is ~0.5p, which inflates currentRr by ~50x."
     )
+
+
+def _fallback_region() -> str:
+    body = _method_body("private void ManageExits()")
+    start = body.index("else", body.index("_initialSlDistances.ContainsKey(pos.Id)"))
+    return body[start : body.index("double currentRr")]
+
+
+def test_fallback_measures_the_stop_only_while_it_is_on_the_losing_side():
+    """AUDJPY #675464477, 2026-09-24: the fallback measured a stop trailed 30p past entry as
+    the initial risk. The trail distance is max(floor, that), so every move widened the next
+    one and the stop rose at about half the pace of price (49p behind at 112.00, not 27p).
+    A stop at or past entry is locked profit: the fallback must fall to the floor instead."""
+    fallback = _fallback_region()
+    assert "pos.StopLoss.Value < pos.EntryPrice" in fallback, "BUY: stop below entry is risk"
+    assert "pos.StopLoss.Value > pos.EntryPrice" in fallback, "SELL: stop above entry is risk"
+    assert "Math.Max(measured, effectiveMinSl)" in fallback
+
+
+def test_a_failed_restore_is_retried_until_the_server_answers():
+    """The same restart timed out the only restore call (60 s, server busy restarting) and
+    nothing tried again, so the position stayed on the fallback R until it closed."""
+    restore = _method_body("private async Task RestoreInitialSlDistances()")
+    assert restore.count("ScheduleSlRestoreRetry(") == 2, "an error status and an exception both retry"
+    assert restore.index("IsSuccessStatusCode") < restore.index("_slRestoreDone = true")
+    assert "Interlocked.Exchange(ref _slRestoreInFlight, 0);" in restore[restore.rindex("finally"):]
+
+    gate = _method_body("private void RestoreInitialSlDistancesIfDue()")
+    assert "_slRestoreDone" in gate and "_nextSlRestoreAttempt" in gate
+    assert "Interlocked.CompareExchange(ref _slRestoreInFlight, 1, 0)" in gate
+
+    assert "RestoreInitialSlDistancesIfDue();" in _method_body("protected override void OnStart()")
+    assert "RestoreInitialSlDistancesIfDue();" in _fallback_region(), (
+        "only a position without a recorded distance needs the server lookup"
+    )
