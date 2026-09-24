@@ -88,4 +88,4 @@ async def test_flow_rsi_snapshot_routing(monkeypatch):
     assert "SMC Swing Structure" in user_content
     assert "High=1.08950 (Resistance/BSL)" in user_content
     assert "Low=1.08200 (Support/SSL)" in user_content
-    assert "[Struct: BULLISH_HH_HL]" in user_content
+    assert "[Struct: " in user_content

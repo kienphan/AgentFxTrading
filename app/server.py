@@ -18,7 +18,8 @@ import datetime
 import asyncio
 import logging.handlers
 import threading
-from typing import Optional, List, Dict, Any, Union
+import time
+from typing import Optional, List, Dict, Any, Union, Tuple
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
 
@@ -514,6 +515,234 @@ class AgentDecision(BaseModel):
             return float(v)
         except (ValueError, TypeError):
             return defaults.get(info.field_name, 0.0)
+
+_TMS_CROSS_LOCK_REGISTRY: Dict[str, dict] = {}
+
+def update_tms_cross_lock(symbol: str, bias: str, bars_since_cross: int = 0, source: str = "Macro TMS"):
+    """Record or update authoritative TMS cross-lock directional bias for a symbol."""
+    sym = (symbol or "").upper()
+    b = (bias or "").upper()
+    if not sym or b not in ("BULLISH", "BEARISH"):
+        return
+    _TMS_CROSS_LOCK_REGISTRY[sym] = {
+        "bias": b,
+        "bars_since_cross": max(0, int(bars_since_cross or 0)),
+        "timestamp": time.time(),
+        "source": source,
+    }
+
+def compute_tms_cross_lock_from_bars(bars_list: Optional[List[Any]]) -> Tuple[Optional[str], int]:
+    """
+    Computes Heikin-Ashi, TDI (RSI 13, Green 2, Red 7), and Stochastic (8,3,3)
+    from BarInfo list (newest first). Scans backward for the most recent
+    confirmed cross lock (mirrors AiAgentBot.cs dnse-kash logic).
+    Returns (locked_bias, bars_since_cross).
+    """
+    if not bars_list or len(bars_list) < 18:
+        return None, 0
+
+    chron = list(reversed(bars_list))
+    n = len(chron)
+
+    # 1. Heikin-Ashi
+    ha_close = []
+    ha_open = []
+    ha_high = []
+    ha_low = []
+    for i, b in enumerate(chron):
+        o = getattr(b, 'open', b.get('open', 0.0) if isinstance(b, dict) else 0.0)
+        h = getattr(b, 'high', b.get('high', 0.0) if isinstance(b, dict) else 0.0)
+        l = getattr(b, 'low', b.get('low', 0.0) if isinstance(b, dict) else 0.0)
+        c = getattr(b, 'close', b.get('close', 0.0) if isinstance(b, dict) else 0.0)
+        hc = (o + h + l + c) / 4.0
+        if i == 0:
+            ho = (o + c) / 2.0
+        else:
+            ho = (ha_open[-1] + ha_close[-1]) / 2.0
+        hh = max(h, ho, hc)
+        hl = min(l, ho, hc)
+        ha_close.append(hc)
+        ha_open.append(ho)
+        ha_high.append(hh)
+        ha_low.append(hl)
+
+    # 2. RSI(13) on ha_close
+    rsi_period = 13
+    gains = []
+    losses = []
+    for i in range(1, n):
+        diff = ha_close[i] - ha_close[i-1]
+        gains.append(max(diff, 0.0))
+        losses.append(max(-diff, 0.0))
+
+    if len(gains) < rsi_period:
+        return None, 0
+
+    avg_gain = sum(gains[:rsi_period]) / rsi_period
+    avg_loss = sum(losses[:rsi_period]) / rsi_period
+    
+    rsi = [50.0] * rsi_period
+    rs = avg_gain / (avg_loss if avg_loss > 1e-9 else 1e-9)
+    rsi.append(100.0 - (100.0 / (1.0 + rs)))
+
+    for i in range(rsi_period, len(gains)):
+        avg_gain = (avg_gain * (rsi_period - 1) + gains[i]) / rsi_period
+        avg_loss = (avg_loss * (rsi_period - 1) + losses[i]) / rsi_period
+        rs = avg_gain / (avg_loss if avg_loss > 1e-9 else 1e-9)
+        rsi.append(100.0 - (100.0 / (1.0 + rs)))
+
+    # 3. TDI Green = SMA(RSI, 2), Red = SMA(RSI, 7)
+    tdi_green = []
+    tdi_red = []
+    for i in range(n):
+        if i < 1:
+            tdi_green.append(rsi[i])
+        else:
+            tdi_green.append((rsi[i] + rsi[i-1]) / 2.0)
+        if i < 6:
+            tdi_red.append(rsi[i])
+        else:
+            tdi_red.append(sum(rsi[i-6:i+1]) / 7.0)
+
+    # 4. Stochastic %K(8, 3), %D(3) on ha_close
+    stoch_period = 8
+    fast_k = []
+    for i in range(n):
+        if i < stoch_period - 1:
+            fast_k.append(50.0)
+        else:
+            window_low = min(ha_low[i-stoch_period+1:i+1])
+            window_high = max(ha_high[i-stoch_period+1:i+1])
+            rng = window_high - window_low
+            k_val = 50.0 if rng <= 1e-9 else ((ha_close[i] - window_low) / rng) * 100.0
+            fast_k.append(k_val)
+
+    stoch_k = []
+    for i in range(n):
+        if i < 2:
+            stoch_k.append(fast_k[i])
+        else:
+            stoch_k.append(sum(fast_k[i-2:i+1]) / 3.0)
+
+    stoch_d = []
+    for i in range(n):
+        if i < 2:
+            stoch_d.append(stoch_k[i])
+        else:
+            stoch_d.append(sum(stoch_k[i-2:i+1]) / 3.0)
+
+    # 5. Backward scan for the most recent confirmed cross (Cross-Lock)
+    for k in range(n - 1, 0, -1):
+        c_up = (rsi[k-1] <= tdi_red[k-1] and rsi[k] > tdi_red[k]) and (ha_close[k] > ha_open[k]) and (stoch_k[k] > stoch_d[k])
+        c_dn = (rsi[k-1] >= tdi_red[k-1] and rsi[k] < tdi_red[k]) and (ha_close[k] < ha_open[k]) and (stoch_k[k] < stoch_d[k])
+        if c_up:
+            return "BULLISH", (n - 1) - k
+        elif c_dn:
+            return "BEARISH", (n - 1) - k
+
+    # Fallback to current alignment if no fresh cross within bar window
+    last = n - 1
+    if rsi[last] > tdi_red[last] and ha_close[last] > ha_open[last]:
+        return "BULLISH", 0
+    elif rsi[last] < tdi_red[last] and ha_close[last] < ha_open[last]:
+        return "BEARISH", 0
+
+    return None, 0
+
+def get_or_compute_tms_cross_lock(snapshot: MarketSnapshot) -> Tuple[str, int, str]:
+    """
+    Returns (locked_bias, bars_since_cross, source).
+    1. Checks _TMS_CROSS_LOCK_REGISTRY (from running TMS bots, fresh within 4 hours).
+    2. If snapshot itself carries tms, caches and returns it.
+    3. Checks snapshot.multi_timeframe.h1_tf trend_bias.
+    4. Computes directly from snapshot.bars.
+    5. Falls back to NEUTRAL if undetermined.
+    """
+    sym = (snapshot.symbol or "").upper()
+    cached = _TMS_CROSS_LOCK_REGISTRY.get(sym)
+    if cached and (time.time() - cached.get("timestamp", 0) < 14400):
+        return cached["bias"], cached.get("bars_since_cross", 0), cached.get("source", "TMS Bot")
+
+    if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
+        b = snapshot.tms.bias.upper()
+        age = snapshot.tms.bars_since_cross
+        src = f"{snapshot.bot_id} (Direct TMS)"
+        update_tms_cross_lock(sym, b, age, source=src)
+        return b, age, src
+
+    if snapshot.multi_timeframe and snapshot.multi_timeframe.h1_tf and snapshot.multi_timeframe.h1_tf.trend_bias:
+        h1_bias = snapshot.multi_timeframe.h1_tf.trend_bias.upper()
+        if h1_bias in ("BULLISH", "BEARISH"):
+            update_tms_cross_lock(sym, h1_bias, 0, source="Multi-Timeframe H1")
+            return h1_bias, 0, "Multi-Timeframe H1"
+
+    if snapshot.bars and len(snapshot.bars) >= 18:
+        b, age = compute_tms_cross_lock_from_bars(snapshot.bars)
+        if b in ("BULLISH", "BEARISH"):
+            update_tms_cross_lock(sym, b, age, source="Bars Computed TMS Cross-Lock")
+            return b, age, "Bars Computed TMS Cross-Lock"
+
+    return "NEUTRAL", 0, "None"
+
+def detect_swing_market_structure(bars_list: Optional[List[Any]], cur_p: float) -> Tuple[str, float, float]:
+    """
+    Detects true market structure (BULLISH_HH_HL, BEARISH_LH_LL, SIDEWAYS)
+    from fractal swing points in bars_list (newest first).
+    Returns (structure_label, recent_high, recent_low).
+    """
+    if not bars_list or len(bars_list) < 5:
+        return "SIDEWAYS", 0.0, 0.0
+
+    chron = list(reversed(bars_list))
+    n = len(chron)
+
+    swing_highs = []  # (index, price)
+    swing_lows = []   # (index, price)
+
+    for i in range(1, n - 1):
+        b_prev, b_curr, b_next = chron[i-1], chron[i], chron[i+1]
+        h_prev = getattr(b_prev, 'high', b_prev.get('high', 0.0) if isinstance(b_prev, dict) else 0.0)
+        h_curr = getattr(b_curr, 'high', b_curr.get('high', 0.0) if isinstance(b_curr, dict) else 0.0)
+        h_next = getattr(b_next, 'high', b_next.get('high', 0.0) if isinstance(b_next, dict) else 0.0)
+
+        l_prev = getattr(b_prev, 'low', b_prev.get('low', 0.0) if isinstance(b_prev, dict) else 0.0)
+        l_curr = getattr(b_curr, 'low', b_curr.get('low', 0.0) if isinstance(b_curr, dict) else 0.0)
+        l_next = getattr(b_next, 'low', b_next.get('low', 0.0) if isinstance(b_next, dict) else 0.0)
+
+        if h_curr > h_prev and h_curr >= h_next:
+            swing_highs.append((i, h_curr))
+        if l_curr < l_prev and l_curr <= l_next:
+            swing_lows.append((i, l_curr))
+
+    last_h = swing_highs[-1][1] if swing_highs else max(getattr(b, 'high', b.get('high', 0.0) if isinstance(b, dict) else 0.0) for b in chron)
+    last_l = swing_lows[-1][1] if swing_lows else min(getattr(b, 'low', b.get('low', 0.0) if isinstance(b, dict) else 0.0) for b in chron)
+
+    if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+        last_sh, prev_sh = swing_highs[-1][1], swing_highs[-2][1]
+        last_sl, prev_sl = swing_lows[-1][1], swing_lows[-2][1]
+
+        if last_sh > prev_sh and last_sl > prev_sl:
+            return "BULLISH_HH_HL", last_h, last_l
+        elif last_sh < prev_sh and last_sl < prev_sl:
+            return "BEARISH_LH_LL", last_h, last_l
+        elif last_sh < prev_sh and last_sl > prev_sl:
+            return "SIDEWAYS_COMPRESSION", last_h, last_l
+        elif last_sh > prev_sh and last_sl < prev_sl:
+            return "SIDEWAYS_EXPANSION", last_h, last_l
+        else:
+            return "SIDEWAYS", last_h, last_l
+    elif len(swing_highs) >= 2:
+        if swing_highs[-1][1] > swing_highs[-2][1]:
+            return "BULLISH_HH", last_h, last_l
+        else:
+            return "BEARISH_LH", last_h, last_l
+    elif len(swing_lows) >= 2:
+        if swing_lows[-1][1] > swing_lows[-2][1]:
+            return "BULLISH_HL", last_h, last_l
+        else:
+            return "BEARISH_LL", last_h, last_l
+
+    return "SIDEWAYS", last_h, last_l
 
 def is_judas_sweep_bot(snapshot: MarketSnapshot) -> bool:
     """Detect whether snapshot belongs to an Asian Range Judas Sweep / SMC bot."""
@@ -1759,26 +1988,63 @@ async def trade_decision(snapshot: MarketSnapshot):
             "tp_price": snapshot.position.tp or snapshot.position.tp_price,
         }
     portfolio_manager.update_market_price(snapshot.symbol, snapshot.bid, snapshot.ask, bot_id=snapshot.bot_id, position_data=pos_data, account_id=account_id)
+    if snapshot.tms and snapshot.tms.bias and snapshot.tms.bias.upper() in ("BULLISH", "BEARISH"):
+        update_tms_cross_lock(snapshot.symbol, snapshot.tms.bias.upper(), snapshot.tms.bars_since_cross, source=f"{snapshot.bot_id} (Macro TMS)")
+
     if is_flowrsi:
         pos_str = f"{snapshot.position.resolved_side} pnl=${snapshot.position.resolved_pnl:.2f}" if snapshot.position else "FLAT"
         rsi_cross = snapshot.rsi_cross_signal or "None"
         fvg_str = f"FVG={snapshot.fvg_type}" if snapshot.in_fvg_zone else "FVG=None"
         zone_str = "Discount" if snapshot.is_discount else ("Premium" if snapshot.is_premium else "Eq")
         cand_str = snapshot.candidate_action or "NONE"
+        tms_bias, tms_age, tms_src = get_or_compute_tms_cross_lock(snapshot)
 
         logger.info(
             f"[SNAPSHOT FLOW_RSI] {account_id}/{snapshot.bot_id} | {snapshot.symbol} {snapshot.timeframe} | "
             f"Bid={snapshot.bid:g} Ask={snapshot.ask:g} | RSI_Cross={rsi_cross} (F={snapshot.fast_rsi} S={snapshot.slow_rsi}) | "
-            f"{fvg_str} | Zone={zone_str} | Candidate={cand_str} | Pos={pos_str}"
+            f"{fvg_str} | Zone={zone_str} | Candidate={cand_str} | Pos={pos_str} | TMS_Lock={tms_bias} (age={tms_age}, src={tms_src})"
         )
 
-        # Gate Check: If no entry candidate and no open position, gate as HOLD without calling LLM
+        # Gate Check 1: If no entry candidate and no open position, gate as HOLD without calling LLM
         if cand_str == "NONE" and not snapshot.position:
             logger.info(
                 f"[FLOW_RSI GATE] {account_id}/{snapshot.bot_id} -> GATED: HOLD | "
                 f"Reason: No active Nested RSI setup (Fast={snapshot.fast_rsi}, Slow={snapshot.slow_rsi}, Signal={rsi_cross})"
             )
             return AgentDecision(action="HOLD", confidence=85.0, reason=f"No active setup (RSI={rsi_cross}, FVG={snapshot.fvg_type})")
+
+        # Gate Check 2: TMS Cross-Lock Directional Bias Gatekeeper
+        if not snapshot.position:
+            if cand_str == "BUY" and tms_bias == "BEARISH":
+                gate_reason = (
+                    f"Blocked by TMS Cross-Lock Gatekeeper: Macro TMS is LOCKED BEARISH "
+                    f"(age={tms_age} bars, source={tms_src}). Counter-trend BUY entry strictly prohibited."
+                )
+                logger.warning(f"[FLOW_RSI TMS GATE] {account_id}/{snapshot.bot_id} -> GATED: HOLD | {gate_reason}")
+                return AgentDecision(
+                    action="HOLD",
+                    confidence=85.0,
+                    reason=gate_reason,
+                    bot_id=snapshot.bot_id,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe,
+                    request_id=snapshot.request_id,
+                )
+            if cand_str == "SELL" and tms_bias == "BULLISH":
+                gate_reason = (
+                    f"Blocked by TMS Cross-Lock Gatekeeper: Macro TMS is LOCKED BULLISH "
+                    f"(age={tms_age} bars, source={tms_src}). Counter-trend SELL entry strictly prohibited."
+                )
+                logger.warning(f"[FLOW_RSI TMS GATE] {account_id}/{snapshot.bot_id} -> GATED: HOLD | {gate_reason}")
+                return AgentDecision(
+                    action="HOLD",
+                    confidence=85.0,
+                    reason=gate_reason,
+                    bot_id=snapshot.bot_id,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe,
+                    request_id=snapshot.request_id,
+                )
 
         # Build specialized FlowRSI system & user prompt
         system_prompt = (
@@ -1825,19 +2091,18 @@ async def trade_decision(snapshot: MarketSnapshot):
                         )
                     flow_lines.append(f"- {label}: Bias={tf_ctx.trend_bias} | FastMA={format_price(tf_ctx.fast_tema, snapshot.symbol)} | SlowMA={format_price(tf_ctx.slow_tema, snapshot.symbol)} | RSI={tf_ctx.rsi:.1f}{sw_sub}")
             if flow_lines:
-                flow_sw_str = "SMC Swing Structure (Multi-Timeframe):\n" + "\n".join(flow_lines) + "\n"
-        elif snapshot.strategy and (snapshot.strategy.recent_high > 0 or snapshot.strategy.recent_low > 0):
-            rec_h = snapshot.strategy.recent_high
-            rec_l = snapshot.strategy.recent_low
-            # Determine swing relation vs current price
+                flow_sw_str = "SMC Swing Structure (Multi-Timeframe):\n" + "\n".join(flow_lines) + f"\n- TMS Cross-Lock Macro Bias: {tms_bias} (age={tms_age} bars, source={tms_src})\n"
+        else:
             cur_p = snapshot.bid or snapshot.ask
-            sh_tag = "HH" if rec_h > cur_p else "LH"
-            sl_tag = "HL" if rec_l < cur_p else "LL"
-            st_lbl = "BULLISH_HH_HL" if sh_tag == "HH" and sl_tag == "HL" else ("BEARISH_LH_LL" if sh_tag == "LH" and sl_tag == "LL" else "SIDEWAYS")
+            st_lbl, rec_h, rec_l = detect_swing_market_structure(snapshot.bars, cur_p)
+            if (rec_h <= 0 or rec_l <= 0) and snapshot.strategy:
+                rec_h = snapshot.strategy.recent_high if rec_h <= 0 else rec_h
+                rec_l = snapshot.strategy.recent_low if rec_l <= 0 else rec_l
             flow_sw_str = (
                 f"SMC Swing Structure (Current {snapshot.timeframe}):\n"
                 f"- Swings: High={format_price(rec_h, snapshot.symbol)} (Resistance/BSL), "
                 f"Low={format_price(rec_l, snapshot.symbol)} (Support/SSL) [Struct: {st_lbl}]\n"
+                f"- TMS Cross-Lock Macro Bias: {tms_bias} (age={tms_age} bars, source={tms_src})\n"
             )
 
         atr_info_str = ""
@@ -2020,6 +2285,25 @@ async def trade_decision(snapshot: MarketSnapshot):
             )
 
             if action_val in ("BUY", "SELL"):
+                # Safety Guard: Ensure LLM did not propose a counter-trend trade against TMS Cross-Lock
+                tms_bias, tms_age, tms_src = get_or_compute_tms_cross_lock(snapshot)
+                if action_val == "BUY" and tms_bias == "BEARISH":
+                    logger.warning(
+                        f"[{account_id}/{snapshot.bot_id}] [FLOW_RSI TMS GUARD] Model BUY overridden -> HOLD: "
+                        f"TMS is locked BEARISH (age={tms_age}, source={tms_src})."
+                    )
+                    decision_dict["action"] = "HOLD"
+                    decision_dict["reason"] = f"Overridden by TMS Cross-Lock Guard: TMS is LOCKED BEARISH ({tms_src}, age={tms_age} bars)."
+                    action_val = "HOLD"
+                elif action_val == "SELL" and tms_bias == "BULLISH":
+                    logger.warning(
+                        f"[{account_id}/{snapshot.bot_id}] [FLOW_RSI TMS GUARD] Model SELL overridden -> HOLD: "
+                        f"TMS is locked BULLISH (age={tms_age}, source={tms_src})."
+                    )
+                    decision_dict["action"] = "HOLD"
+                    decision_dict["reason"] = f"Overridden by TMS Cross-Lock Guard: TMS is LOCKED BULLISH ({tms_src}, age={tms_age} bars)."
+                    action_val = "HOLD"
+
                 # "LLM proposes, Code disposes": on an entry the ATR/structural engine owns
                 # the stop and the target. FlowRsiBot prefers decision.new_sl_price over its
                 # own fallbackSL, so leaving the model's levels in place hands it the whole
@@ -2548,6 +2832,15 @@ async def api_dashboard_accounts():
     except Exception as e:
         logger.error(f"Dashboard accounts error: {e}")
         return {"error": str(e)}
+
+@app.get("/api/tms/cross-locks")
+async def api_tms_cross_locks():
+    """Return live TMS cross-lock directional bias cache across all symbols."""
+    return {
+        "status": "ok",
+        "cross_locks": _TMS_CROSS_LOCK_REGISTRY,
+        "timestamp": time.time(),
+    }
 
 
 def build_user_prompt(snapshot: MarketSnapshot) -> str:
