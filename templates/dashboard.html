@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260925_btpos">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260925_lbpicker">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/js/backtest.js?v=20260925_btpos" defer></script>
@@ -460,13 +460,47 @@
                                 <button type="button" class="news-filter-btn active" data-lb-tab="usd" aria-pressed="true" title="Scores Net P&amp;L in account currency: bigger lots score higher for the same edge">USD P&amp;L</button>
                                 <button type="button" class="news-filter-btn" data-lb-tab="lot" aria-pressed="false" title="Scores every closed trade over the risk it took (lots × stop distance): position size drops out">Lot-Neutral</button>
                             </div>
-                            <div class="news-btn-group" id="lb-period-group" role="group" aria-label="Look-back period">
-                                <button type="button" class="news-filter-btn" data-lb-period="1d" aria-pressed="false" title="Trades closed, and positions opened, in the last 24 hours">24H</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1w" aria-pressed="false" title="Trades closed, and positions opened, in the last 7 days">7D</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1m" aria-pressed="false" title="Trades closed, and positions opened, in the last 30 days">30D</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="6m" aria-pressed="false" title="Trades closed, and positions opened, in the last 6 months">6M</button>
-                                <button type="button" class="news-filter-btn" data-lb-period="1y" aria-pressed="false" title="Trades closed, and positions opened, in the last 12 months">1Y</button>
-                                <button type="button" class="news-filter-btn active" data-lb-period="all" aria-pressed="true" title="Every trade and open position">All</button>
+                            <div class="lb-period">
+                                <button type="button" id="lb-period-btn" class="lb-period-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lb-period-pop">
+                                    <i data-lucide="calendar" class="btn-icon"></i>
+                                    <span id="lb-period-label" class="lb-period-label">All time</span>
+                                    <span id="lb-period-dates" class="lb-period-dates" hidden></span>
+                                    <i data-lucide="chevron-down" class="btn-icon lb-period-caret"></i>
+                                </button>
+                                <span id="lb-range-note" class="lb-range-note" hidden title="The period ended before today: open positions stay out, their floating P&amp;L is today's">Closed trades only</span>
+                            </div>
+                            <!-- Period picker; moved under <body> on load so the panel's overflow never clips it -->
+                            <div id="lb-period-pop" class="lb-period-pop" role="dialog" aria-label="Ranking period" hidden>
+                                <div class="lb-period-cols">
+                                    <div class="lb-period-col" role="group" aria-label="Rolling window">
+                                        <div class="lb-period-heading">Rolling</div>
+                                        <button type="button" class="lb-period-opt" data-lb-period="1d" title="Trades closed, and positions opened, in the last 24 hours">Last 24 hours<span class="lb-period-hint">24H</span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="1w" title="Trades closed, and positions opened, in the last 7 days">Last 7 days<span class="lb-period-hint">7D</span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="1m" title="Trades closed, and positions opened, in the last 30 days">Last 30 days<span class="lb-period-hint">30D</span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="6m" title="Trades closed, and positions opened, in the last 6 months">Last 6 months<span class="lb-period-hint">6M</span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="1y" title="Trades closed, and positions opened, in the last 12 months">Last 12 months<span class="lb-period-hint">1Y</span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="all" title="Every trade and open position">All time</button>
+                                    </div>
+                                    <div class="lb-period-col" role="group" aria-label="Calendar days, Vietnam time">
+                                        <div class="lb-period-heading">Calendar <span class="lb-period-sub">GMT+7</span></div>
+                                        <button type="button" class="lb-period-opt" data-lb-period="today">Today<span class="lb-period-hint"></span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="yesterday">Yesterday<span class="lb-period-hint"></span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="thisweek">This week<span class="lb-period-hint"></span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="lastweek">Last week<span class="lb-period-hint"></span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="thismonth">This month<span class="lb-period-hint"></span></button>
+                                        <button type="button" class="lb-period-opt" data-lb-period="lastmonth">Last month<span class="lb-period-hint"></span></button>
+                                    </div>
+                                </div>
+                                <form class="lb-period-custom" id="lb-period-custom" novalidate>
+                                    <div class="lb-period-heading">Custom range <span class="lb-period-sub">GMT+7 · both days included</span></div>
+                                    <div class="lb-period-custom-row">
+                                        <input id="lb-date-from" type="date" class="log-input" aria-label="First day (Vietnam time)">
+                                        <span class="td-dim">→</span>
+                                        <input id="lb-date-to" type="date" class="log-input" aria-label="Last day, included (Vietnam time)">
+                                        <button type="submit" id="lb-date-apply" class="lb-period-apply">Apply</button>
+                                    </div>
+                                    <div id="lb-date-error" class="lb-period-error" role="alert" hidden></div>
+                                </form>
                             </div>
                             <button id="lb-refresh-btn" class="log-btn"><i data-lucide="refresh-cw" class="btn-icon"></i> Refresh</button>
                         </div>
@@ -2245,21 +2279,100 @@
         }, 10000);
         // --- Leaderboard Integration ---
         // Two rankings (USD P&L / lot-neutral) arrive in one response; the tab only picks which
-        // table shows. The period is a rolling window applied server-side.
+        // table shows. The period, picked in a popover, is a rolling window, a calendar preset or a
+        // custom range; presets and custom ranges both go out as Vietnam-time days (period=custom).
         const LB_TABS = ['usd', 'lot'];
-        const LB_PERIODS = ['1d', '1w', '1m', '6m', '1y', 'all'];
+        const LB_ROLLING = {'1d': 'Last 24 hours', '1w': 'Last 7 days', '1m': 'Last 30 days',
+                            '6m': 'Last 6 months', '1y': 'Last 12 months', 'all': 'All time'};
+        const LB_CALENDAR = {today: 'Today', yesterday: 'Yesterday', thisweek: 'This week',
+                             lastweek: 'Last week', thismonth: 'This month', lastmonth: 'Last month'};
+        const LB_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
         const LB_WEIGHT_HINTS = {
             usd: 'Weight: 30% WinRate + 30% ProfitFactor + 20% NetPnL + 20% Consistency',
             lot: 'Weight: 30% WinRate + 30% ProfitFactor + 20% Return/DD + 20% Consistency · each closed trade over its risk at entry',
         };
         let lbTab = 'usd';
         let lbPeriod = 'all';
+        let lbDateFrom = '';  // custom range, 'YYYY-MM-DD' in Vietnam time; '' = open side
+        let lbDateTo = '';
         try {
             const savedTab = localStorage.getItem('lb-tab');
             const savedPeriod = localStorage.getItem('lb-period');
+            const savedFrom = localStorage.getItem('lb-date-from') || '';
+            const savedTo = localStorage.getItem('lb-date-to') || '';
             if (LB_TABS.includes(savedTab)) lbTab = savedTab;
-            if (LB_PERIODS.includes(savedPeriod)) lbPeriod = savedPeriod;
+            if (LB_DAY_RE.test(savedFrom)) lbDateFrom = savedFrom;
+            if (LB_DAY_RE.test(savedTo)) lbDateTo = savedTo;
+            if (lbHas(LB_ROLLING, savedPeriod) || lbHas(LB_CALENDAR, savedPeriod)) lbPeriod = savedPeriod;
+            // A stored custom range must still be one the server takes
+            else if (savedPeriod === 'custom' && lbRangeOk(lbDateFrom, lbDateTo)) lbPeriod = 'custom';
         } catch (e) { /* storage unavailable: keep the defaults */ }
+
+        function lbHas(obj, key) {
+            return Object.prototype.hasOwnProperty.call(obj, key);
+        }
+
+        // Today in Vietnam time (GMT+7, no DST) as a UTC-midnight Date, whatever the browser's zone
+        function lbVnToday() {
+            const now = new Date(Date.now() + 7 * 3600e3);
+            return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        }
+
+        function lbAddDays(day, n) {
+            return new Date(day.getTime() + n * 86400e3);
+        }
+
+        function lbIsoDay(day) {
+            return day.toISOString().slice(0, 10);
+        }
+
+        // First and last day ('YYYY-MM-DD', both included) of a calendar preset or of the custom
+        // range; null for a rolling window. Presets are worked out afresh, so "Today" moves on at
+        // midnight Vietnam time.
+        function lbRangeFor(period) {
+            if (period === 'custom') return {from: lbDateFrom, to: lbDateTo};
+            if (!lbHas(LB_CALENDAR, period)) return null;
+            const today = lbVnToday();
+            const monday = lbAddDays(today, -((today.getUTCDay() + 6) % 7));  // weeks start on Monday
+            const y = today.getUTCFullYear(), m = today.getUTCMonth();
+            const [from, to] = {
+                today: [today, today],
+                yesterday: [lbAddDays(today, -1), lbAddDays(today, -1)],
+                thisweek: [monday, today],
+                lastweek: [lbAddDays(monday, -7), lbAddDays(monday, -1)],
+                thismonth: [new Date(Date.UTC(y, m, 1)), today],
+                lastmonth: [new Date(Date.UTC(y, m - 1, 1)), new Date(Date.UTC(y, m, 0))],
+            }[period];
+            return {from: lbIsoDay(from), to: lbIsoDay(to)};
+        }
+
+        // A custom range the server takes: at least one day, and never reversed
+        function lbRangeOk(from, to) {
+            return !!(from || to) && !(from && to && from > to);
+        }
+
+        // 'YYYY-MM-DD' as 'DD/MM', or 'DD/MM/YYYY'
+        function lbShortDay(day, withYear) {
+            const [y, m, d] = day.split('-');
+            return withYear ? `${d}/${m}/${y}` : `${d}/${m}`;
+        }
+
+        // A range for display; years only show when it leaves the current one
+        function lbRangeText(range) {
+            const year = String(lbVnToday().getUTCFullYear());
+            const withYear = [range.from, range.to].some(day => day && day.slice(0, 4) !== year);
+            const from = range.from && lbShortDay(range.from, withYear);
+            const to = range.to && lbShortDay(range.to, withYear);
+            if (!from) return `until ${to}`;
+            if (!to) return `from ${from}`;
+            return from === to ? from : `${from} – ${to}`;
+        }
+
+        // What the period button reads: the preset's name, and the days it covers when it has any
+        function lbPeriodLabel() {
+            if (lbHas(LB_ROLLING, lbPeriod)) return {label: LB_ROLLING[lbPeriod], dates: ''};
+            return {label: LB_CALENDAR[lbPeriod] || 'Custom', dates: lbRangeText(lbRangeFor(lbPeriod))};
+        }
         let lbData = null;       // the response on screen
         let lbShownQuery = null; // the selection it was fetched for
         // One request at a time: a burst of WS updates (one per account scope) collapses into a
@@ -2280,7 +2393,10 @@
             const accSel = document.getElementById('account-selector');
             const accType = (accSel && accSel.selectedOptions[0] && accSel.selectedOptions[0].dataset.type)
                 || ((currentMode === 'real' || currentMode === 'live') ? 'live' : 'demo');
-            return `account_id=${encodeURIComponent(accId)}&account_type=${accType}&period=${lbPeriod}`;
+            const query = `account_id=${encodeURIComponent(accId)}&account_type=${accType}`;
+            const range = lbRangeFor(lbPeriod);
+            if (!range) return `${query}&period=${lbPeriod}`;
+            return `${query}&period=custom&date_from=${encodeURIComponent(range.from)}&date_to=${encodeURIComponent(range.to)}`;
         }
 
         async function fetchLeaderboard() {
@@ -2316,6 +2432,8 @@
             if (lbShownQuery === query) return;
             lbData = null;
             lbShownQuery = null;
+            const note = document.getElementById('lb-range-note');
+            if (note) note.hidden = true;
             const row = colspan => `<tr><td colspan="${colspan}" class="empty-state">Could not load the leaderboard, retrying…</td></tr>`;
             const tbody = document.getElementById('leaderboard-table-body');
             const lotBody = document.getElementById('leaderboard-lot-table-body');
@@ -2333,11 +2451,21 @@
                 btn.classList.toggle('active', on);
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
-            document.querySelectorAll('#lb-period-group [data-lb-period]').forEach(btn => {
+            document.querySelectorAll('.lb-period-opt[data-lb-period]').forEach(btn => {
                 const on = btn.dataset.lbPeriod === lbPeriod;
                 btn.classList.toggle('active', on);
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
+            const custom = document.getElementById('lb-period-custom');
+            if (custom) custom.classList.toggle('active', lbPeriod === 'custom');
+            const {label, dates} = lbPeriodLabel();
+            const labelEl = document.getElementById('lb-period-label');
+            if (labelEl) labelEl.textContent = label;
+            const datesEl = document.getElementById('lb-period-dates');
+            if (datesEl) {
+                datesEl.textContent = dates;
+                datesEl.hidden = !dates;
+            }
             const usdPane = document.getElementById('lb-pane-usd');
             const lotPane = document.getElementById('lb-pane-lot');
             if (usdPane) usdPane.hidden = lbTab !== 'usd';
@@ -2431,6 +2559,8 @@
             if (!data) return;
             lbData = data;
             applyLbControls();
+            const rangeNote = document.getElementById('lb-range-note');
+            if (rangeNote) rangeNote.hidden = data.includes_open_positions !== false;
             const lot = data.lot_neutral || { top_performer: null, rankings: [] };
             const top = lbTab === 'lot' ? lot.top_performer : data.top_performer;
             const topPerfEl = document.getElementById('lb-top-performer');
@@ -2509,14 +2639,131 @@
                 if (lbData) renderLeaderboard(lbData); else applyLbControls();
             });
         });
-        document.querySelectorAll('#lb-period-group [data-lb-period]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                lbPeriod = btn.dataset.lbPeriod;
-                try { localStorage.setItem('lb-period', lbPeriod); } catch (e) { /* not persisted */ }
-                applyLbControls();
-                fetchLeaderboard();
+        function lbSetPeriod(period) {
+            lbPeriod = period;
+            try { localStorage.setItem('lb-period', lbPeriod); } catch (e) { /* not persisted */ }
+            applyLbControls();
+            fetchLeaderboard();
+        }
+
+        // --- Period picker popover ---
+        const lbPeriodBtn = document.getElementById('lb-period-btn');
+        const lbPeriodPop = document.getElementById('lb-period-pop');
+        const lbCustomForm = document.getElementById('lb-period-custom');
+        const lbFromInput = document.getElementById('lb-date-from');
+        const lbToInput = document.getElementById('lb-date-to');
+        const lbApplyBtn = document.getElementById('lb-date-apply');
+        const lbDateError = document.getElementById('lb-date-error');
+
+        function lbPopOpen() {
+            return !!(lbPeriodPop && !lbPeriodPop.hidden);
+        }
+
+        // Under the button with the right edges lined up, above it when there is no room below,
+        // and always inside the viewport, clear of the tab bar pinned to the bottom on phones
+        function lbPlacePeriodPop() {
+            if (!lbPopOpen()) return;
+            const btn = lbPeriodBtn.getBoundingClientRect();
+            const w = lbPeriodPop.offsetWidth, h = lbPeriodPop.offsetHeight;
+            const bar = document.querySelector('.sidebar');
+            const barTop = bar ? bar.getBoundingClientRect().top : window.innerHeight;
+            const floor = (barTop > window.innerHeight / 2 ? barTop : window.innerHeight) - 8;
+            const left = Math.max(8, Math.min(btn.right - w, window.innerWidth - w - 8));
+            let top = btn.bottom + 6;
+            if (top + h > floor) top = btn.top - h - 6 >= 8 ? btn.top - h - 6 : floor - h;
+            lbPeriodPop.style.left = `${left}px`;
+            lbPeriodPop.style.top = `${Math.max(8, top)}px`;
+        }
+
+        // The custom fields can only be applied as a range the server takes
+        function lbCheckCustom() {
+            const from = lbFromInput.value, to = lbToInput.value;
+            const reversed = !!(from && to && from > to);
+            lbFromInput.classList.toggle('lb-range-bad', reversed);
+            lbToInput.classList.toggle('lb-range-bad', reversed);
+            lbDateError.textContent = reversed ? 'The first day is after the last day' : '';
+            lbDateError.hidden = !reversed;
+            lbApplyBtn.disabled = !lbRangeOk(from, to);
+        }
+
+        function lbOpenPeriodPop() {
+            // Calendar presets show the days they cover today
+            lbPeriodPop.querySelectorAll('.lb-period-opt[data-lb-period]').forEach(btn => {
+                const range = lbRangeFor(btn.dataset.lbPeriod);
+                const hint = btn.querySelector('.lb-period-hint');
+                if (!range || !hint) return;
+                hint.textContent = lbRangeText(range);
+                btn.title = `${lbShortDay(range.from, true)} – ${lbShortDay(range.to, true)}, Vietnam time`;
             });
-        });
+            // The custom fields start from the days on screen, else the last custom range, else
+            // the last 7 days
+            const today = lbVnToday();
+            const start = lbRangeFor(lbPeriod)
+                || (lbDateFrom || lbDateTo ? {from: lbDateFrom, to: lbDateTo}
+                                           : {from: lbIsoDay(lbAddDays(today, -6)), to: lbIsoDay(today)});
+            lbFromInput.value = start.from;
+            lbToInput.value = start.to;
+            lbCheckCustom();
+            lbPeriodPop.hidden = false;
+            lbPeriodBtn.setAttribute('aria-expanded', 'true');
+            lbPlacePeriodPop();
+            const focus = lbPeriod === 'custom' ? lbFromInput
+                : (lbPeriodPop.querySelector('.lb-period-opt.active') || lbPeriodPop.querySelector('.lb-period-opt'));
+            if (focus) focus.focus();
+        }
+
+        function lbClosePeriodPop(refocus) {
+            if (!lbPopOpen()) return;
+            lbPeriodPop.hidden = true;
+            lbPeriodBtn.setAttribute('aria-expanded', 'false');
+            if (refocus) lbPeriodBtn.focus();
+        }
+
+        if (lbPeriodBtn && lbPeriodPop && lbCustomForm) {
+            // Out from under the panel, whose overflow would clip it
+            document.body.appendChild(lbPeriodPop);
+            lbPeriodBtn.addEventListener('click', () => {
+                if (lbPopOpen()) lbClosePeriodPop(false); else lbOpenPeriodPop();
+            });
+            lbPeriodPop.querySelectorAll('.lb-period-opt[data-lb-period]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    lbSetPeriod(btn.dataset.lbPeriod);
+                    lbClosePeriodPop(true);
+                });
+            });
+            [lbFromInput, lbToInput].forEach(input => {
+                input.addEventListener('input', lbCheckCustom);
+                input.addEventListener('change', lbCheckCustom);
+            });
+            // Apply, or Enter in a date field
+            lbCustomForm.addEventListener('submit', e => {
+                e.preventDefault();
+                if (!lbRangeOk(lbFromInput.value, lbToInput.value)) return;
+                lbDateFrom = lbFromInput.value;
+                lbDateTo = lbToInput.value;
+                try {
+                    localStorage.setItem('lb-date-from', lbDateFrom);
+                    localStorage.setItem('lb-date-to', lbDateTo);
+                } catch (err) { /* not persisted */ }
+                lbSetPeriod('custom');
+                lbClosePeriodPop(true);
+            });
+            // A click or tap anywhere else, Escape, or tabbing out closes it
+            document.addEventListener('pointerdown', e => {
+                if (lbPopOpen() && !lbPeriodPop.contains(e.target) && !lbPeriodBtn.contains(e.target)) {
+                    lbClosePeriodPop(false);
+                }
+            });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && lbPopOpen()) lbClosePeriodPop(true);
+            });
+            lbPeriodPop.addEventListener('focusout', e => {
+                const next = e.relatedTarget;
+                if (next && !lbPeriodPop.contains(next) && next !== lbPeriodBtn) lbClosePeriodPop(false);
+            });
+            window.addEventListener('resize', lbPlacePeriodPop);
+            document.addEventListener('scroll', lbPlacePeriodPop, true);
+        }
         applyLbControls();
 
         // First paint from the page's own payload (all time, the page's account scope) when the

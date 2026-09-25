@@ -15,7 +15,7 @@ import asyncio
 from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from app.accounts import get_account_registry
-from app.leaderboard import compute_bot_leaderboard, compute_profit_factor
+from app.leaderboard import InvalidDateRange, compute_bot_leaderboard, compute_profit_factor
 import logging
 from app import news_service
 
@@ -673,13 +673,20 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 @router.get("/api/leaderboard")
 @router.get("/api/dashboard/leaderboard")
 async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None,
-                                    period: str = "all"):
+                                    period: str = "all", date_from: Optional[str] = None,
+                                    date_to: Optional[str] = None):
     """API endpoint for bot performance leaderboard and quant tier ranking.
 
     ``account_type`` (live|demo) keeps the ranking inside the active trading mode.
     ``period`` (1d|1w|1m|6m|1y|all) keeps the trades closed inside that rolling window.
+    ``date_from``/``date_to`` (YYYY-MM-DD, Vietnam time, both included) pick a custom range
+    instead; a malformed or reversed range is a 400.
     """
-    return compute_bot_leaderboard(account_id, account_type=account_type, period=period)
+    try:
+        return compute_bot_leaderboard(account_id, account_type=account_type, period=period,
+                                       date_from=date_from, date_to=date_to)
+    except InvalidDateRange as e:
+        raise HTTPException(status_code=400, detail=str(e))
 @router.get("/api/dashboard/sessions")
 async def api_dashboard_sessions():
     """API endpoint for trading sessions, killzones, and market status."""

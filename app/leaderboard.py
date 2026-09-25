@@ -9,8 +9,9 @@ Two rankings come out of the same trades:
   higher for the same edge;
 - the lot-neutral ranking scores every closed trade over the risk it took (lots x stop
   distance), so position size (often arbitrary on demo accounts) drops out.
-Both can be narrowed to a rolling look-back window (LEADERBOARD_PERIODS), and both pull a
-small sample's score toward the neutral 50 (FULL_SAMPLE_TRADES).
+Both can be narrowed to a rolling look-back window (LEADERBOARD_PERIODS) or to a custom range of
+days (date_range_bounds), and both pull a small sample's score toward the neutral 50
+(FULL_SAMPLE_TRADES).
 """
 
 from __future__ import annotations
@@ -40,6 +41,16 @@ LEADERBOARD_PERIODS: Dict[str, Optional[int]] = {
     "all": None,
 }
 
+# A custom range is picked as whole days in Vietnam time, the time the dashboard shows. Vietnam
+# has no DST, so a fixed offset is exact.
+VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
+
+_DB_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+class InvalidDateRange(ValueError):
+    """A custom range with a malformed day, or one that ends before it starts."""
+
 
 def get_db_connection(db_path: Optional[Union[Path, str]] = None):
     return _get_unified_db(db_path)
@@ -54,7 +65,51 @@ def period_start(period: str, now: Optional[datetime.datetime] = None) -> Option
     if days is None:
         return None
     now = now or datetime.datetime.now(datetime.timezone.utc)
-    return (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    return (now - datetime.timedelta(days=days)).strftime(_DB_TIME_FORMAT)
+
+
+def _parse_day(value: Optional[str], name: str) -> Optional[datetime.date]:
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise InvalidDateRange(f"{name} must be a day as YYYY-MM-DD, got {value!r}") from None
+
+
+def _vn_midnight_utc(day: datetime.date) -> str:
+    """The UTC moment a Vietnam-time day starts, in the positions table's format."""
+    try:
+        start = datetime.datetime.combine(day, datetime.time(), VN_TZ).astimezone(datetime.timezone.utc)
+    except OverflowError:
+        raise InvalidDateRange(f"{day.isoformat()} is out of range") from None
+    return start.strftime(_DB_TIME_FORMAT)
+
+
+def date_range_bounds(
+    date_from: Optional[str],
+    date_to: Optional[str],
+    now: Optional[datetime.datetime] = None,
+) -> Tuple[Optional[str], Optional[str], bool]:
+    """UTC bounds of a range of whole Vietnam-time days, as (start, end, reaches_now).
+
+    Both days are included: ``end`` is the midnight after ``date_to``, itself excluded. A missing
+    day leaves that side open (None). ``reaches_now`` is False once the range ended before this
+    moment: open positions then stay out, since their floating P&L is today's, not the range's.
+    Raises InvalidDateRange on a malformed day or a range that ends before it starts.
+    """
+    start_day = _parse_day(date_from, "date_from")
+    end_day = _parse_day(date_to, "date_to")
+    if start_day and end_day and start_day > end_day:
+        raise InvalidDateRange("date_from must not be after date_to")
+    start = _vn_midnight_utc(start_day) if start_day else None
+    if end_day is None:
+        return start, None, True
+    if end_day == datetime.date.max:
+        raise InvalidDateRange(f"{end_day.isoformat()} is out of range")
+    end = _vn_midnight_utc(end_day + datetime.timedelta(days=1))
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return start, end, end > now.strftime(_DB_TIME_FORMAT)
 
 
 def compute_profit_factor(gross_profit: float, gross_loss: float, total_trades: int) -> Optional[float]:
@@ -270,6 +325,8 @@ def compute_bot_leaderboard(
     db_path: Optional[Path] = None,
     account_type: Optional[str] = None,
     period: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes historical trade outcomes and active positions across all cBots
@@ -283,14 +340,21 @@ def compute_bot_leaderboard(
     ``period`` (a LEADERBOARD_PERIODS key) keeps what happened inside that rolling window: the
     trades closed in it and the positions opened in it that are still open. An older open
     position's floating P&L mostly built up before the window, so it stays out of the window's
-    Net PnL and score. The result carries the USD ranking under "rankings" and the lot-neutral
-    one under "lot_neutral".
+    Net PnL and score. ``date_from``/``date_to`` (YYYY-MM-DD, Vietnam time, both included,
+    either may be left open) replace it with a custom range, reported as period "custom"; see
+    date_range_bounds, which also says when open positions stay out. The result carries the USD
+    ranking under "rankings" and the lot-neutral one under "lot_neutral".
+    Raises InvalidDateRange on a malformed custom range.
     """
     if account_type not in ("live", "demo"):
         account_type = account_id if account_id in ("live", "demo") else None
-    if period not in LEADERBOARD_PERIODS:
-        period = "all"
-    since = period_start(period)
+    if period == "custom" or date_from or date_to:
+        period = "custom"
+        since, until, include_open = date_range_bounds(date_from, date_to)
+    else:
+        if period not in LEADERBOARD_PERIODS:
+            period = "all"
+        since, until, include_open = period_start(period), None, True
     conn = get_db_connection(db_path)
     try:
         # Build account filter clause(s): mode scope first, then optional account narrowing
@@ -304,13 +368,17 @@ def compute_bot_leaderboard(
             params.append(account_id)
         account_filter = "".join(f" AND {clause}" for clause in filters)
 
-        # 1. Fetch closed trades (closed inside the look-back window, if any). Spelled out rather
-        # than COALESCE(exit_time, entry_time) so each branch can use its column's index.
+        # 1. Fetch closed trades (closed inside the look-back window or range, if any). Spelled out
+        # rather than COALESCE(exit_time, entry_time) so each branch can use its column's index.
         closed_filter, closed_params = "", list(params)
         open_filter, open_params = "", list(params)
+        bounds = [(op, value) for op, value in ((">=", since), ("<", until)) if value]
+        if bounds:
+            by_exit = " AND ".join(f"exit_time {op} ?" for op, _ in bounds)
+            by_entry = " AND ".join(f"entry_time {op} ?" for op, _ in bounds)
+            closed_filter = f" AND (({by_exit}) OR (exit_time IS NULL AND {by_entry}))"
+            closed_params += [value for _, value in bounds] * 2
         if since:
-            closed_filter = " AND (exit_time >= ? OR (exit_time IS NULL AND entry_time >= ?))"
-            closed_params += [since, since]
             open_filter = " AND entry_time >= ?"
             open_params.append(since)
         query_closed = f"""
@@ -323,16 +391,19 @@ def compute_bot_leaderboard(
         cursor = conn.execute(query_closed, tuple(closed_params))
         closed_trades = [dict(r) for r in cursor.fetchall()]
 
-        # 2. Fetch active positions (opened inside the look-back window, if any)
-        query_open = f"""
-            SELECT id, bot_id, symbol, side, volume, entry_price,
-                   pnl, entry_time, account_id
-            FROM positions
-            WHERE status = 'open'{account_filter}{open_filter}
-            ORDER BY entry_time DESC
-        """
-        cursor = conn.execute(query_open, tuple(open_params))
-        open_positions = [dict(r) for r in cursor.fetchall()]
+        # 2. Fetch active positions (opened inside the look-back window or range, if any; none
+        # for a range that ended before now)
+        open_positions: List[Dict[str, Any]] = []
+        if include_open:
+            query_open = f"""
+                SELECT id, bot_id, symbol, side, volume, entry_price,
+                       pnl, entry_time, account_id
+                FROM positions
+                WHERE status = 'open'{account_filter}{open_filter}
+                ORDER BY entry_time DESC
+            """
+            cursor = conn.execute(query_open, tuple(open_params))
+            open_positions = [dict(r) for r in cursor.fetchall()]
 
         # 3. Fetch any registered bot names from cbot_configs or distinct bot_ids
         known_bots = set()
@@ -456,6 +527,8 @@ def compute_bot_leaderboard(
             "account_type": account_type,
             "period": period,
             "period_start": since,
+            "period_end": until,
+            "includes_open_positions": include_open,
             "full_sample_trades": FULL_SAMPLE_TRADES,
             "total_bots": len(bot_rankings),
             "fleet_total_trades": fleet_total_trades,

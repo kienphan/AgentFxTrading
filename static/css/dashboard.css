@@ -516,6 +516,186 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
     gap: 8px;
     margin-left: auto;
 }
+/* Leaderboard period: one button in the toolbar, every choice in a popover under it */
+.lb-period {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.lb-period-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font: 600 0.74rem var(--font-ui);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+}
+.lb-period-btn:hover,
+.lb-period-btn[aria-expanded="true"] {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+.lb-period-btn .btn-icon {
+    margin-right: 0;
+    color: var(--accent-bright);
+}
+.lb-period-dates {
+    color: var(--text-muted);
+    font: 500 0.7rem var(--font-mono);
+}
+.lb-period-btn .lb-period-caret {
+    color: var(--text-muted);
+    transition: transform .15s;
+}
+.lb-period-btn[aria-expanded="true"] .lb-period-caret {
+    transform: rotate(180deg);
+}
+.lb-range-note {
+    padding: 1px 8px;
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    border-radius: 10px;
+    background: rgba(251, 191, 36, 0.1);
+    color: #fbbf24;
+    font-size: 0.66rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: help;
+}
+.lb-period-dates[hidden],
+.lb-range-note[hidden],
+.lb-period-pop[hidden],
+.lb-period-error[hidden] {
+    display: none;
+}
+.lb-period-pop {
+    position: fixed;
+    z-index: 1000;
+    width: min(400px, calc(100vw - 16px));
+    padding: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.lb-period-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.lb-period-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.lb-period-heading {
+    padding: 4px 8px;
+    color: var(--text-dim);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.lb-period-sub {
+    margin-left: 4px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.lb-period-opt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font: 500 0.76rem var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+}
+.lb-period-opt:hover,
+.lb-period-opt:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+}
+.lb-period-opt.active {
+    background: var(--accent-soft);
+    color: var(--accent-bright);
+    font-weight: 700;
+}
+.lb-period-hint {
+    color: var(--text-dim);
+    font: 500 0.64rem var(--font-mono);
+    white-space: nowrap;
+}
+.lb-period-opt.active .lb-period-hint {
+    color: var(--accent);
+}
+.lb-period-custom {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-subtle);
+}
+.lb-period-custom.active .lb-period-heading {
+    color: var(--accent-bright);
+}
+.lb-period-custom-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 4px;
+}
+.lb-period-custom-row .log-input {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    color-scheme: dark; /* a light calendar icon and a dark picker on the dark panel */
+}
+.lb-period-custom-row .log-input.lb-range-bad {
+    border-color: var(--loss);
+}
+.lb-period-apply {
+    padding: 5px 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #111;
+    font: 700 0.74rem var(--font-ui);
+    cursor: pointer;
+    transition: background .15s;
+}
+.lb-period-apply:hover {
+    background: var(--accent-bright);
+}
+.lb-period-apply:disabled {
+    background: var(--bg-hover);
+    color: var(--text-dim);
+    cursor: not-allowed;
+}
+.lb-period-error {
+    padding: 0 8px 4px;
+    color: var(--loss);
+    font-size: 0.68rem;
+}
+@media (max-width: 480px) {
+    .lb-period-custom-row {
+        flex-wrap: wrap;
+    }
+    .lb-period-apply {
+        width: 100%;
+        padding: 7px 14px;
+    }
+}
 .rank-cell {
     font-size: 0.95rem;
     font-weight: 700;
