@@ -383,3 +383,43 @@ def test_without_docker_the_tick_does_nothing(env):
     env.worker.client_provider = lambda: None
     env.worker.tick()
     assert job(env, job_id)["status"] == "queued"
+
+
+def test_start_up_adds_position_stats_to_summaries_saved_before_they_existed(env):
+    old = queue(env)
+    set_fields(env, old, status="done", summary={"net_profit": -0.98, "total_trades": 4})
+    store.write_report(old, REPORT, env.reports)
+    current = queue(env)
+    set_fields(env, current, status="done", summary={"total_trades": 4, "positions": 3})
+    store.write_report(current, REPORT, env.reports)
+    no_report = queue(env)
+    set_fields(env, no_report, status="done", summary={"total_trades": 1})
+    unreadable = queue(env)
+    set_fields(env, unreadable, status="done", summary={"total_trades": 1})
+    store.write_report(unreadable, b'{"main": {}}', env.reports)
+    failed = queue(env)
+    set_fields(env, failed, status="failed", error="exit code 1")
+
+    env.worker.refresh_summaries()
+
+    refreshed = job(env, old)["summary"]
+    assert (refreshed["positions"], refreshed["position_win_rate"], refreshed["full_loss_pct"]) == (4, 50.0, 50.0)
+    assert refreshed["net_profit"] == -0.98 and refreshed["total_trades"] == 4
+    assert job(env, current)["summary"] == {"total_trades": 4, "positions": 3}      # already has them
+    assert job(env, no_report)["summary"] == {"total_trades": 1}
+    assert job(env, unreadable)["summary"] == {"total_trades": 1}
+    assert job(env, failed)["summary"] is None
+
+
+def test_run_loop_refreshes_old_summaries_before_the_first_tick(env, monkeypatch):
+    import asyncio
+    calls = []
+    monkeypatch.setattr(env.worker, "refresh_summaries", lambda: calls.append("refresh"))
+
+    def tick():
+        calls.append("tick")
+        env.worker.stop()
+    monkeypatch.setattr(env.worker, "tick", tick)
+    monkeypatch.setattr("app.backtest_worker.POLL_S", 0)
+    asyncio.run(env.worker.run_loop())
+    assert calls == ["refresh", "tick"]
