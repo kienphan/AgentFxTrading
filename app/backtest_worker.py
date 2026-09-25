@@ -70,6 +70,10 @@ class BacktestWorker:
     async def run_loop(self):
         self._running = True
         logger.info("Backtest worker started")
+        try:
+            await asyncio.to_thread(self.refresh_summaries)
+        except Exception as e:
+            logger.error(f"Backtest summary refresh failed: {e}", exc_info=True)
         while self._running:
             try:
                 await asyncio.to_thread(self.tick)
@@ -79,6 +83,24 @@ class BacktestWorker:
 
     def stop(self):
         self._running = False
+
+    def refresh_summaries(self) -> None:
+        """Summaries saved before the position stats existed get them from the job's report file. Runs
+        once at start-up; a refreshed summary has "positions", so later starts skip it."""
+        with store.connect(self.db_target) as conn:
+            for job in store.jobs_with_status(conn, "done"):
+                if "positions" in (job.get("summary") or {}):
+                    continue
+                report = store.read_report(job["id"], self.report_dir)
+                if report is None:
+                    continue
+                try:
+                    summary = summarize(report)
+                except Exception as e:
+                    logger.warning(f"Backtest #{job['id']}: summary not refreshed: {e}")
+                    continue
+                if store.update_job(conn, job["id"], expect_status="done", summary=summary):
+                    logger.info(f"Backtest #{job['id']}: summary refreshed ({summary['positions']} positions)")
 
     def tick(self) -> None:
         client = self.client_provider()

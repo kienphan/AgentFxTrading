@@ -3,9 +3,13 @@ cTrader backtest report (`--report-json`) -> the Backtest page's summary and cha
 
 The report's per-hour/weekday sections only count winning and losing trades, so P&L by hour and by
 weekday is computed here from history.items, bucketed by UTC entry time.
+
+cTrader's trade statistics count closing DEALS: a partial close (FlowRSI takes half at 1R) is a history
+item of its own, so one position can be two "trades". The position stats group history.items back into
+positions, whose deals share entryTime, direction and entryPrice.
 """
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 MAX_EQUITY_POINTS = 1000
 
@@ -19,9 +23,38 @@ def _side(stats: Dict, key: str, side: str = "all"):
     return value if value is not None else 0
 
 
+def _positions(items: List[Dict]) -> List[Tuple[float, int]]:
+    """(net P&L, number of closing deals) of each position."""
+    positions: Dict[Tuple, List] = {}
+    for t in items:
+        acc = positions.setdefault((t["entryTime"], t.get("direction"), t.get("entryPrice")), [0.0, 0])
+        acc[0] += float(t["net"])
+        acc[1] += 1
+    return [(net, deals) for net, deals in positions.values()]
+
+
+def _position_stats(items: List[Dict]) -> Dict:
+    positions = _positions(items)
+    wins = [net for net, _ in positions if net > 0]
+    losses = [net for net, _ in positions if net < 0]
+    # Lost in one deal: stopped out before any partial close, i.e. the full stop.
+    full_losses = sum(1 for net, deals in positions if net < 0 and deals == 1)
+    total = len(positions)
+    return {
+        "positions": total,
+        "winning_positions": len(wins),
+        "losing_positions": len(losses),
+        "position_win_rate": _r(len(wins) * 100.0 / total) if total else 0.0,
+        "avg_position_win": _r(sum(wins) / len(wins)) if wins else 0.0,
+        "avg_position_loss": _r(sum(losses) / len(losses)) if losses else 0.0,
+        "full_loss_pct": _r(full_losses * 100.0 / total) if total else 0.0,
+    }
+
+
 def summarize(report: Dict) -> Dict:
     main, stats, equity = report["main"], report["tradeStatistics"], report["equity"]
-    nets = [float(t["net"]) for t in (report.get("history") or {}).get("items", [])]
+    items = (report.get("history") or {}).get("items", [])
+    nets = [float(t["net"]) for t in items]
     wins = [n for n in nets if n > 0]
     losses = [n for n in nets if n < 0]
     total = int(_side(stats, "totalTrades"))
@@ -51,6 +84,7 @@ def summarize(report: Dict) -> Dict:
         "short_net": _r(_side(stats, "netProfit", "short")),
         "long_trades": int(_side(stats, "totalTrades", "long")),
         "short_trades": int(_side(stats, "totalTrades", "short")),
+        **_position_stats(items),
     }
 
 

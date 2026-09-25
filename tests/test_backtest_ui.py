@@ -63,7 +63,21 @@ def test_backtest_js_is_served_and_uses_the_api():
 def test_best_value_rules():
     src = JS.read_text(encoding="utf-8")
     assert "['max_equity_dd_pct', 'Max equity DD %', 'min', 'pct']" in src
-    assert "['avg_loss', 'Avg loss', 'zero', 'money']" in src
+    assert "['avg_loss', 'Avg loss (deal)', 'zero', 'money']" in src
+    assert "['position_win_rate', 'Win rate % (positions)', 'max', 'num']" in src
+    assert "['avg_position_loss', 'Avg loss (position)', 'zero', 'money']" in src
+    assert "['full_loss_pct', 'Full-size losses %', 'min', 'num']" in src
+
+
+def test_the_avg_win_loss_pair_may_wrap_in_its_card():
+    # Two amounts do not fit one ninth of the KPI row; .kpi-value would clip the loss.
+    css = (ROOT / "static" / "css" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".kpi-value.bt-kpi-wrap{white-space:normal}" in css
+
+
+def test_job_list_heads_position_columns():
+    html = client.get("/demo/dashboard").text
+    assert "<th>Win % (pos)</th>" in html and "<th>Positions</th>" in html
 
 
 HARNESS = r"""
@@ -101,21 +115,34 @@ const other = {...job, id: 6, start_date: '2026-01-01',
 out.compare = btCompareHtml([job, other]);
 out.diff = btParamDiff([job, other]);
 out.warnings = btCompareWarnings([job, other]);
+const stats = {net_profit: -3151.04, roi_pct: -31.5, profit_factor: 0.55, max_equity_dd_pct: 32.4,
+               commissions: -342.62, swaps: -94.04, win_rate: 56.2, total_trades: 379, avg_win: 18.2,
+               avg_loss: -42.33, positions: 270, position_win_rate: 42.22, avg_position_win: 33.84,
+               avg_position_loss: -44.93, full_loss_pct: 57.78};
+out.kpi = btKpiCardsHtml(stats);
+out.kpiOld = btKpiCardsHtml({...stats, positions: undefined, position_win_rate: undefined,
+                             avg_position_win: undefined, avg_position_loss: undefined, full_loss_pct: undefined});
+out.rowNew = btJobRowsHtml([{...job, summary: stats}], new Set());
+out.rowOld = btJobRowsHtml([{...job, summary: {win_rate: 56.2, total_trades: 379}}], new Set());
 out.best = [btBestIndex([1, 3, 2], 'max'), btBestIndex([1, 3, 2], 'min'), btBestIndex([-5, -1, 2], 'zero'),
             btBestIndex([2, 2], 'max'), btBestIndex([1, 2], null)];
 console.log(JSON.stringify(out));
 """
 
 
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_backtest_renderers_escape_external_strings():
+def _render() -> dict:
     dashboard = DASHBOARD.read_text(encoding="utf-8")
     inline = dashboard[dashboard.rindex("<script>") + len("<script>"):dashboard.rindex("</script>")]
     src = HARNESS % {"escape": _function(inline, "escapeHtml"), "js": JS.read_text(encoding="utf-8"),
                      "hostile": json.dumps(HOSTILE)}
     result = subprocess.run([NODE, "-e", src], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
-    out = json.loads(result.stdout)
+    return json.loads(result.stdout)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_backtest_renderers_escape_external_strings():
+    out = _render()
     for name in ("sources", "params", "locked", "help", "rows", "detail", "failed", "compare"):
         assert "<img" not in out[name], name
         assert "evil&lt;img" in out[name], name
@@ -124,3 +151,17 @@ def test_backtest_renderers_escape_external_strings():
     assert out["diff"] == [HOSTILE]                               # BotId is ignored
     assert out["warnings"] == ["date ranges differ"]
     assert out["best"] == [1, 0, 1, -1, -1]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_position_stats_lead_and_deal_stats_stay_labelled():
+    out = _render()
+    kpi = out["kpi"]
+    assert "Win rate · positions" in kpi and "42.2%" in kpi and "56.2% of deals" in kpi
+    assert ">270<" in kpi and "379 deals" in kpi
+    assert "bt-kpi-wrap\">+$33.84 / −$44.93" in kpi and "per deal +$18.20 / −$42.33" in kpi
+    assert "Full-size losses" in kpi and "57.8%" in kpi
+    assert "—%" not in out["kpiOld"] and "56.2% of deals" in out["kpiOld"]
+    assert "42.22<div" in out["rowNew"] and "56.20 deals" in out["rowNew"]
+    assert "270<div" in out["rowNew"] and "379 deals" in out["rowNew"]
+    assert "—<div" in out["rowOld"] and "56.20 deals" in out["rowOld"]   # saved before position stats
