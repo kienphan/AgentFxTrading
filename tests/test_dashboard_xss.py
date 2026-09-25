@@ -57,6 +57,7 @@ RENDERERS = [
     "escapeHtml", "formatMoney", "pnlClass", "accountBadge", "sideChip", "pnlCellHtml",
     "sltpLineHtml", "sltpCellHtml", "tradeTimesHtml", "closeReasonHtml", "botBadge", "closeButtonHtml",
     "updateDashboard", "updateTradeHistory", "renderAiDecisionsFeed",
+    "lbHas", "lbVnToday", "lbAddDays", "lbIsoDay", "lbRangeFor", "lbShortDay", "lbRangeText", "lbPeriodLabel",
     "applyLbControls", "lbRankCell", "lbBotCells", "lbWinRateCell", "lbProfitFactorCell", "lbTradesCell",
     "lbScoreCell", "lbReturnDdCell", "lbEmptyRow", "renderLeaderboard",
     "renderBots", "updateNewsShieldStatus", "renderNewsClusters",
@@ -76,8 +77,8 @@ let currentMode = 'demo';
 let selectedAccountId = 'demo', historyPage = 1;
 function fetchTradeHistory() {}
 const closingPositions = new Set();
-const LB_WEIGHT_HINTS = {usd: '', lot: ''};
-let lbTab = 'usd', lbPeriod = 'all', lbData = null;
+const LB_WEIGHT_HINTS = {usd: '', lot: ''}, LB_ROLLING = {all: 'All time'}, LB_CALENDAR = {};
+let lbTab = 'usd', lbPeriod = 'all', lbDateFrom = '', lbDateTo = '', lbData = null;
 let rawAiDecisions = [];
 const aiFeedList = document.getElementById('ai-feed-list');
 const aiFeedCount = document.getElementById('ai-feed-count');

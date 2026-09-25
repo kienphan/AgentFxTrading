@@ -2,15 +2,19 @@
 Tests for Bot Quantitative Performance Leaderboard & Ranking System.
 """
 
+import json
+import os
+import shutil
 import sqlite3
+import subprocess
 import pytest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.leaderboard as leaderboard_module
-from app.leaderboard import (FULL_SAMPLE_TRADES, calculate_quant_score, compute_bot_leaderboard,
-                             period_start)
+from app.leaderboard import (FULL_SAMPLE_TRADES, InvalidDateRange, calculate_quant_score,
+                             compute_bot_leaderboard, date_range_bounds, period_start)
 from app.server import app
 
 
@@ -355,6 +359,109 @@ def test_period_start_is_utc_window():
     assert period_start("all", now) is None
 
 
+def test_date_range_bounds_are_vietnam_days():
+    """A custom range covers whole Vietnam-time days (UTC+7), both included, as UTC bounds."""
+    now = datetime(2026, 9, 25, 3, 0, 0, tzinfo=timezone.utc)  # 10:00 on 25/09 in Vietnam
+    # 00:00 on 01/09 in Vietnam is 17:00 UTC the day before; the end is the midnight after 20/09
+    assert date_range_bounds("2026-09-01", "2026-09-20", now) == \
+        ("2026-08-31 17:00:00", "2026-09-20 17:00:00", False)
+    # A range down to today still runs, so open positions count
+    assert date_range_bounds("2026-09-25", "2026-09-25", now) == \
+        ("2026-09-24 17:00:00", "2026-09-25 17:00:00", True)
+    # 23:30 UTC on 24/09 is already 25/09 in Vietnam: a range ending on 24/09 is over
+    late = datetime(2026, 9, 24, 23, 30, 0, tzinfo=timezone.utc)
+    assert date_range_bounds(None, "2026-09-24", late) == (None, "2026-09-24 17:00:00", False)
+    # A missing day leaves that side open
+    assert date_range_bounds("2026-09-01", None, now) == ("2026-08-31 17:00:00", None, True)
+    assert date_range_bounds("", "", now) == (None, None, True)
+
+    for bad in (("2026-09-21", "2026-09-20"), ("2026-13-01", None), ("01/09/2026", None),
+                (None, "yesterday"), (None, "9999-12-31")):
+        with pytest.raises(InvalidDateRange):
+            date_range_bounds(*bad, now)
+
+
+def test_leaderboard_custom_range(temp_db):
+    """A custom range keeps the trades closed on its Vietnam-time days; open positions only
+    count while the range reaches today."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    # 01/03/2024 to 20/03/2024 in Vietnam is 29/02 17:00 to 20/03 17:00 UTC
+    for exit_time in ("2024-02-29 16:59:59", "2024-02-29 17:00:00", "2024-03-10 12:00:00",
+                      "2024-03-20 16:59:59", "2024-03-20 17:00:00"):
+        _add_closed(conn, "RangeBot", 10.0, exit_time=exit_time)
+    # A closed row without an exit time falls back to its entry time
+    for entry_time in ("2024-03-05 00:00:00", "2024-04-05 00:00:00"):
+        conn.execute("""
+            INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, entry_time, account_id)
+            VALUES ('RangeBot', 'XAUUSD', 'BUY', 0.1, 2500.0, 10.0, 'closed', ?, 'acc_demo_1')
+        """, (entry_time,))
+    for pnl, entry_time in ((4.0, "2024-03-10 00:00:00"), (3.0, _utc_ago(hours=1)), (5.0, _utc_ago(days=10))):
+        conn.execute("""
+            INSERT INTO positions (bot_id, symbol, side, volume, entry_price, pnl, status, entry_time, account_id)
+            VALUES ('RangeBot', 'XAUUSD', 'BUY', 0.1, 2500.0, ?, 'open', ?, 'acc_demo_1')
+        """, (pnl, entry_time))
+    conn.commit()
+    conn.close()
+
+    past = compute_bot_leaderboard(account_id="demo", db_path=temp_db,
+                                   date_from="2024-03-01", date_to="2024-03-20")
+    assert past["period"] == "custom"
+    assert past["period_start"] == "2024-02-29 17:00:00"
+    assert past["period_end"] == "2024-03-20 17:00:00"
+    assert past["fleet_total_trades"] == 4
+    assert past["lot_neutral"]["rankings"][0]["total_trades"] == 4
+    # The range is over: even the position opened inside it stays out, its P&L is today's
+    assert past["includes_open_positions"] is False
+    bot = past["rankings"][0]
+    assert bot["open_positions_count"] == 0
+    assert bot["floating_pnl_usd"] == 0.0
+    assert bot["total_pnl_usd"] == 40.0
+
+    # Down to today: the positions opened inside the range count, the older one does not
+    vn_today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    recent = compute_bot_leaderboard(account_id="demo", db_path=temp_db,
+                                     date_from=(vn_today - timedelta(days=3)).isoformat(),
+                                     date_to=vn_today.isoformat())
+    assert recent["includes_open_positions"] is True
+    assert recent["fleet_total_trades"] == 0
+    assert recent["rankings"][0]["open_positions_count"] == 1
+    assert recent["rankings"][0]["floating_pnl_usd"] == 3.0
+
+    # Open-ended: from a day on, up to now
+    since = compute_bot_leaderboard(account_id="demo", db_path=temp_db, date_from="2024-03-15")
+    assert since["period"] == "custom" and since["period_end"] is None
+    assert since["fleet_total_trades"] == 3  # both sides of midnight 20/03 (VN) and the 05/04 fallback
+    assert since["rankings"][0]["open_positions_count"] == 2
+
+    with pytest.raises(InvalidDateRange):
+        compute_bot_leaderboard(account_id="demo", db_path=temp_db,
+                                date_from="2024-03-20", date_to="2024-03-01")
+
+
+def test_api_leaderboard_custom_range(temp_db, monkeypatch):
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RangeBot", 10.0, exit_time="2024-03-10 12:00:00")
+    _add_closed(conn, "RangeBot", 10.0, exit_time="2024-05-10 12:00:00")
+    conn.commit()
+    conn.close()
+    _use_leaderboard_db(monkeypatch, temp_db)
+
+    client = TestClient(app)
+    resp = client.get("/api/leaderboard?account_id=all&account_type=demo&period=custom"
+                      "&date_from=2024-03-01&date_to=2024-03-31")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["period"] == "custom"
+    assert data["fleet_total_trades"] == 1
+    assert data["includes_open_positions"] is False
+
+    for query in ("date_from=2024-03-31&date_to=2024-03-01", "date_from=bogus", "date_to=2024-02-30"):
+        resp = client.get(f"/api/leaderboard?account_id=all&account_type=demo&period=custom&{query}")
+        assert resp.status_code == 400, query
+
+
 def test_bots_without_closed_trades_rank_last(temp_db):
     """A bot with nothing closed in the window is unrated and sits below even a losing bot."""
     conn = sqlite3.connect(str(temp_db))
@@ -429,10 +536,88 @@ def test_dashboard_page_renders_leaderboard_tabs():
     html = client.get("/demo/dashboard").text
     assert 'id="lb-tab-group"' in html
     assert 'data-lb-tab="lot"' in html
-    assert 'id="lb-period-group"' in html
-    for period in ("1d", "1w", "1m", "6m", "1y", "all"):
+    # The period picker: one button, its choices in a popover
+    assert 'id="lb-period-btn"' in html and 'aria-controls="lb-period-pop"' in html
+    assert 'id="lb-period-pop"' in html
+    for period in ("1d", "1w", "1m", "6m", "1y", "all",
+                   "today", "yesterday", "thisweek", "lastweek", "thismonth", "lastmonth"):
         assert f'data-lb-period="{period}"' in html
+    assert 'id="lb-date-from" type="date"' in html
+    assert 'id="lb-date-to" type="date"' in html
+    assert 'id="lb-date-apply"' in html
     assert 'id="leaderboard-lot-table-body"' in html
+
+
+DASHBOARD = Path(__file__).resolve().parent.parent / "templates" / "dashboard.html"
+
+# The period picker's presets, run in node on a pinned clock: the days each preset covers, in
+# Vietnam time whatever the zone node runs in
+PRESET_HARNESS = """
+const LB_CALENDAR = {today: 1, yesterday: 1, thisweek: 1, lastweek: 1, thismonth: 1, lastmonth: 1};
+let lbDateFrom = '2026-09-10', lbDateTo = '';
+%(functions)s
+const out = {};
+for (const [name, utc] of Object.entries(%(clocks)s)) {
+    Date.now = () => Date.parse(utc);
+    out[name] = {};
+    for (const p of [...Object.keys(LB_CALENDAR), 'custom', '1w']) {
+        const range = lbRangeFor(p);
+        out[name][p] = range && [range.from, range.to, lbRangeText(range)];
+    }
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def _dashboard_function(src: str, name: str) -> str:
+    """Source of `function name(...) {...}` in the dashboard script, matched on braces."""
+    start = src.index(f"function {name}(")
+    depth = 0
+    for i in range(src.index("{", start), len(src)):
+        depth += {"{": 1, "}": -1}.get(src[i], 0)
+        if depth == 0:
+            return src[start:i + 1]
+    raise AssertionError(f"unbalanced braces in {name}")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_period_picker_calendar_presets(tmp_path):
+    html = DASHBOARD.read_text(encoding="utf-8")
+    functions = [_dashboard_function(html, name) for name in
+                 ("lbHas", "lbVnToday", "lbAddDays", "lbIsoDay", "lbRangeFor", "lbShortDay", "lbRangeText")]
+    clocks = {
+        "fri": "2026-09-25T03:00:00Z",       # Friday 25/09, 10:00 in Vietnam
+        "vn_oct": "2026-09-30T17:30:00Z",    # still 30/09 in UTC, already Thursday 01/10 in Vietnam
+        "new_year": "2027-01-03T02:00:00Z",  # Sunday 03/01/2027 in Vietnam
+    }
+    script = tmp_path / "presets.js"
+    script.write_text(PRESET_HARNESS % {"functions": "\n".join(functions), "clocks": json.dumps(clocks)},
+                      encoding="utf-8")
+    run = subprocess.run([shutil.which("node"), str(script)], capture_output=True, text=True, timeout=30,
+                         env={**os.environ, "TZ": "America/New_York"})
+    assert run.returncode == 0, run.stderr
+    out = json.loads(run.stdout)
+
+    fri = out["fri"]
+    assert fri["today"] == ["2026-09-25", "2026-09-25", "25/09"]
+    assert fri["yesterday"] == ["2026-09-24", "2026-09-24", "24/09"]
+    assert fri["thisweek"] == ["2026-09-21", "2026-09-25", "21/09 – 25/09"]  # weeks start on Monday
+    assert fri["lastweek"] == ["2026-09-14", "2026-09-20", "14/09 – 20/09"]
+    assert fri["thismonth"] == ["2026-09-01", "2026-09-25", "01/09 – 25/09"]
+    assert fri["lastmonth"] == ["2026-08-01", "2026-08-31", "01/08 – 31/08"]
+    assert fri["custom"] == ["2026-09-10", "", "from 10/09"]
+    assert fri["1w"] is None  # a rolling window has no days
+
+    oct1 = out["vn_oct"]
+    assert oct1["today"][:2] == ["2026-10-01", "2026-10-01"]
+    assert oct1["thismonth"][:2] == ["2026-10-01", "2026-10-01"]
+    assert oct1["lastmonth"][:2] == ["2026-09-01", "2026-09-30"]
+    assert oct1["thisweek"][:2] == ["2026-09-28", "2026-10-01"]
+
+    ny = out["new_year"]
+    assert ny["thisweek"][:2] == ["2026-12-28", "2027-01-03"]  # Sunday closes the week
+    assert ny["lastmonth"] == ["2026-12-01", "2026-12-31", "01/12/2026 – 31/12/2026"]
+    assert ny["custom"][2] == "from 10/09/2026"  # another year's day shows its year
 
 
 def test_small_sample_is_pulled_toward_neutral(temp_db):
