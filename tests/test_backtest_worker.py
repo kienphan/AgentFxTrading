@@ -193,6 +193,48 @@ def test_a_non_zero_exit_fails_with_the_log_tail(env):
     assert "Login failed" in row["error"] and f"bt-{job_id}" in env.client.containers.removed
 
 
+# Tail of backtest #1 (AUDJPY 01/01-24/09/2026, 2026-09-25): the first order waited while cTrader
+# fetched the conversion symbol's ticks into a cold cache, and the bot was aborted.
+ABORT_LOG = (
+    b"02/01/2026 06:15:00.729 | Trade | Executing Market Order to Sell 43000 AUDJPY (SL: 18.4, TP: 27)\n"
+    b"02/01/2026 06:15:00.729 | Info | [OnBarClosed Error] Exception of type "
+    b"'cTrader.Automate.Host.Dispatcher.Exceptions.AutomateDispatcherUnhandledException' was thrown.\n"
+    b"Error | CBot instance [FlowRsiBot, AUDJPY, m15] aborted by timeout.\n"
+    b"Message expected\nSystem.InvalidOperationException: Message expected\n"
+)
+
+
+def test_a_job_aborted_by_timeout_is_rerun_once_ahead_of_the_queue(env):
+    first, second = queue(env), queue(env)
+    env.worker.tick()
+    container = env.client.containers.items[f"bt-{first}"]
+    container.log_bytes = ABORT_LOG
+    container.finish(1)
+    env.worker.tick()
+    assert [spec["name"] for spec in env.client.containers.runs] == [f"bt-{first}", f"bt-{first}"]
+    assert f"bt-{first}" in env.client.containers.removed
+    assert job(env, first)["status"] == "running" and job(env, second)["status"] == "queued"
+    env.client.containers.items[f"bt-{first}"].finish(0, REPORT)
+    env.worker.tick()
+    row = job(env, first)
+    assert row["status"] == "done" and row["summary"]["total_trades"] == 4
+
+
+def test_a_second_timeout_abort_fails_the_job(env):
+    job_id = queue(env)
+    env.worker.tick()
+    for _ in range(2):
+        container = env.client.containers.items[f"bt-{job_id}"]
+        container.log_bytes = ABORT_LOG
+        container.finish(1)
+        env.worker.tick()
+    env.worker.tick()
+    assert len(env.client.containers.runs) == 2
+    row = job(env, job_id)
+    assert row["status"] == "failed" and "aborted by timeout" in row["error"]
+    assert "retried" in row["error"]
+
+
 def test_exit_zero_without_a_report_fails(env):
     job_id = queue(env)
     env.worker.tick()
