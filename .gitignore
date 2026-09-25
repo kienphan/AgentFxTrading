@@ -79,3 +79,6 @@ backups/
 docs/*
 !docs/screenshots/
 !docs/docker-instances.md
+
+# Research outputs (research/data and research/.venv are already covered by data/ and .venv/)
+research/results/
