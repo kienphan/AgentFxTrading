@@ -107,8 +107,19 @@ namespace cAlgo.Robots
         [Parameter("Trail Trigger (x ATR)", Group = "Exit", DefaultValue = 1.2, MinValue = 0, Step = 0.1)]
         public double TrailTriggerAtr { get; set; }
 
-        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 0.7, MinValue = 0, Step = 0.1)]
+        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 1.0, MinValue = 0.1, Step = 0.1)]
         public double TrailDistanceAtr { get; set; }
+
+        // Tier 2 is reached at Tier2TriggerAtr x ATR, at Tier2TriggerPips, or at 65% of the TP,
+        // whichever comes first. It tightens the trail and the MFE giveback lock below.
+        [Parameter("Tier 2 Trigger (x ATR, 0=off)", Group = "Exit", DefaultValue = 2.0, MinValue = 0, Step = 0.1)]
+        public double Tier2TriggerAtr { get; set; }
+
+        [Parameter("Tier 2 Trigger (pips, 0=off)", Group = "Exit", DefaultValue = 0, MinValue = 0, Step = 10)]
+        public double Tier2TriggerPips { get; set; }
+
+        [Parameter("Tier 2 Trail Distance (x ATR)", Group = "Exit", DefaultValue = 0.6, MinValue = 0.1, Step = 0.1)]
+        public double Tier2TrailDistanceAtr { get; set; }
         // ---- ORB ----
         [Parameter("ORB Start Hour (Winter UTC)", Group = "ORB", DefaultValue = 13)]
         public int OrbStartHour { get; set; }
@@ -178,6 +189,17 @@ namespace cAlgo.Robots
 
         [Parameter("Max Giveback % of MFE (0-1, 0=off)", Group = "Guardrails", DefaultValue = 0.40, MinValue = 0, MaxValue = 1.0, Step = 0.05)]
         public double MaxGivebackMfeRatio { get; set; }
+
+        [Parameter("Tier 2 Giveback % of MFE (0-1, 0=off)", Group = "Guardrails", DefaultValue = 0.30, MinValue = 0, MaxValue = 1.0, Step = 0.05)]
+        public double Tier2GivebackMfeRatio { get; set; }
+
+        // Normal M15 noise pullbacks must not strangle a trade that has barely started;
+        // Break-Even and the trailing stop cover it until then.
+        [Parameter("Giveback Arm Min Profit (pips)", Group = "Guardrails", DefaultValue = 14.0, MinValue = 0, Step = 1.0)]
+        public double GivebackArmMinPips { get; set; }
+
+        [Parameter("AI Break-Even Min Profit (pips)", Group = "Guardrails", DefaultValue = 20.0, MinValue = 0, Step = 1.0)]
+        public double MinAdjustBeProfitPips { get; set; }
 
         // Keep the absolute breakout ceiling aligned with the per-class caps in
         // app/server.py BREAKOUT_DISTANCE_LIMITS (absolute ATR x = 3.2 - 3.6).
@@ -416,6 +438,8 @@ namespace cAlgo.Robots
         // Arming floors and the minimum captured move; see CheckMaxGiveback() / OnPositionClosed().
         private const double GivebackArmAtrFraction = 0.4;
         private const double GivebackArmRiskFraction = 0.5;
+        private const double GivebackArmPeakAtr = 1.5;
+        private const double Tier2TpFraction = 0.65;
         private const double PostTpGateMinExitAtr = 0.5;
         #endregion
 
@@ -1367,8 +1391,6 @@ namespace cAlgo.Robots
             double beOffsetPips = BreakevenOffsetAtr * atrInPips;
             double trailTriggerPips = TrailTriggerAtr * atrInPips;
             double trailDistancePips = TrailDistanceAtr * atrInPips;
-            string symUp = SymbolName.ToUpperInvariant();
-            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30") || symUp.Contains("UK100") || symUp.Contains("GB100");
 
             foreach (var pos in GetBotPositions())
             {
@@ -1444,28 +1466,13 @@ namespace cAlgo.Robots
                         totalTpPips = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize;
                     }
 
-                    // Tier 2 Trailing Stop: Khi lợi nhuận đã đạt mức lớn (>= 2.5x ATR, hoặc >= 1200p US30/600p USTEC/400p DE40, hoặc >= 65% TP),
-                    // tự động siết khoảng cách Trailing từ 1.2-1.5 ATR xuống 0.9 ATR (Indices) hoặc 0.6 ATR (Forex/Metals)
-                    // để khóa chặt lợi nhuận lớn, không để nhả lại quá nhiều.
-                    double effectiveTrailDistanceAtr = isIndex ? Math.Max(TrailDistanceAtr, 1.2) : Math.Max(TrailDistanceAtr, 1.0);
-                    bool isTier2Trailing = false;
-                    if (isIndex)
-                    {
-                        double minIndexTier2Pips = symUp.Contains("US30") ? 1200.0 : (symUp.Contains("USTEC") ? 600.0 : 400.0);
-                        if (pnlPips >= 2.5 * atrInPips || pnlPips >= minIndexTier2Pips || (totalTpPips > 0 && pnlPips >= 0.65 * totalTpPips))
-                        {
-                            effectiveTrailDistanceAtr = Math.Min(TrailDistanceAtr, 0.9);
-                            isTier2Trailing = true;
-                        }
-                    }
-                    else
-                    {
-                        if (pnlPips >= 2.0 * atrInPips || (totalTpPips > 0 && pnlPips >= 0.65 * totalTpPips))
-                        {
-                            effectiveTrailDistanceAtr = Math.Min(TrailDistanceAtr, 0.6);
-                            isTier2Trailing = true;
-                        }
-                    }
+                    // Tier 2 Trailing Stop: once the profit is large (see IsTier2Reached), tighten the
+                    // trail from TrailDistanceAtr to Tier2TrailDistanceAtr so a big winner does not
+                    // hand too much back.
+                    bool isTier2Trailing = IsTier2Reached(pnlPips, atrInPips, totalTpPips);
+                    double effectiveTrailDistanceAtr = isTier2Trailing
+                        ? Math.Min(TrailDistanceAtr, Tier2TrailDistanceAtr)
+                        : TrailDistanceAtr;
 
                     double effectiveTrailDistancePips = effectiveTrailDistanceAtr * atrInPips;
                     // The broker holds the stop rounded to Symbol.Digits. An unrounded candidate
@@ -1507,11 +1514,6 @@ namespace cAlgo.Robots
             double atrInPips = GetAtrPips();
             double maxGivebackPips = MaxGivebackAtr > 0 ? MaxGivebackAtr * atrInPips : double.MaxValue;
 
-            string symUp = SymbolName.ToUpperInvariant();
-            bool isIndex = symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("NAS100") || symUp.Contains("GER40") || symUp.Contains("DJ30") || symUp.Contains("UK100") || symUp.Contains("GB100");
-            bool isMetal = symUp.Contains("XAU") || symUp.Contains("GOLD");
-            bool isForex = !isIndex && !isMetal;
-
             foreach (var pos in GetBotPositions())
             {
                 if (!_positionMfe.ContainsKey(pos.Id)) continue;
@@ -1535,25 +1537,8 @@ namespace cAlgo.Robots
                     activationThreshold = Math.Max(activationThreshold, initialRisk * GivebackArmRiskFraction);
                 }
 
-                if (isIndex)
-                {
-                    double minIndexPips = symUp.Contains("US30") ? 1000.0 : (symUp.Contains("USTEC") ? 600.0 : (symUp.Contains("DE40") ? 500.0 : 400.0));
-                    activationThreshold = Math.Max(activationThreshold, Math.Max(minIndexPips, 1.5 * atrInPips));
-                }
-                else if (isForex)
-                {
-                    // Forex pairs: Arm Giveback ONLY after the trade has reached meaningful profit (>= 1.5 ATR or >= 14.0 pips).
-                    // Normal 3-5 pip M15 noise pullbacks MUST NOT strangle the trade when it has barely started.
-                    // Early protection is handled safely by Break-Even and Trailing Stop.
-                    double minForexPips = Math.Max(14.0, 1.5 * atrInPips);
-                    activationThreshold = Math.Max(activationThreshold, minForexPips);
-                }
-                else if (isMetal)
-                {
-                    // Metals (Gold): Arm Giveback only after clearing at least 1.5 ATR (min 150 pips / $1.50).
-                    double minMetalPips = Math.Max(150.0, 1.5 * atrInPips);
-                    activationThreshold = Math.Max(activationThreshold, minMetalPips);
-                }
+                // Arm Giveback ONLY after the trade has reached meaningful profit.
+                activationThreshold = Math.Max(activationThreshold, Math.Max(GivebackArmMinPips, GivebackArmPeakAtr * atrInPips));
 
                 if (mfe < activationThreshold) continue;
 
@@ -1563,8 +1548,8 @@ namespace cAlgo.Robots
                 // 1. Percentage-based MFE Giveback Guard.
                 // Tier 1 (Normal profit): Allow at least 45% giveback (locks in at least 55% of peak profit)
                 // to grant breathing room for normal price retracements.
-                // Tier 2 (Large profit - MFE >= 2.5x ATR hoặc MFE >= 1200p trên US30 / 600p USTEC / 400p DE40 hoặc >= 65% TP):
-                // Tighten giveback from 45% down to 35% (Indices) and 30% (Forex/Metals) to lock in at least 65-70% of peak gains!
+                // Tier 2 (Large profit, see IsTier2Reached): tighten the allowed giveback to
+                // Tier2GivebackMfeRatio to lock in most of the peak gain.
                 double effectiveMfeRatio = MaxGivebackMfeRatio > 0 ? Math.Max(MaxGivebackMfeRatio, 0.45) : 0;
 
                 double totalTpPips = 0;
@@ -1573,41 +1558,38 @@ namespace cAlgo.Robots
                     totalTpPips = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize;
                 }
 
-                bool isTier2Giveback = false;
-                if (isIndex)
+                bool isTier2Giveback = IsTier2Reached(mfe, atrInPips, totalTpPips);
+                if (isTier2Giveback)
                 {
-                    double minIndexTier2Mfe = symUp.Contains("US30") ? 1200.0 : (symUp.Contains("USTEC") ? 600.0 : 400.0);
-                    if (mfe >= 2.5 * atrInPips || mfe >= minIndexTier2Mfe || (totalTpPips > 0 && mfe >= 0.65 * totalTpPips))
-                    {
-                        effectiveMfeRatio = 0.35;
-                        isTier2Giveback = true;
-                    }
-                }
-                else
-                {
-                    if (mfe >= 2.0 * atrInPips || (totalTpPips > 0 && mfe >= 0.65 * totalTpPips))
-                    {
-                        effectiveMfeRatio = 0.30;
-                        isTier2Giveback = true;
-                    }
+                    effectiveMfeRatio = Tier2GivebackMfeRatio;
                 }
 
                 if (effectiveMfeRatio > 0 && giveback >= (mfe * effectiveMfeRatio))
                 {
-                    string tierLabel = isTier2Giveback ? "Tier 2 (Tight 30-35%)" : "Tier 1";
+                    string tierLabel = isTier2Giveback ? "Tier 2" : "Tier 1";
                     CloseWithReason(pos, $"Giveback Lock ({tierLabel}, {effectiveMfeRatio:P0} of MFE)");
                     if (ShowLogs) Print($"[Giveback % {tierLabel}] Pos#{pos.Id} locked profit: gave back {giveback:F1}p (>= {effectiveMfeRatio:P0} of peak MFE {mfe:F1}p, now={pnlPips:F1}p)");
                     continue;
                 }
 
                 // 2. ATR-based Giveback Guard
-                double effectiveGivebackAtr = isIndex ? Math.Max(MaxGivebackAtr, 1.0) * atrInPips : maxGivebackPips;
-                if (MaxGivebackAtr > 0 && giveback >= effectiveGivebackAtr)
+                if (MaxGivebackAtr > 0 && giveback >= maxGivebackPips)
                 {
                     CloseWithReason(pos, "Giveback Lock (ATR)");
-                    if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={effectiveGivebackAtr:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
+                    if (ShowLogs) Print($"[Giveback ATR] Pos#{pos.Id} closed: gave back {giveback:F1}p (Max={maxGivebackPips:F1}p) from peak profit MFE={mfe:F1}p (now={pnlPips:F1}p)");
                 }
             }
+        }
+
+        /// <summary>
+        /// Tier 2 = a large profit: Tier2TriggerAtr x ATR, Tier2TriggerPips, or Tier2TpFraction of the
+        /// take profit, whichever is reached first. Shared by the trailing stop and the giveback lock.
+        /// </summary>
+        private bool IsTier2Reached(double profitPips, double atrInPips, double totalTpPips)
+        {
+            return (Tier2TriggerAtr > 0 && profitPips >= Tier2TriggerAtr * atrInPips)
+                || (Tier2TriggerPips > 0 && profitPips >= Tier2TriggerPips)
+                || (totalTpPips > 0 && profitPips >= Tier2TpFraction * totalTpPips);
         }
 
         private SessionInfo GetSessionInfo()
@@ -2237,13 +2219,8 @@ namespace cAlgo.Robots
 
                     if (targetSL.HasValue)
                     {
-                        // Anti-Premature Break-Even Guardrail for Forex, Metals, Indices
-                        double minBeProfitPips = 20.0;
-                        string symUpper = SymbolName.ToUpperInvariant();
-                        if (symUpper.Contains("XAU") || symUpper.Contains("GOLD")) minBeProfitPips = 300.0;
-                        else if (symUpper.Contains("US30") || symUpper.Contains("USTEC") || symUpper.Contains("DE40") || symUpper.Contains("NAS100") || symUpper.Contains("UK100") || symUpper.Contains("GB100")) minBeProfitPips = 50.0;
-                        else if (symUpper.Contains("BTC")) minBeProfitPips = 6000.0;
-                        else if (symUpper.Contains("ETH")) minBeProfitPips = 600.0;
+                        // Anti-Premature Break-Even Guardrail
+                        double minBeProfitPips = MinAdjustBeProfitPips;
 
                         double currentProfitPips = pos.TradeType == TradeType.Buy 
                             ? (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize 

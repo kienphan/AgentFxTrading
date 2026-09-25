@@ -517,20 +517,6 @@ namespace cAlgo.Robots
             try { InitializeRiskManagement(); } catch (Exception ex) { Print($"[Risk Init Warning] {ex.Message}"); }
             try { InitializeStrategyIndicators(); } catch (Exception ex) { Print($"[Indicators Init Warning] {ex.Message}"); }
             try { InitializeUI(); } catch (Exception ex) { Print($"[UI Init Warning] {ex.Message}"); }
-            // Auto-scale Asian Range & buffer for Gold (XAUUSD where 1 pip = $0.01) if using unscaled defaults
-            string symUp = SymbolName.ToUpperInvariant();
-            if (symUp.Contains("XAU") || symUp.Contains("GOLD"))
-            {
-                if (maxAsianRangePips <= 500.0)
-                {
-                    minAsianRangePips = 200.0;  // $2.00 min Asian Range
-                    maxAsianRangePips = 8000.0; // $80.00 max Asian Range
-                    if (sweepBufferPips <= 50.0) sweepBufferPips = 500.0; // $5.00 sweep buffer for Gold
-                    if (stoplossPip <= 200.0) stoplossPip = 350.0; // $3.50 default SL for Gold
-                    if (takeprofitPip <= 400.0) takeprofitPip = 700.0; // $7.00 default TP for Gold
-                    Print($"[Auto-Scale XAUUSD] Scaled Asian Range for Gold: Min={minAsianRangePips}p, Max={maxAsianRangePips}p, Buffer={sweepBufferPips}p, SL={stoplossPip}p, TP={takeprofitPip}p");
-                }
-            }
             try { InitializeAsianSession(); } catch (Exception ex) { Print($"[Asian Range Init Warning] {ex.Message}"); }
             GetAdjustedKillzoneHours(Server.Time, out int lStart, out int lEnd, out int nyStart, out int nyEnd);
             bool isEurDst = IsEuropeDst(Server.Time);
@@ -1165,7 +1151,12 @@ namespace cAlgo.Robots
             double currentAtrPips = (atr != null && atr.Result.Count > 0 && Symbol.PipSize > 0)
                 ? Math.Round(atr.Result.LastValue / Symbol.PipSize, 0)
                 : 0;
-            return Math.Max(AiSlMinFloorPips, currentAtrPips > 0 ? Math.Round(currentAtrPips * 0.8, 0) : 200.0);
+            return GetEffectiveSlFloorPips(currentAtrPips);
+        }
+
+        private double GetEffectiveSlFloorPips(double currentAtrPips)
+        {
+            return Math.Max(AiSlMinFloorPips, currentAtrPips > 0 ? Math.Round(currentAtrPips * 0.8, 0) : 0);
         }
 
         /// <summary>Index of the bar that has just closed. Inside OnBarClosed that is normally the
@@ -3156,7 +3147,7 @@ The cBot currently HAS NO OPEN POSITIONS. Your mission is to analyze the Asian R
 === 7. SMART MONEY CONCEPTS (SMC) & JUDAS SWEEP RULES ===
 1. Judas Swing Reversal: Price fakeouts above Asian High or below Asian Low during London/NY Killzones, sweeps liquidity (BSL/SSL), and rejects back inside range.
 2. Entry Confirmation: Validated Order Block, Fair Value Gap (FVG), or pinbar rejection on M15.
-3. Technical SL & TP: Place SL safely beyond the sweep extreme spike (min floor 200 pips); TP targeted at opposing Asian Range boundary (Asian Low for SELL, Asian High for BUY) or target liquidity pool. For XAUUSD, $1.00 move = 100 pips.
+3. Technical SL & TP: Place SL safely beyond the sweep extreme spike (min floor {GetEffectiveSlFloorPips(atrPips):F0} pips); TP targeted at opposing Asian Range boundary (Asian Low for SELL, Asian High for BUY) or target liquidity pool. For {snapshot.symbol}, 1 pip = {Symbol.PipSize} price.
 
 === 8. VALID ACTIONS ===
 - BUY: Validated Bullish Judas Sweep (Asian Low fakeout) + Order Block bounce.
@@ -4388,7 +4379,7 @@ Reply strictly with JSON object.";
                     double effectiveRisk = GetEffectiveRiskFactor();
                     double riskAmount = Account.Equity * (effectiveRisk / 100.0);
                     double effectiveSlPips = slPips > 0 ? slPips : stoplossPip;
-                    if (effectiveSlPips <= 0) effectiveSlPips = 200.0;
+                    if (effectiveSlPips <= 0) effectiveSlPips = GetEffectiveSlFloorPips();
                     double lossPerUnit = effectiveSlPips * Symbol.PipValue;
                     if (lossPerUnit <= 0) lossPerUnit = Symbol.PipValue * 100.0;
                     double targetUnits = riskAmount / lossPerUnit;

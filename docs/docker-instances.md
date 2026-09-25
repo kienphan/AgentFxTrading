@@ -97,7 +97,7 @@ session; ATR drives every stop, target and trail.
 
 `m15` · New York
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, plus the gold pip floors the cBot used to hard-code: the giveback lock arms at `150` pips ($1.50) and an AI break-even needs `300` pips ($3) of profit.
 
 ```bash
 docker run -d \
@@ -133,6 +133,8 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --GivebackArmMinPips=150.0 \
+  --MinAdjustBeProfitPips=300.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -553,7 +555,7 @@ docker run -d \
 
 `m15` · New York
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, plus the index exit profile the cBot used to hard-code: Tier 2 at `2.5` ATR or `1200` pips, then a `0.9` ATR trail and at most `35%` giveback of the peak; the giveback lock arms at `1000` pips; an AI break-even needs `50` pips of profit.
 
 *On cTrader 1 pip = 0.1 index point.*
 
@@ -595,6 +597,12 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --Tier2TriggerAtr=2.5 \
+  --Tier2TrailDistanceAtr=0.9 \
+  --Tier2GivebackMfeRatio=0.35 \
+  --MinAdjustBeProfitPips=50.0 \
+  --Tier2TriggerPips=1200.0 \
+  --GivebackArmMinPips=1000.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -607,7 +615,7 @@ docker run -d \
 
 `m5` · New York
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, plus the index exit profile the cBot used to hard-code: Tier 2 at `2.5` ATR or `600` pips, then a `0.9` ATR trail and at most `35%` giveback of the peak; the giveback lock arms at `600` pips; an AI break-even needs `50` pips of profit.
 
 *Broker alias: some brokers name this symbol `NAS100`.*
 
@@ -649,6 +657,12 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --Tier2TriggerAtr=2.5 \
+  --Tier2TrailDistanceAtr=0.9 \
+  --Tier2GivebackMfeRatio=0.35 \
+  --MinAdjustBeProfitPips=50.0 \
+  --Tier2TriggerPips=600.0 \
+  --GivebackArmMinPips=600.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -661,7 +675,7 @@ docker run -d \
 
 `m15` · London
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, plus the index exit profile the cBot used to hard-code: Tier 2 at `2.5` ATR or `400` pips, then a `0.9` ATR trail and at most `35%` giveback of the peak; the giveback lock arms at `500` pips; an AI break-even needs `50` pips of profit.
 
 *Broker alias: some brokers name this symbol `GER40`.*
 
@@ -702,6 +716,12 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --Tier2TriggerAtr=2.5 \
+  --Tier2TrailDistanceAtr=0.9 \
+  --Tier2GivebackMfeRatio=0.35 \
+  --MinAdjustBeProfitPips=50.0 \
+  --Tier2TriggerPips=400.0 \
+  --GivebackArmMinPips=500.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -714,7 +734,7 @@ docker run -d \
 
 `m15` · London
 
-Documented block — the flags the README shipped, unchanged.
+Documented block — the flags the README shipped, plus the index exit profile the cBot used to hard-code: Tier 2 at `2.5` ATR or `400` pips, then a `0.9` ATR trail and at most `35%` giveback of the peak; the giveback lock arms at `400` pips; an AI break-even needs `50` pips of profit. `MaxGivebackAtr` is `1.0`, not the README's `0.6`: the cBot raised every index to `1.0`, so `0.6` never applied.
 
 *Broker alias: some brokers name this symbol `GB100`. On cTrader 1 pip = 0.1 index point.*
 
@@ -754,7 +774,13 @@ docker run -d \
   --MaxSlAtr=4.5 \
   --MinTpAtr=2.0 \
   --MaxTpAtr=8.0 \
-  --MaxGivebackAtr=0.6 \
+  --MaxGivebackAtr=1.0 \
+  --Tier2TriggerAtr=2.5 \
+  --Tier2TrailDistanceAtr=0.9 \
+  --Tier2GivebackMfeRatio=0.35 \
+  --MinAdjustBeProfitPips=50.0 \
+  --Tier2TriggerPips=400.0 \
+  --GivebackArmMinPips=400.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -767,7 +793,7 @@ docker run -d \
 
 `m15` · New York
 
-Derived from **XAUUSD TMS+ORB** ×50 (dollar volatility): `$100 / $200 / $25` breakout / OR width / buffer.
+Derived from **XAUUSD TMS+ORB** ×50 (dollar volatility): `$100 / $200 / $25` breakout / OR width / buffer. An AI break-even needs `6000` pips ($60) of profit.
 
 ```bash
 docker run -d \
@@ -806,6 +832,7 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --MinAdjustBeProfitPips=6000.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -818,7 +845,7 @@ docker run -d \
 
 `m15` · New York
 
-Derived from **XAUUSD TMS+ORB** ×4: `$8 / $16 / $2` breakout / OR width / buffer.
+Derived from **XAUUSD TMS+ORB** ×4: `$8 / $16 / $2` breakout / OR width / buffer. An AI break-even needs `600` pips ($6) of profit.
 
 ```bash
 docker run -d \
@@ -857,6 +884,7 @@ docker run -d \
   --MinTpAtr=1.0 \
   --MaxTpAtr=6.0 \
   --MaxGivebackAtr=1.0 \
+  --MinAdjustBeProfitPips=600.0 \
   --EnablePostTpGate=true \
   --PostTpPullbackAtr=0.5 \
   --BounceTradeEnabled=true \
@@ -1456,7 +1484,7 @@ risk flags never change per symbol — only the four pip-sized filters do.
 
 `m15` · All sessions
 
-Derived from **EURUSD FlowRSI**; only the four pip filters are resized for gold (`$0.5 / $0.5 / $3 / $0.2`).
+Derived from **EURUSD FlowRSI**; the four pip filters are resized for gold (`$0.5 / $0.5 / $8 / $0.2`), and the SL floor is `$15` (`MinSlFloorPips=1500`) with `$10` of profit before break-even (`MinBreakEvenPips=1000`).
 
 ```bash
 docker run -d \
@@ -1487,8 +1515,10 @@ docker run -d \
   --UseAiGateMode=true \
   --FvgMinPips=50.0 \
   --MaxSpreadPips=50.0 \
-  --TrailingStopDistancePips=300.0 \
-  --BreakEvenExtraPips=20.0
+  --TrailingStopDistancePips=800.0 \
+  --BreakEvenExtraPips=20.0 \
+  --MinSlFloorPips=1500.0 \
+  --MinBreakEvenPips=1000.0
 ```
 
 ### EURUSD — FlowRSI
@@ -1530,7 +1560,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1565,7 +1595,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — the **EURUSD FlowRSI** block plus the JPY floors: `MinSlFloorPips=18` and `MinBreakEvenPips=15` (the cBot applied these to every JPY pair on its own before they became flags). The other pip filters keep the cBot's defaults (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1593,14 +1623,16 @@ docker run -d \
   --RiskPercentage=0.5 \
   --MaxRiskPerTradeMoney=50.0 \
   --TargetRiskReward=1.5 \
-  --UseAiGateMode=true
+  --UseAiGateMode=true \
+  --MinSlFloorPips=18.0 \
+  --MinBreakEvenPips=15.0
 ```
 
 ### GBPJPY — FlowRSI
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — the **EURUSD FlowRSI** block plus the JPY floors: `MinSlFloorPips=18` and `MinBreakEvenPips=15` (the cBot applied these to every JPY pair on its own before they became flags). The other pip filters keep the cBot's defaults (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1628,14 +1660,16 @@ docker run -d \
   --RiskPercentage=0.5 \
   --MaxRiskPerTradeMoney=50.0 \
   --TargetRiskReward=1.5 \
-  --UseAiGateMode=true
+  --UseAiGateMode=true \
+  --MinSlFloorPips=18.0 \
+  --MinBreakEvenPips=15.0
 ```
 
 ### EURJPY — FlowRSI
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — the **EURUSD FlowRSI** block plus the JPY floors: `MinSlFloorPips=18` and `MinBreakEvenPips=15` (the cBot applied these to every JPY pair on its own before they became flags). The other pip filters keep the cBot's defaults (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1663,14 +1697,16 @@ docker run -d \
   --RiskPercentage=0.5 \
   --MaxRiskPerTradeMoney=50.0 \
   --TargetRiskReward=1.5 \
-  --UseAiGateMode=true
+  --UseAiGateMode=true \
+  --MinSlFloorPips=18.0 \
+  --MinBreakEvenPips=15.0
 ```
 
 ### USDCAD — FlowRSI
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1705,7 +1741,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1740,7 +1776,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived — RSI, SMC and risk flags are symbol-agnostic, so this is the **EURUSD FlowRSI** block unchanged; the cBot's own pip defaults apply (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=15`, `BreakEvenExtraPips=0.5`).
+Derived — the **EURUSD FlowRSI** block plus the JPY floors: `MinSlFloorPips=18` and `MinBreakEvenPips=15` (the cBot applied these to every JPY pair on its own before they became flags). The other pip filters keep the cBot's defaults (`FvgMinPips=2`, `MaxSpreadPips=30`, `TrailingStopDistancePips=25`, `BreakEvenExtraPips=0.5`).
 
 ```bash
 docker run -d \
@@ -1768,14 +1804,16 @@ docker run -d \
   --RiskPercentage=0.5 \
   --MaxRiskPerTradeMoney=50.0 \
   --TargetRiskReward=1.5 \
-  --UseAiGateMode=true
+  --UseAiGateMode=true \
+  --MinSlFloorPips=18.0 \
+  --MinBreakEvenPips=15.0
 ```
 
 ### US30 — FlowRSI
 
 `m15` · All sessions
 
-Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`10 / 6 / 30 / 1` points).
+Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`10 / 6 / 35 / 1` points).
 
 *On cTrader 1 pip = 0.1 index point.*
 
@@ -1808,7 +1846,7 @@ docker run -d \
   --UseAiGateMode=true \
   --FvgMinPips=100.0 \
   --MaxSpreadPips=60.0 \
-  --TrailingStopDistancePips=300.0 \
+  --TrailingStopDistancePips=350.0 \
   --BreakEvenExtraPips=10.0
 ```
 
@@ -1816,7 +1854,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`8 / 5 / 25 / 1` points).
+Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`8 / 5 / 35 / 1` points).
 
 *Broker alias: some brokers name this symbol `NAS100`.*
 
@@ -1849,7 +1887,7 @@ docker run -d \
   --UseAiGateMode=true \
   --FvgMinPips=80.0 \
   --MaxSpreadPips=50.0 \
-  --TrailingStopDistancePips=250.0 \
+  --TrailingStopDistancePips=350.0 \
   --BreakEvenExtraPips=10.0
 ```
 
@@ -1857,7 +1895,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`5 / 4 / 20 / 1` points).
+Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`5 / 4 / 35 / 1` points).
 
 *Broker alias: some brokers name this symbol `GER40`.*
 
@@ -1890,7 +1928,7 @@ docker run -d \
   --UseAiGateMode=true \
   --FvgMinPips=50.0 \
   --MaxSpreadPips=40.0 \
-  --TrailingStopDistancePips=200.0 \
+  --TrailingStopDistancePips=350.0 \
   --BreakEvenExtraPips=10.0
 ```
 
@@ -1898,7 +1936,7 @@ docker run -d \
 
 `m15` · All sessions
 
-Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`3 / 3 / 10 / 0.5` points).
+Derived from **EURUSD FlowRSI**; pip filters resized for a 0.1-pip index (`3 / 3 / 35 / 0.5` points).
 
 *Broker alias: some brokers name this symbol `GB100`. On cTrader 1 pip = 0.1 index point.*
 
@@ -1931,7 +1969,7 @@ docker run -d \
   --UseAiGateMode=true \
   --FvgMinPips=30.0 \
   --MaxSpreadPips=30.0 \
-  --TrailingStopDistancePips=100.0 \
+  --TrailingStopDistancePips=350.0 \
   --BreakEvenExtraPips=5.0
 ```
 

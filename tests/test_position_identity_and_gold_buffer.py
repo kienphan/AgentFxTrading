@@ -10,10 +10,10 @@ partial-close path added for C-03.
 
 X-02 -- the Judas XAUUSD preset passes ``sweepBufferPips = 30.0``. Gold quotes at
 1 pip = $0.01, so that is a **$0.30** buffer: far too tight to tell a real sweep
-from noise. The bot's own auto-scale (AsianRangeJudasSweepBot.cs:517) wants 500
-($5.00) for gold, but only fires when ``maxAsianRangePips <= 500`` and the preset
-passes 8000, so it never ran. The same value also sets the structural-invalidation
-threshold, so gold's "decisive break" was $0.30 too.
+from noise. The bot's old gold auto-scale wanted 500 ($5.00), but only fired when
+``maxAsianRangePips <= 500`` and the preset passes 8000, so it never ran (it has
+since been removed; the preset is the only source). The same value also sets the
+structural-invalidation threshold, so gold's "decisive break" was $0.30 too.
 """
 
 from pathlib import Path
@@ -219,14 +219,9 @@ def test_gold_judas_sweep_buffer_is_scaled_for_dollar_quoting():
     )
 
 
-def test_gold_buffer_matches_the_bots_own_auto_scale_intent():
-    src = (ROOT / "cBot" / "AsianRangeJudasSweepBot.cs").read_text(encoding="utf-8")
-    assert "sweepBufferPips = 500.0" in src, (
-        "The bot's gold auto-scale value moved; the preset should track it."
-    )
+def test_gold_buffer_is_five_dollars():
     assert PRESETS[("judas", "XAUUSD")]["params"]["sweepBufferPips"] == 500.0, (
-        "The preset should use the same $5.00 buffer the bot's own auto-scale intends, "
-        "since the auto-scale branch never fires (maxAsianRangePips is 8000)."
+        "Gold's sweep buffer is $5.00 (500p); the bot no longer scales it, so the preset must."
     )
 
 

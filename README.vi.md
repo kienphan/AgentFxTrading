@@ -330,6 +330,8 @@ Bạn có thể chạy cBot bằng **Giao diện cTrader Desktop (GUI)** hoặc 
      --MinTpAtr=1.0 \
      --MaxTpAtr=6.0 \
      --MaxGivebackAtr=1.0 \
+     --GivebackArmMinPips=150.0 \
+     --MinAdjustBeProfitPips=300.0 \
      --EnablePostTpGate=true \
      --PostTpPullbackAtr=0.5 \
      --BounceTradeEnabled=true \

@@ -197,12 +197,12 @@ FLOWRSI_HELP: Dict[str, str] = {
     "MinSlFloorPips": (
         "Khoảng SL tối thiểu (pip). SL tính theo bất kỳ Stop Loss Mode nào mà gần hơn sẽ được nới ra, và TP "
         "nới theo để giữ R:R.\n"
-        "Sàn thực tế = lớn nhất của: giá trị này, 1 × ATR, và mức cứng theo symbol (JPY ≥ 18 pip; vàng ≥ 800 "
-        "pip ở khung ≤ M5, ≥ 1500 pip ở khung lớn hơn).\n"
+        "Sàn thực tế = lớn hơn giữa giá trị này và 1 × ATR. Preset đặt 18 pip cho các cặp JPY và 1500 pip "
+        "(15 $) cho vàng.\n"
         "Tăng → SL rộng hơn, lot nhỏ hơn."),
     "FixedSlPips": (
         "Khoảng SL cố định (pip), chỉ dùng khi Stop Loss Mode = Fixed_Pips. Vẫn được nới ra nếu nhỏ hơn sàn "
-        "SL (Min SL Floor, 1 × ATR, mức cứng theo symbol)."),
+        "SL (Min SL Floor, 1 × ATR)."),
     "FixedTpPips": (
         f"{_NOT_READ}\n"
         "Kể cả khi Take Profit Mode = Fixed_Pips, TP vẫn tính theo Target Risk-to-Reward Ratio."),
@@ -245,8 +245,7 @@ FLOWRSI_HELP: Dict[str, str] = {
     "MinBreakEvenPips": (
         "Số pip lời tối thiểu trước khi được dời SL về hòa vốn, áp dụng cho cả hai chế độ, để không dời BE "
         "quá sớm khi SL ban đầu rất hẹp.\n"
-        "Mức thực tế còn được nâng theo symbol: JPY ≥ 15 pip; vàng ≥ 500 pip ở khung ≤ M5, ≥ 1000 pip ở "
-        "khung lớn hơn."),
+        "Preset đặt 15 pip cho các cặp JPY và 1000 pip (10 $) cho vàng."),
     "BreakEvenExtraPips": (
         "Số pip cộng thêm trên mức hòa vốn-sau-phí khi dời SL, để bù trượt giá lúc SL khớp.\n"
         "Mức này cũng là sàn của trailing stop: SL trailing không bao giờ kém hơn giá vào + phí + buffer."),
@@ -260,9 +259,9 @@ FLOWRSI_HELP: Dict[str, str] = {
         "Nên đặt giữa Break-Even Trigger (1.0) và Target Risk-to-Reward (1.5). Nhỏ hơn → khóa lời sớm; lớn "
         "hơn → ít lệnh được trailing."),
     "TrailingStopDistancePips": (
-        "Khoảng cách tối thiểu (pip) giữa giá và SL khi trailing. Khoảng thực tế = lớn nhất của: giá trị này, "
-        "sàn theo symbol (forex 20, JPY 25, chỉ số 350, vàng 400/800 pip), và khoảng SL ban đầu (100%, còn "
-        "60% khi lời ≥ 2,5R).\n"
+        "Khoảng cách tối thiểu (pip) giữa giá và SL khi trailing. Khoảng thực tế = lớn hơn giữa giá trị này "
+        "và khoảng SL ban đầu (100%, còn 60% khi lời ≥ 2,5R). Preset đặt 350 pip cho chỉ số và 800 pip (8 $) "
+        "cho vàng.\n"
         "Vì vậy trailing thường bám đúng khoảng SL ban đầu; tham số này chỉ có tác dụng khi lớn hơn khoảng đó."),
     "EnablePartialClose": (
         "Đúng lúc dời SL về hòa vốn, chốt lời ngay một phần khối lượng (theo Partial Close Ratio); phần còn "

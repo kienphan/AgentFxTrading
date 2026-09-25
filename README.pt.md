@@ -329,6 +329,8 @@ Você pode executar o cBot através da **Interface Gráfica cTrader Desktop (GUI
      --MinTpAtr=1.0 \
      --MaxTpAtr=6.0 \
      --MaxGivebackAtr=1.0 \
+     --GivebackArmMinPips=150.0 \
+     --MinAdjustBeProfitPips=300.0 \
      --EnablePostTpGate=true \
      --PostTpPullbackAtr=0.5 \
      --BounceTradeEnabled=true \
