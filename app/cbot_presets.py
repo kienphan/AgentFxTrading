@@ -45,16 +45,29 @@ _TMS_ATR = {
     "PartialCloseRatio": 0.5, "MinSlAtr": 0.8, "MaxSlAtr": 3.0, "MinTpAtr": 1.0, "MaxTpAtr": 6.0,
     "MaxGivebackAtr": 1.0,
 }
-# Indices break out wider than forex, so all four let a trade run further before breakeven and trail looser.
+# Gold and crypto keep the forex exit profile, but their pip is a cent, so the pip floors scale up:
+# giveback arms at $1.50 on gold, and an AI break-even ADJUST needs $3 / $60 / $6 of profit first.
+_XAU_ATR = {**_TMS_ATR, "GivebackArmMinPips": 150.0, "MinAdjustBeProfitPips": 300.0}
+_BTC_ATR = {**_TMS_ATR, "MinAdjustBeProfitPips": 6000.0}
+_ETH_ATR = {**_TMS_ATR, "MinAdjustBeProfitPips": 600.0}
+# Indices break out wider than forex, so all four let a trade run further before breakeven and trail looser,
+# reach Tier 2 later (2.5 ATR) and then trail at 0.9 ATR and give back at most 35% of the peak.
 _INDEX_ATR = {
     **_TMS_ATR,
     "BreakevenTriggerAtr": 1.6, "BreakevenOffsetAtr": 0.2, "TrailTriggerAtr": 2.2, "TrailDistanceAtr": 1.3,
+    "Tier2TriggerAtr": 2.5, "Tier2TrailDistanceAtr": 0.9, "Tier2GivebackMfeRatio": 0.35, "MinAdjustBeProfitPips": 50.0,
 }
-# UK100 shares that breakeven/trail profile but keeps the widest stops and the tightest giveback of the four.
+# UK100 shares that breakeven/trail profile but keeps the widest stops of the four. Its giveback stays at
+# 1.0 ATR like the others: the bot used to raise every index to 1.0, so a 0.6 here never took effect.
 _UK100_ATR = {
     **_INDEX_ATR,
-    "MinSlAtr": 1.5, "MaxSlAtr": 4.5, "MinTpAtr": 2.0, "MaxTpAtr": 8.0, "MaxGivebackAtr": 0.6,
+    "MinSlAtr": 1.5, "MaxSlAtr": 4.5, "MinTpAtr": 2.0, "MaxTpAtr": 8.0,
 }
+
+
+def _index_atr(base: dict, tier2_pips: float, arm_pips: float) -> dict:
+    """Per-index pip floors: profit that also reaches Tier 2, and the peak that arms the giveback lock."""
+    return {**base, "Tier2TriggerPips": tier2_pips, "GivebackArmMinPips": arm_pips}
 
 
 def _tms(session: dict, breakout: float, or_width: float, buffer: float, bounce, atr: dict = _TMS_ATR) -> dict:
@@ -101,12 +114,18 @@ _FLOWRSI_BASE = {
 }
 
 
-def _flowrsi(fvg_min=None, max_spread=None, trail=None, be_extra=None) -> dict:
-    """README EURUSD block; forex keeps the cBot's pip defaults (2 / 30 / 25 / 0.5), other classes override them."""
+def _flowrsi(fvg_min=None, max_spread=None, trail=None, be_extra=None, min_sl=None, min_be=None) -> dict:
+    """
+    README EURUSD block; forex keeps the cBot's pip defaults (FVG 2 / spread 30 / trail 25 / BE buffer 0.5,
+    SL floor 15, break-even 10), other classes override them. `min_sl` / `min_be` set the SL floor and the
+    profit needed before break-even (MinSlFloorPips / MinBreakEvenPips).
+    """
     params = dict(_FLOWRSI_BASE)
     if fvg_min is not None:
         params.update({"FvgMinPips": fvg_min, "MaxSpreadPips": max_spread,
                        "TrailingStopDistancePips": trail, "BreakEvenExtraPips": be_extra})
+    if min_sl is not None:
+        params.update({"MinSlFloorPips": min_sl, "MinBreakEvenPips": min_be})
     return params
 
 
@@ -117,7 +136,7 @@ _JUDAS_CROSS = (25.0, 70.0, 5.0, 25.0, 30.0, 25.0, 50.0)    # GBPJPY/EURJPY READ
 # (strategy, SYMBOL) -> {"period", "session", "params"}; 15 symbols × 3 strategies = 45 cells.
 PRESETS: Dict[Tuple[str, str], Dict] = {
     # TMS+ORB (AiAgentBot) — README blocks
-    ("tms_orb", "XAUUSD"): _cell("m15", "New York", _tms(_XAU_SESSION, 200.0, 400.0, 50.0, 10)),
+    ("tms_orb", "XAUUSD"): _cell("m15", "New York", _tms(_XAU_SESSION, 200.0, 400.0, 50.0, 10, atr=_XAU_ATR)),
     ("tms_orb", "EURUSD"): _cell("m15", "London",   _tms(_LONDON, 3.0, 6.0, 1.0, 5)),
     ("tms_orb", "GBPUSD"): _cell("m15", "London",   _tms(_LONDON, 4.5, 10.0, 1.5, 10)),
     ("tms_orb", "USDJPY"): _cell("m15", "Tokyo",    _tms(_TOKYO, 4.0, 8.0, 1.5, 3)),
@@ -126,17 +145,15 @@ PRESETS: Dict[Tuple[str, str], Dict] = {
     ("tms_orb", "USDCAD"): _cell("m15", "New York", _tms(_NEWYORK, 4.0, 10.0, 1.5, 4)),
     ("tms_orb", "AUDUSD"): _cell("m15", "Tokyo",    _tms(_TOKYO, 3.0, 8.0, 1.0, 3)),
     ("tms_orb", "AUDJPY"): _cell("m15", "Tokyo",    _tms(_TOKYO, 4.0, 10.0, 1.5, 4)),
-    ("tms_orb", "US30"):   _cell("m15", "New York", _tms(_NEWYORK_INDEX, 30.0, 80.0, 15.0, 30, atr=_INDEX_ATR)),
-    ("tms_orb", "USTEC"):  _cell("m5",  "New York", _tms(_NEWYORK_INDEX, 25.0, 70.0, 12.0, 25, atr=_INDEX_ATR)),
-    ("tms_orb", "DE40"):   _cell("m15", "London",   _tms(_LONDON_INDEX, 20.0, 60.0, 10.0, 25, atr=_INDEX_ATR)),
-    ("tms_orb", "UK100"):  _cell("m15", "London",   _tms(_LONDON_INDEX, 25.0, 120.0, 15.0, 1.5, atr=_UK100_ATR)),
+    ("tms_orb", "US30"):   _cell("m15", "New York", _tms(_NEWYORK_INDEX, 30.0, 80.0, 15.0, 30, atr=_index_atr(_INDEX_ATR, 1200.0, 1000.0))),
+    ("tms_orb", "USTEC"):  _cell("m5",  "New York", _tms(_NEWYORK_INDEX, 25.0, 70.0, 12.0, 25, atr=_index_atr(_INDEX_ATR, 600.0, 600.0))),
+    ("tms_orb", "DE40"):   _cell("m15", "London",   _tms(_LONDON_INDEX, 20.0, 60.0, 10.0, 25, atr=_index_atr(_INDEX_ATR, 400.0, 500.0))),
+    ("tms_orb", "UK100"):  _cell("m15", "London",   _tms(_LONDON_INDEX, 25.0, 120.0, 15.0, 1.5, atr=_index_atr(_UK100_ATR, 400.0, 400.0))),
     # TMS+ORB — derived from XAUUSD ($2 / $4 / $0.5) by dollar volatility: BTC ×50, ETH ×4
-    ("tms_orb", "BTCUSD"): _cell("m15", "New York", _tms(_NEWYORK, 10000.0, 20000.0, 2500.0, 10)),
-    ("tms_orb", "ETHUSD"): _cell("m15", "New York", _tms(_NEWYORK, 800.0, 1600.0, 200.0, 10)),
+    ("tms_orb", "BTCUSD"): _cell("m15", "New York", _tms(_NEWYORK, 10000.0, 20000.0, 2500.0, 10, atr=_BTC_ATR)),
+    ("tms_orb", "ETHUSD"): _cell("m15", "New York", _tms(_NEWYORK, 800.0, 1600.0, 200.0, 10, atr=_ETH_ATR)),
     # Asian Range Judas Sweep (AsianRangeJudasSweepBot) — README blocks
-    # Gold quotes 1 pip = $0.01, so the sweep buffer is 500p = $5.00 - the value the bot's own
-    # auto-scale intends (AsianRangeJudasSweepBot.cs) but never applies here, because that branch
-    # only fires when maxAsianRangePips <= 500 and this preset passes 8000. It also sets the
+    # Gold quotes 1 pip = $0.01, so the sweep buffer is 500p = $5.00. It also sets the
     # structural-invalidation threshold, which at the previous 30p was $0.30.
     ("judas", "XAUUSD"): _cell("m15", _JUDAS_SESSION, _judas(200.0, 8000.0, 500.0, 200.0, 250.0, 200.0, 450.0)),
     ("judas", "EURUSD"): _cell("m15", _JUDAS_SESSION, _judas(15.0, 45.0, 3.5, 15.0, 20.0, 15.0, 35.0)),
@@ -157,19 +174,20 @@ PRESETS: Dict[Tuple[str, str], Dict] = {
     ("judas", "DE40"):   _cell("m15", _JUDAS_SESSION, _judas(350.0, 2500.0, 90.0, 450.0, 600.0, 450.0, 1000.0, risk_factor=0.2)),
     # FlowRSI (FlowRsiBot) — README block
     ("flowrsi", "EURUSD"): _cell("m15", "All sessions", _flowrsi()),
-    # FlowRSI — derived: RSI/RR flags are symbol-agnostic; only the pip-sized filters change per class
+    # FlowRSI — derived: RSI/RR flags are symbol-agnostic; only the pip-sized filters change per class.
+    # JPY pairs widen the SL floor to 18p and wait for 15p before break-even.
     ("flowrsi", "GBPUSD"): _cell("m15", "All sessions", _flowrsi()),
-    ("flowrsi", "USDJPY"): _cell("m15", "All sessions", _flowrsi()),
-    ("flowrsi", "GBPJPY"): _cell("m15", "All sessions", _flowrsi()),
-    ("flowrsi", "EURJPY"): _cell("m15", "All sessions", _flowrsi()),
+    ("flowrsi", "USDJPY"): _cell("m15", "All sessions", _flowrsi(min_sl=18.0, min_be=15.0)),
+    ("flowrsi", "GBPJPY"): _cell("m15", "All sessions", _flowrsi(min_sl=18.0, min_be=15.0)),
+    ("flowrsi", "EURJPY"): _cell("m15", "All sessions", _flowrsi(min_sl=18.0, min_be=15.0)),
     ("flowrsi", "USDCAD"): _cell("m15", "All sessions", _flowrsi()),
     ("flowrsi", "AUDUSD"): _cell("m15", "All sessions", _flowrsi()),
-    ("flowrsi", "AUDJPY"): _cell("m15", "All sessions", _flowrsi()),
-    ("flowrsi", "XAUUSD"): _cell("m15", "All sessions", _flowrsi(50.0, 50.0, 300.0, 20.0)),          # $0.5 / $0.5 / $3 / $0.2
-    ("flowrsi", "US30"):   _cell("m15", "All sessions", _flowrsi(100.0, 60.0, 300.0, 10.0)),         # 10 / 6 / 30 / 1 pt
-    ("flowrsi", "USTEC"):  _cell("m15", "All sessions", _flowrsi(80.0, 50.0, 250.0, 10.0)),          # 8 / 5 / 25 / 1 pt
-    ("flowrsi", "DE40"):   _cell("m15", "All sessions", _flowrsi(50.0, 40.0, 200.0, 10.0)),          # 5 / 4 / 20 / 1 pt
-    ("flowrsi", "UK100"):  _cell("m15", "All sessions", _flowrsi(30.0, 30.0, 100.0, 5.0)),           # 3 / 3 / 10 / 0.5 pt
+    ("flowrsi", "AUDJPY"): _cell("m15", "All sessions", _flowrsi(min_sl=18.0, min_be=15.0)),
+    ("flowrsi", "XAUUSD"): _cell("m15", "All sessions", _flowrsi(50.0, 50.0, 800.0, 20.0, min_sl=1500.0, min_be=1000.0)),  # $0.5 / $0.5 / $8 / $0.2, SL $15, BE $10
+    ("flowrsi", "US30"):   _cell("m15", "All sessions", _flowrsi(100.0, 60.0, 350.0, 10.0)),         # 10 / 6 / 35 / 1 pt
+    ("flowrsi", "USTEC"):  _cell("m15", "All sessions", _flowrsi(80.0, 50.0, 350.0, 10.0)),          # 8 / 5 / 35 / 1 pt
+    ("flowrsi", "DE40"):   _cell("m15", "All sessions", _flowrsi(50.0, 40.0, 350.0, 10.0)),          # 5 / 4 / 35 / 1 pt
+    ("flowrsi", "UK100"):  _cell("m15", "All sessions", _flowrsi(30.0, 30.0, 350.0, 5.0)),           # 3 / 3 / 35 / 0.5 pt
     ("flowrsi", "BTCUSD"): _cell("m15", "All sessions", _flowrsi(5000.0, 5000.0, 30000.0, 1000.0)),  # $50 / $50 / $300 / $10
     ("flowrsi", "ETHUSD"): _cell("m15", "All sessions", _flowrsi(300.0, 500.0, 2000.0, 100.0)),      # $3 / $5 / $20 / $1
 }

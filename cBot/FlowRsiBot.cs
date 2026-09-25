@@ -320,17 +320,6 @@ namespace cAlgo.Robots
         private DateTime _lastMacroCrossBarTime = DateTime.MinValue;
         private DateTime _lockedMacroCrossBarTime = DateTime.MinValue; // the cross behind the confirmed bias
 
-        private bool IsM5OrLower
-        {
-            get
-            {
-                if (TimeFrame == TimeFrame.Minute5 || TimeFrame == TimeFrame.Minute)
-                    return true;
-                string name = TimeFrame.Name ?? "";
-                return name.Equals("Minute5", StringComparison.OrdinalIgnoreCase) || name.Equals("m5", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
         // uvicorn closes an idle keep-alive connection after 5 s, while .NET keeps it pooled for a
         // minute and can reuse it just as the server closes it: "Connection reset by peer" on
         // /trade and a lost position report on 2026-09-24. Retire idle connections first.
@@ -843,11 +832,6 @@ namespace cAlgo.Robots
 
                 // 6. Calculate Technical SL and TP targets
                 double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
-                string symUpper = SymbolName.ToUpperInvariant();
-                if (symUpper.Contains("XAU") || symUpper.Contains("GOLD"))
-                    effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
-                else if (symUpper.Contains("JPY"))
-                    effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
                 // Enforce ATR-based breathing room: at least 1.0 * ATR
                 double atrInPips = currentAtr / Symbol.PipSize;
@@ -1738,11 +1722,6 @@ namespace cAlgo.Robots
             double slDistancePips = Math.Abs(currentPrice - slPrice) / Symbol.PipSize;
 
             double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
-            string symUpperExec = SymbolName.ToUpperInvariant();
-            if (symUpperExec.Contains("XAU") || symUpperExec.Contains("GOLD"))
-                effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
-            else if (symUpperExec.Contains("JPY"))
-                effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
             if (slDistancePips < effectiveMinSl)
             {
@@ -1895,11 +1874,6 @@ namespace cAlgo.Robots
                         : (stopOnRiskSide ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize : 0.0);
 
                     double effectiveMinSl = MinSlFloorPips > 0 ? MinSlFloorPips : 15.0;
-                    string symUpperRestore = SymbolName.ToUpperInvariant();
-                    if (symUpperRestore.Contains("XAU") || symUpperRestore.Contains("GOLD"))
-                        effectiveMinSl = Math.Max(effectiveMinSl, IsM5OrLower ? 800.0 : 1500.0);
-                    else if (symUpperRestore.Contains("JPY"))
-                        effectiveMinSl = Math.Max(effectiveMinSl, 18.0);
 
                     initialSlDist = Math.Max(measured, effectiveMinSl);
                 }
@@ -1913,11 +1887,6 @@ namespace cAlgo.Robots
                 if (EnableBreakEven && !isBeAchieved)
                 {
                     double minRequiredPips = MinBreakEvenPips > 0 ? MinBreakEvenPips : 10.0;
-                    string symUpper = SymbolName.ToUpperInvariant();
-                    if (symUpper.Contains("XAU") || symUpper.Contains("GOLD"))
-                        minRequiredPips = Math.Max(minRequiredPips, IsM5OrLower ? 500.0 : 1000.0);
-                    else if (symUpper.Contains("JPY"))
-                        minRequiredPips = Math.Max(minRequiredPips, 15.0);
 
                     bool beTriggered = BeMode == BreakEvenTriggerMode.Risk_Reward_Ratio 
                         ? (currentRr >= BreakEvenTriggerRr && pnlPips >= minRequiredPips) 
@@ -1993,16 +1962,7 @@ namespace cAlgo.Robots
 
                 if (EnableTrailingStop && currentRr >= effectiveTrailTriggerRr)
                 {
-                    string symUp = SymbolName.ToUpperInvariant();
                     double minTrailDistPips = TrailingStopDistancePips;
-                    if (symUp.Contains("XAU") || symUp.Contains("GOLD"))
-                        minTrailDistPips = Math.Max(minTrailDistPips, IsM5OrLower ? 400.0 : 800.0); // min $4.00 for Gold M5, $8.00 for M15+
-                    else if (symUp.Contains("JPY"))
-                        minTrailDistPips = Math.Max(minTrailDistPips, 25.0);  // min 25 pips for JPY
-                    else if (symUp.Contains("US30") || symUp.Contains("USTEC") || symUp.Contains("DE40") || symUp.Contains("UK100"))
-                        minTrailDistPips = Math.Max(minTrailDistPips, 350.0); // min 350 pips for Indices
-                    else
-                        minTrailDistPips = Math.Max(minTrailDistPips, 20.0);  // min 20 pips for Forex
 
                     // Tiered Trailing: Normal trailing gives breathing room (100% of initial SL distance).
                     // Tier 2 (currentRr >= 2.5R): Tighten to 60% of initial SL distance to lock in profits.

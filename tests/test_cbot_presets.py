@@ -105,7 +105,7 @@ def test_readme_quirks_are_kept_verbatim():
     us30 = build_run_command(DEMO, "tms_orb", "US30", ROOT, HOME)
     assert '--SessionName="newyork_index" --OrbStartHour=14 --OrbStartMinute=30 --SessionEndHour=21' in us30
     uk = build_run_command(DEMO, "tms_orb", "UK100", ROOT, HOME)
-    assert "--MinSlAtr=1.5 --MaxSlAtr=4.5 --MinTpAtr=2.0 --MaxTpAtr=8.0 --MaxGivebackAtr=0.6" in uk
+    assert "--MinSlAtr=1.5 --MaxSlAtr=4.5 --MinTpAtr=2.0 --MaxTpAtr=8.0 --MaxGivebackAtr=1.0" in uk
     assert "--BounceDistanceThreshold=1.5 " in uk
     btc = build_run_command(DEMO, "judas", "BTCUSD", ROOT, HOME)
     assert btc.endswith("--takeprofitPip=60000.0 --enableBreakEvenPrice=true --riskFactor=0.2")
@@ -123,6 +123,24 @@ def test_indices_share_one_breakeven_and_trailing_profile():
     tms_trail = "--BreakevenTriggerAtr=1.2 --BreakevenOffsetAtr=0.1 --TrailTriggerAtr=2.0 --TrailDistanceAtr=1.0"
     for symbol in ("EURUSD", "USDJPY", "XAUUSD", "BTCUSD"):
         assert tms_trail in build_run_command(DEMO, "tms_orb", symbol, ROOT, HOME), symbol
+
+
+def test_tms_orb_exit_floors_are_flags_per_symbol():
+    """The pip floors AiAgentBot used to pick from the symbol name now travel as flags."""
+    index_profile = "--Tier2TriggerAtr=2.5 --Tier2TrailDistanceAtr=0.9 --Tier2GivebackMfeRatio=0.35 --MinAdjustBeProfitPips=50.0"
+    for sym, tier2_pips, arm_pips in (("US30", 1200.0, 1000.0), ("USTEC", 600.0, 600.0),
+                                      ("DE40", 400.0, 500.0), ("UK100", 400.0, 400.0)):
+        cmd = build_run_command(DEMO, "tms_orb", sym, ROOT, HOME)
+        assert index_profile in cmd, sym
+        assert f"--Tier2TriggerPips={tier2_pips} --GivebackArmMinPips={arm_pips} " in cmd, sym
+    xau = build_run_command(DEMO, "tms_orb", "XAUUSD", ROOT, HOME)
+    assert "--GivebackArmMinPips=150.0 --MinAdjustBeProfitPips=300.0 " in xau
+    assert "--MinAdjustBeProfitPips=6000.0 " in build_run_command(DEMO, "tms_orb", "BTCUSD", ROOT, HOME)
+    assert "--MinAdjustBeProfitPips=600.0 " in build_run_command(DEMO, "tms_orb", "ETHUSD", ROOT, HOME)
+    # Forex keeps the cBot defaults (Tier 2 at 2.0 ATR, 0.6 ATR trail, 30% giveback, arm 14p, AI BE 20p).
+    for sym in ("EURUSD", "USDJPY", "GBPJPY", "AUDUSD"):
+        cmd = build_run_command(DEMO, "tms_orb", sym, ROOT, HOME)
+        assert "--Tier2" not in cmd and "--GivebackArmMinPips" not in cmd and "--MinAdjustBeProfitPips" not in cmd, sym
 
 
 def test_crypto_tms_orb_scales_from_gold_on_the_new_york_session():
@@ -160,27 +178,36 @@ def test_judas_index_cells_scale_from_uk100_with_index_risk():
 
 def test_flowrsi_forex_cells_match_the_eurusd_block_exactly():
     base = build_run_command(DEMO, "flowrsi", "EURUSD", ROOT, HOME)
-    for sym in ("GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "USDCAD", "AUDUSD", "AUDJPY"):
+    for sym in ("GBPUSD", "USDCAD", "AUDUSD"):
         cmd = build_run_command(DEMO, "flowrsi", sym, ROOT, HOME)
         assert cmd == base.replace("EURUSD", sym).replace("eurusd", sym.lower()), sym
         assert "--FvgMinPips" not in cmd and "--MaxSpreadPips" not in cmd, sym
 
 
+def test_flowrsi_jpy_cells_add_only_the_jpy_floors():
+    base = build_run_command(DEMO, "flowrsi", "EURUSD", ROOT, HOME)
+    for sym in ("USDJPY", "GBPJPY", "EURJPY", "AUDJPY"):
+        cmd = build_run_command(DEMO, "flowrsi", sym, ROOT, HOME)
+        expected = base.replace("EURUSD", sym).replace("eurusd", sym.lower())
+        assert cmd == expected + " --MinSlFloorPips=18.0 --MinBreakEvenPips=15.0", sym
+
+
 def test_flowrsi_gold_index_crypto_override_the_pip_sized_params():
-    expected = {   # FvgMinPips, MaxSpreadPips, TrailingStopDistancePips, BreakEvenExtraPips
-        "XAUUSD": (50.0, 50.0, 300.0, 20.0),
-        "US30":   (100.0, 60.0, 300.0, 10.0),
-        "USTEC":  (80.0, 50.0, 250.0, 10.0),
-        "DE40":   (50.0, 40.0, 200.0, 10.0),
-        "UK100":  (30.0, 30.0, 100.0, 5.0),
-        "BTCUSD": (5000.0, 5000.0, 30000.0, 1000.0),
-        "ETHUSD": (300.0, 500.0, 2000.0, 100.0),
+    expected = {   # FvgMinPips, MaxSpreadPips, TrailingStopDistancePips, BreakEvenExtraPips, SL floor / BE floor
+        "XAUUSD": (50.0, 50.0, 800.0, 20.0, " --MinSlFloorPips=1500.0 --MinBreakEvenPips=1000.0"),
+        "US30":   (100.0, 60.0, 350.0, 10.0, ""),
+        "USTEC":  (80.0, 50.0, 350.0, 10.0, ""),
+        "DE40":   (50.0, 40.0, 350.0, 10.0, ""),
+        "UK100":  (30.0, 30.0, 350.0, 5.0, ""),
+        "BTCUSD": (5000.0, 5000.0, 30000.0, 1000.0, ""),
+        "ETHUSD": (300.0, 500.0, 2000.0, 100.0, ""),
     }
-    for sym, (fvg, spread, trail, be) in expected.items():
+    for sym, (fvg, spread, trail, be, floors) in expected.items():
         cmd = build_run_command(DEMO, "flowrsi", sym, ROOT, HOME)
         assert cmd.endswith(
             "--TargetRiskReward=1.5 --UseAiGateMode=true "
             f"--FvgMinPips={fvg} --MaxSpreadPips={spread} --TrailingStopDistancePips={trail} --BreakEvenExtraPips={be}"
+            + floors
         ), sym
         assert "--FastRsiPeriod=7 --SlowRsiPeriod=14" in cmd, sym
 
@@ -341,3 +368,26 @@ def test_readmes_keep_only_the_quick_start_example(readme):
 def test_readmes_link_to_the_instance_catalog(readme):
     assert "docs/docker-instances.md" in readme.read_text(), (
         f"{readme.name} must link to the instance catalog now that it no longer lists the commands")
+
+
+# --- no symbol-name branching in the cBots ------------------------------------------
+# Per-symbol tuning lives in the presets above. A cBot that branches on SymbolName ("XAU", "JPY",
+# "US30") silently overrides the preset flags and cannot be swept in a backtest. The one exception
+# is IsCurrencyAffected, which maps a symbol to the currencies whose news pause it.
+_SYMBOL_BRANCH = re.compile(
+    r'Contains\("(XAU|GOLD|XAG|SILVER|JPY|US30|DJ30|USTEC|NAS100|DE40|GER40|UK100|GB100|BTC|ETH)"\)')
+
+
+def _without_currency_mapping(src: str) -> str:
+    start = src.find("private bool IsCurrencyAffected(")
+    if start < 0:
+        return src
+    end = src.index("\n        }\n", start)
+    return src[:start] + src[end:]
+
+
+@pytest.mark.parametrize("cs_name", ["AiAgentBot.cs", "AsianRangeJudasSweepBot.cs", "FlowRsiBot.cs"])
+def test_cbots_do_not_branch_on_the_symbol_name(cs_name):
+    src = _without_currency_mapping((root / "cBot" / cs_name).read_text(encoding="utf-8"))
+    hits = [m.group(0) for m in _SYMBOL_BRANCH.finditer(src)]
+    assert not hits, f"{cs_name} branches on the symbol name {hits}; make it a [Parameter] and set it in the presets"
