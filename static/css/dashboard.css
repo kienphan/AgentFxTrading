@@ -1636,8 +1636,19 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .bt-group summary{cursor:pointer;padding:8px 12px;font-size:0.75rem;font-weight:600;color:var(--accent-bright)}
 .bt-changed-count{color:#ffa726;font-weight:500}
 .bt-param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px;padding:4px 12px 12px}
-.bt-param-row{display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text-muted)}
-.bt-param-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-param-row{display:flex;align-items:center;gap:6px;min-width:0;font-size:0.72rem;color:var(--text-muted)}
+.bt-param-label{flex:1;min-width:0;display:flex;align-items:center;gap:5px}
+.bt-param-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-help{flex:none;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;padding:0;border-radius:50%;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font:700 0.6rem/1 var(--font-ui);cursor:help;transition:color .15s,border-color .15s}
+.bt-help:hover,.bt-help:focus-visible,.bt-help[aria-describedby]{color:var(--accent-bright);border-color:var(--accent);outline:none}
+@media (pointer:coarse){.bt-help{width:20px;height:20px;font-size:0.7rem}}
+.bt-help-tip{position:fixed;z-index:1000;width:max-content;max-width:min(360px,calc(100vw - 16px));padding:9px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-elevated);box-shadow:var(--shadow);font-size:0.72rem;line-height:1.5;color:var(--text-primary);pointer-events:none}
+.bt-help-tip[hidden]{display:none}
+.bt-help-tip-title{font-weight:600;color:var(--accent-bright);margin-bottom:4px}
+.bt-help-tip-body{white-space:pre-line}
+.bt-help-tip-meta{margin-top:7px;padding-top:6px;border-top:1px solid var(--border-subtle);font-size:0.65rem;color:var(--text-muted)}
+.bt-help-tip-meta b{color:var(--text-primary);font-weight:600}
+.bt-help-tip-meta code{font-family:var(--font-mono);color:var(--text-dim)}
 .bt-param-row .bt-param{width:120px}
 .bt-param-row--changed .bt-param{border-color:#ffa726;color:#ffa726}
 .bt-param-hint{font-size:0.65rem;color:var(--text-dim);white-space:nowrap}

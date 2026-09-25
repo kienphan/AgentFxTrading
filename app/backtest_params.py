@@ -17,6 +17,7 @@ from typing import Callable, Dict, Optional
 
 from app.backtest_command import (ALGO_DIR, CPU_SHARES, DROPPED_PARAMS, HIDDEN_GROUPS, MEM_LIMIT, NANO_CPUS,
                                   BotSource, locked_params)
+from app.backtest_param_help import param_help
 from app.cbot_presets import DEFAULT_IMAGE
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,7 @@ def param_view(meta: Dict, source: BotSource) -> Dict:
             "default": _shown(p, p.get("DefaultValue")), "bot_value": _current(p, source),
             "min": p.get("MinValue"), "max": p.get("MaxValue"),
             "enum_values": list((p.get("EnumValues") or {}).keys()) if p["Type"] == "Enum" else None,
+            "help": param_help(source.strategy, p["PropertyName"]),
         })
     return {"groups": groups, "locked": locked_params(source.strategy, None),
             "timeframes": list(TIMEFRAMES), "algo_build_time": meta.get("BuildTime")}
