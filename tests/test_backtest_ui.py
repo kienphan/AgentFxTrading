@@ -73,7 +73,7 @@ const H = %(hostile)s;
 const out = {};
 out.sources = btSourceOptionsHtml([{name: H, supported: false, reason: H}, {name: H, supported: true, reason: ''}]);
 const view = {timeframes: ['Hour', H], groups: [{name: H, params: [
-    {key: H, label: H, type: 'String', bot_value: H, default: H},
+    {key: H, label: H, type: 'String', bot_value: H, default: H, help: H},
     {key: 'SlMode', label: H, type: 'Enum', bot_value: H, enum_values: [H, 'ATR_Multiplier']},
     {key: 'FastRsiPeriod', label: 'Fast', type: 'Integer', bot_value: H, min: H, max: 50},
     {key: 'MacroTimeFrame', label: 'TF', type: 'TimeFrame', bot_value: 'Hour'},
@@ -82,6 +82,9 @@ const overrides = {FastRsiPeriod: H};
 overrides[H] = H;
 out.params = btParamGroupsHtml(view, overrides, new Set([H]));
 out.locked = btLockedHtml({[H]: H});
+out.help = btParamHelpHtml({key: H, label: H, help: H, default: H, min: H, max: H});
+out.helpRange = [btParamHelpHtml({key: 'A', label: 'A', help: 'x', default: '1', min: 0.5, max: null}),
+                 btParamHelpHtml({key: 'B', label: 'B', help: 'x', default: 'true', min: null, max: null})];
 const job = {id: 3, bot_name: H, symbol: H, period: H, start_date: H, end_date: H, data_mode: H, note: H,
     status: 'done', overrides: {[H]: {from: H, to: H}}, algo_build_time: H,
     summary: {net_profit: H, profit_factor: 1.2, win_rate: 50, max_equity_dd_pct: 4, total_trades: 10,
@@ -113,9 +116,11 @@ def test_backtest_renderers_escape_external_strings():
     result = subprocess.run([NODE, "-e", src], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout)
-    for name in ("sources", "params", "locked", "rows", "detail", "failed", "compare"):
+    for name in ("sources", "params", "locked", "help", "rows", "detail", "failed", "compare"):
         assert "<img" not in out[name], name
         assert "evil&lt;img" in out[name], name
+    assert out["params"].count('class="bt-help"') == 1         # only the parameter that has help
+    assert "≥ 0.5" in out["helpRange"][0] and "Phạm vi" not in out["helpRange"][1]
     assert out["diff"] == [HOSTILE]                               # BotId is ignored
     assert out["warnings"] == ["date ranges differ"]
     assert out["best"] == [1, 0, 1, -1, -1]

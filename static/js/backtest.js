@@ -23,7 +23,7 @@ const BT_COMPARE_ROWS = [
 ];
 const BT_IGNORED_PARAMS = new Set(['BotId', 'AccountLabel']);
 const bt = {sources: [], view: null, overrides: {}, pendingOverrides: null, jobs: [], selected: new Set(),
-            pollTimer: null, charts: {}, loaded: false};
+            pollTimer: null, charts: {}, loaded: false, helpBtn: null};
 
 // ---------- formatting ----------
 
@@ -89,14 +89,30 @@ function btParamGroupsHtml(view, overrides, openGroups) {
             const hint = isChanged
                 ? `<span class="bt-param-hint">bot: ${escapeHtml(p.bot_value ?? '—')}</span><button type="button" class="bt-reset" data-key="${escapeHtml(p.key)}" title="Back to the bot's value">↺</button>`
                 : '';
-            return `<div class="bt-param-row${isChanged ? ' bt-param-row--changed' : ''}" title="${escapeHtml(p.key)}">`
-                + `<span class="bt-param-label">${escapeHtml(p.label)}</span>`
+            const help = p.help
+                ? `<button type="button" class="bt-help" data-key="${escapeHtml(p.key)}" aria-label="Giải thích: ${escapeHtml(p.label)}">?</button>`
+                : '';
+            return `<div class="bt-param-row${isChanged ? ' bt-param-row--changed' : ''}">`
+                + `<span class="bt-param-label"><span class="bt-param-name" title="${escapeHtml(p.key)}">${escapeHtml(p.label)}</span>${help}</span>`
                 + `${btParamInputHtml(p, isChanged ? overrides[p.key] : p.bot_value, view.timeframes)}${hint}</div>`;
         }).join('');
         const open = changed || (openGroups && openGroups.has(g.name)) ? ' open' : '';
         const count = changed ? ` <span class="bt-changed-count">(${changed} changed)</span>` : '';
         return `<details class="bt-group" data-group="${escapeHtml(g.name)}"${open}><summary>${escapeHtml(g.name)}${count}</summary><div class="bt-param-grid">${rows}</div></details>`;
     }).join('');
+}
+
+// The tooltip of a parameter's "?" icon: its help text (app/backtest_param_help.py, one paragraph per
+// line) over the cBot's own default and range from the metadata.
+function btParamHelpHtml(p) {
+    const has = v => v !== null && v !== undefined && v !== '';
+    const range = has(p.min) && has(p.max) ? `${escapeHtml(p.min)} – ${escapeHtml(p.max)}`
+        : has(p.min) ? `≥ ${escapeHtml(p.min)}` : has(p.max) ? `≤ ${escapeHtml(p.max)}` : '';
+    const meta = [has(p.default) ? `Mặc định cBot: <b>${escapeHtml(p.default)}</b>` : '',
+                  range ? `Phạm vi: ${range}` : '', `<code>${escapeHtml(p.key)}</code>`].filter(Boolean).join(' · ');
+    return `<div class="bt-help-tip-title">${escapeHtml(p.label)}</div>`
+        + `<div class="bt-help-tip-body">${escapeHtml(p.help)}</div>`
+        + `<div class="bt-help-tip-meta">${meta}</div>`;
 }
 
 function btLockedHtml(locked) {
@@ -299,12 +315,23 @@ function btInitForm() {
     const params = document.getElementById('bt-params');
     params.addEventListener('change', btOnParamChange);
     params.addEventListener('click', e => {
+        const help = e.target.closest('.bt-help');
+        if (help) { e.preventDefault(); btShowHelp(help); return; }     // a tap on a touch screen
         const reset = e.target.closest('.bt-reset');
         if (!reset) return;
         e.preventDefault();
         delete bt.overrides[reset.dataset.key];
         btRenderParams();
     });
+    const helpIcon = e => e.target.closest('.bt-help');
+    params.addEventListener('mouseover', e => { const b = helpIcon(e); if (b) btShowHelp(b); });
+    params.addEventListener('mouseout', e => { const b = helpIcon(e); if (b && !b.contains(e.relatedTarget)) btHideHelp(); });
+    params.addEventListener('focusin', e => { const b = helpIcon(e); if (b) btShowHelp(b); });
+    params.addEventListener('focusout', e => { if (helpIcon(e)) btHideHelp(); });
+    document.addEventListener('click', e => { if (!e.target.closest('.bt-help')) btHideHelp(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') btHideHelp(); });
+    document.addEventListener('scroll', btHideHelp, true);        // the tooltip is fixed, the icon scrolls
+    window.addEventListener('resize', btHideHelp);
     const tbody = document.getElementById('bt-jobs-tbody');
     tbody.addEventListener('click', btOnJobAction);
     tbody.addEventListener('change', e => {
@@ -360,9 +387,45 @@ async function btLoadParams() {
 
 function btRenderParams() {
     if (!bt.view) return;
+    btHideHelp();                                             // its icon is about to be replaced
     const container = document.getElementById('bt-params');
     const open = new Set([...container.querySelectorAll('details.bt-group[open]')].map(d => d.dataset.group));
     container.innerHTML = btParamGroupsHtml(bt.view, bt.overrides, open);
+}
+
+// One tooltip for every "?" icon, fixed to the viewport: .panel clips whatever overflows it. It opens
+// under the icon, or above it when there is no room below, and stays inside the window.
+function btShowHelp(btn) {
+    const p = btFindParam(btn.dataset.key);
+    if (!p || !p.help) return;
+    let tip = document.getElementById('bt-help-tip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'bt-help-tip';
+        tip.className = 'bt-help-tip';
+        tip.setAttribute('role', 'tooltip');
+        document.body.appendChild(tip);
+    }
+    if (bt.helpBtn && bt.helpBtn !== btn) bt.helpBtn.removeAttribute('aria-describedby');
+    bt.helpBtn = btn;
+    btn.setAttribute('aria-describedby', tip.id);
+    tip.innerHTML = btParamHelpHtml(p);
+    tip.hidden = false;
+    const gap = 6, margin = 8, r = btn.getBoundingClientRect();
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    const left = Math.max(margin, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - margin));
+    const roomBelow = r.bottom + gap + h <= window.innerHeight - margin;
+    const top = roomBelow || r.top - gap - h < margin ? r.bottom + gap : r.top - gap - h;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+}
+
+function btHideHelp() {
+    const tip = document.getElementById('bt-help-tip');
+    if (!tip || tip.hidden) return;
+    tip.hidden = true;
+    if (bt.helpBtn) bt.helpBtn.removeAttribute('aria-describedby');
+    bt.helpBtn = null;
 }
 
 function btFindParam(key) {
