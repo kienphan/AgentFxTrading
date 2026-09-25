@@ -24,7 +24,47 @@ def test_summary_reads_statistics_equity_and_history():
         "max_equity_dd_pct": 0.65, "max_equity_dd": 65.7, "max_balance_dd_pct": 0.44,
         "commissions": -4.2, "swaps": -0.5, "largest_win": 30.0, "largest_loss": -44.0,
         "max_consecutive_losses": 2, "long_net": -14.0, "short_net": 13.02, "long_trades": 2, "short_trades": 2,
+        "positions": 4, "winning_positions": 2, "losing_positions": 2, "position_win_rate": 50.0,
+        "avg_position_win": 27.51, "avg_position_loss": -28.0, "full_loss_pct": 50.0,
     }
+
+
+def _deal(deal_id, direction, entry_time, entry_price, net):
+    return {"id": deal_id, "symbol": "EURUSD", "direction": direction, "net": net, "gross": net,
+            "entryTime": entry_time, "closeTime": entry_time + 3_600_000, "entryPrice": entry_price,
+            "closePrice": entry_price, "swaps": 0, "commissions": 0, "volume": 10000, "label": "bt-7",
+            "comment": "bt-7", "quantity": 0.1, "pips": 0}
+
+
+def _with_deals(*deals):
+    report = copy.deepcopy(REPORT)
+    report["history"]["items"] += list(deals)
+    return report
+
+
+def test_a_partial_close_and_its_runner_count_as_one_position():
+    # FlowRSI closes half at 1R (deal 6) and the runner later at break-even (deal 7): two history
+    # items, one position. cTrader's per-deal statistics stay as they are.
+    s = summarize(_with_deals(_deal(6, "buy", 1785600000000, 1.142, 20.0),
+                              _deal(7, "buy", 1785600000000, 1.142, 0.5)))
+    assert (s["positions"], s["winning_positions"], s["losing_positions"]) == (5, 3, 2)
+    assert s["position_win_rate"] == 60.0
+    assert (s["avg_position_win"], s["avg_position_loss"]) == (25.17, -28.0)
+    assert s["full_loss_pct"] == 40.0
+    assert (s["total_trades"], s["win_rate"]) == (4, 50.0)
+
+
+def test_a_position_that_loses_after_a_partial_close_is_not_a_full_size_loss():
+    s = summarize(_with_deals(_deal(8, "sell", 1785700000000, 1.15, 10.0),
+                              _deal(9, "sell", 1785700000000, 1.15, -30.0)))
+    assert (s["positions"], s["losing_positions"], s["avg_position_loss"]) == (5, 3, -25.33)
+    assert s["full_loss_pct"] == 40.0                  # only the two single-deal losses
+
+
+def test_positions_opened_at_the_same_time_on_both_sides_stay_apart():
+    s = summarize(_with_deals(_deal(10, "buy", 1785800000000, 1.16, 5.0),
+                              _deal(11, "sell", 1785800000000, 1.16, -5.0)))
+    assert (s["positions"], s["winning_positions"], s["losing_positions"]) == (6, 3, 3)
 
 
 def test_summary_of_a_run_without_trades():
@@ -33,6 +73,8 @@ def test_summary_of_a_run_without_trades():
     empty["tradeStatistics"] = {k: {"all": None, "long": None, "short": None} for k in REPORT["tradeStatistics"]}
     s = summarize(empty)
     assert (s["total_trades"], s["win_rate"], s["avg_win"], s["avg_loss"], s["profit_factor"]) == (0, 0.0, 0.0, 0.0, 0.0)
+    assert (s["positions"], s["position_win_rate"], s["avg_position_win"], s["avg_position_loss"],
+            s["full_loss_pct"]) == (0, 0.0, 0.0, 0.0, 0.0)
 
 
 def test_pnl_by_hour_and_weekday_use_utc_entry_time():

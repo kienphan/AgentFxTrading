@@ -7,16 +7,23 @@
 const BT_POLL_MS = 3000;
 const BT_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // [summary key, label, which value is best: 'max' | 'min' | 'zero' (closest to 0) | null, format]
+// cTrader's own statistics count closing deals, so a partial close makes one position two "trades";
+// the position rows regroup them (app/backtest_report.py).
 const BT_COMPARE_ROWS = [
     ['net_profit', 'Net P&amp;L', 'max', 'money'],
     ['roi_pct', 'ROI %', 'max', 'num'],
     ['profit_factor', 'Profit factor', 'max', 'num'],
-    ['win_rate', 'Win rate %', 'max', 'num'],
-    ['total_trades', 'Trades', null, 'int'],
-    ['avg_trade', 'Avg trade', 'max', 'money'],
-    ['avg_win', 'Avg win', 'max', 'money'],
-    ['avg_loss', 'Avg loss', 'zero', 'money'],
-    ['largest_loss', 'Largest loss', 'zero', 'money'],
+    ['position_win_rate', 'Win rate % (positions)', 'max', 'num'],
+    ['positions', 'Positions', null, 'int'],
+    ['avg_position_win', 'Avg win (position)', 'max', 'money'],
+    ['avg_position_loss', 'Avg loss (position)', 'zero', 'money'],
+    ['full_loss_pct', 'Full-size losses %', 'min', 'num'],
+    ['win_rate', 'Win rate % (deals)', 'max', 'num'],
+    ['total_trades', 'Deals', null, 'int'],
+    ['avg_trade', 'Avg deal', 'max', 'money'],
+    ['avg_win', 'Avg win (deal)', 'max', 'money'],
+    ['avg_loss', 'Avg loss (deal)', 'zero', 'money'],
+    ['largest_loss', 'Largest loss (deal)', 'zero', 'money'],
     ['max_equity_dd_pct', 'Max equity DD %', 'min', 'pct'],
     ['commissions', 'Commissions', 'zero', 'money'],
     ['swaps', 'Swaps', 'zero', 'money'],
@@ -36,6 +43,11 @@ function btMoney(v) {
     const n = Number(v);
     if (v === null || v === '' || !Number.isFinite(n)) return '—';
     return `${n < 0 ? '−' : n > 0 ? '+' : ''}$${Math.abs(n).toFixed(2)}`;
+}
+
+function btPct(v, digits = 1) {
+    const text = btNum(v, digits);
+    return text === '—' ? text : `${text}%`;
 }
 
 function btFormat(v, kind) {
@@ -145,6 +157,9 @@ function btJobRowsHtml(jobs, selected) {
         const done = j.status === 'done';
         const active = j.status === 'queued' || j.status === 'running';
         const cell = (v, kind) => (done ? btFormat(v, kind) : '—');
+        // Summaries saved before the position stats existed show only the deal figure.
+        const withDeals = (pos, deals, kind) =>
+            (done ? `${btFormat(pos, kind)}<div class="td-dim bt-small">${btFormat(deals, kind)} deals</div>` : '—');
         const lastButton = active
             ? `<button class="log-btn bt-act" data-act="cancel" data-id="${id}">Cancel</button>`
             : `<button class="log-btn bt-act" data-act="delete" data-id="${id}">Delete</button>`;
@@ -157,9 +172,9 @@ function btJobRowsHtml(jobs, selected) {
             <td>${btStatusHtml(j)}</td>
             <td class="${done ? btSignClass(s.net_profit) : ''}">${cell(s.net_profit, 'money')}</td>
             <td>${cell(s.profit_factor, 'num')}</td>
-            <td>${cell(s.win_rate, 'num')}</td>
+            <td>${withDeals(s.position_win_rate, s.win_rate, 'num')}</td>
             <td>${cell(s.max_equity_dd_pct, 'num')}</td>
-            <td>${cell(s.total_trades, 'int')}</td>
+            <td>${withDeals(s.positions, s.total_trades, 'int')}</td>
             <td class="bt-note">${escapeHtml(j.note || '')}</td>
             <td><div class="bt-actions">
                 <button class="log-btn bt-act" data-act="view" data-id="${id}"${done || j.status === 'failed' ? '' : ' disabled'}>View</button>
@@ -171,16 +186,19 @@ function btJobRowsHtml(jobs, selected) {
 }
 
 function btKpiCardsHtml(s) {
-    const card = (label, value, cls = '') =>
-        `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value kpi-value--mono ${cls}">${value}</div></div>`;
+    const card = (label, value, cls = '', sub = '') =>
+        `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value kpi-value--mono ${cls}">${value}</div>`
+        + `${sub ? `<div class="td-dim bt-small">${sub}</div>` : ''}</div>`;
     return `<div class="kpi-grid">${[
         card('Net P&amp;L', btMoney(s.net_profit), btSignClass(s.net_profit)),
         card('ROI', `${btNum(s.roi_pct)}%`, btSignClass(s.roi_pct)),
         card('Profit factor', btNum(s.profit_factor)),
-        card('Win rate', `${btNum(s.win_rate, 1)}%`),
-        card('Trades', btFormat(s.total_trades, 'int')),
+        card('Win rate · positions', btPct(s.position_win_rate), '', `${btPct(s.win_rate)} of deals`),
+        card('Positions', btFormat(s.positions, 'int'), '', `${btFormat(s.total_trades, 'int')} deals`),
         card('Max equity DD', `${btNum(s.max_equity_dd_pct)}%`),
-        card('Avg win / loss', `${btMoney(s.avg_win)} / ${btMoney(s.avg_loss)}`),
+        card('Avg win / loss · position', `${btMoney(s.avg_position_win)} / ${btMoney(s.avg_position_loss)}`, 'bt-kpi-wrap',
+             `per deal ${btMoney(s.avg_win)} / ${btMoney(s.avg_loss)}`),
+        card('Full-size losses', btPct(s.full_loss_pct), '', 'of positions, no partial close'),
         card('Commission + swap', btMoney(Number(s.commissions) + Number(s.swaps))),
     ].join('')}</div>`;
 }
@@ -598,7 +616,7 @@ function btDrawDetailCharts(report) {
         data: {labels, datasets: [{label: 'Net P&L', data: buckets.map(b => b.net),
                                    backgroundColor: buckets.map(b => (b.net < 0 ? '#e53935' : '#7dbd1e'))}]},
         options: {responsive: true, maintainAspectRatio: false, animation: false,
-                  plugins: {tooltip: {callbacks: {afterLabel: c => `${buckets[c.dataIndex].count} trades`}}}},
+                  plugins: {tooltip: {callbacks: {afterLabel: c => `${buckets[c.dataIndex].count} deals`}}}},
     });
     bt.charts.hour = bars('bt-hour-chart', [...Array(24).keys()].map(h => `${h}h`), report.pnl_by_hour || []);
     bt.charts.weekday = bars('bt-weekday-chart', BT_WEEKDAYS, report.pnl_by_weekday || []);
