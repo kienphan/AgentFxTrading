@@ -198,7 +198,7 @@ def build_container_spec(job: Dict, project_root: Path, ctrader_home: Path) -> D
     ]
     if job["data_mode"] == "m1":
         command.append(f"--spread={_num(job['spread_pips'])}")
-    command += [f"--data-dir={CACHE_DIR}", f"--balance={_num(job['balance'])}",
+    command += [f"--data-dir={CACHE_DIR}", f"--balance={_num(job['balance'])}", "--commission-auto",
                 f"--report-json={REPORT_PATH}", "--full-access", "--exit-on-stop"]
     command += [f"--{k}={v}" for k, v in (job.get("params") or {}).items()
                 if k not in locked and k not in DROPPED_PARAMS]
