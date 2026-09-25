@@ -196,7 +196,7 @@ def test_invariant_6_list_command_without_secrets(homes):
 def test_dates_balance_and_report_flags(homes):
     command = spec_for(homes)["command"]
     for flag in ("--start=24/07/2026", "--end=23/09/2026", "--data-mode=ticks", "--data-dir=/bt-cache",
-                 "--balance=10000", "--report-json=/tmp/report.json", "--full-access",
+                 "--balance=10000", "--commission-auto", "--report-json=/tmp/report.json", "--full-access",
                  "--exit-on-stop", "--symbol=EURUSD", "--period=m15", "--account=10115236"):
         assert flag in command, flag
     assert not any(a.startswith("--spread=") for a in command)
