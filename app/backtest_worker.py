@@ -30,6 +30,11 @@ TIMEOUT_S = 45 * 60
 LOG_TAIL = 20
 ERROR_TAIL = 50
 PROGRESS_RE = re.compile(r"^Progress \| (.+?) \| ([\d.]+) %", re.MULTILINE)
+# The CLI loads the conversion symbol's ticks (AUDUSD for AUDJPY) only when the first order needs
+# them, inside that order call. Over a long range on a cold cache the download outlasts cTrader's
+# call timeout and the bot is "aborted by timeout" (backtest #1, 2026-09-25: 9 months of AUDUSD
+# ticks took 4 min). The failed run still leaves the ticks in the cache, so a rerun gets through.
+ABORT_SIGN = "aborted by timeout"
 
 
 def parse_progress(logs: str) -> Optional[Tuple[str, float]]:
@@ -140,7 +145,14 @@ class BacktestWorker:
         raw = self._read_report(container) if exit_code == 0 else None
         if raw is None:
             reason = "no report written" if exit_code == 0 else f"exit code {exit_code}"
-            self._fail(conn, job, f"{reason}\n{self._logs(container, ERROR_TAIL).strip()}".strip())
+            logs = self._logs(container, ERROR_TAIL).strip()
+            rerun = bool(job.get("error"))           # only _rerun leaves an error on a running job
+            if ABORT_SIGN in logs and not rerun:
+                self._rerun(conn, job, f"{reason}\n{logs}")
+            else:
+                if rerun:
+                    reason += " (retried once)"
+                self._fail(conn, job, f"{reason}\n{logs}".strip())
         else:
             try:
                 store.write_report(job["id"], raw, self.report_dir)
@@ -156,6 +168,13 @@ class BacktestWorker:
                                      progress=100.0, summary=summary, finished_at=store.now_text())
                     logger.info(f"Backtest #{job['id']} done: net {summary['net_profit']}, {summary['total_trades']} trades")
         self._remove(container)
+
+    def _rerun(self, conn, job: Dict, error: str) -> None:
+        """Back to the queue, keeping its id and so its place ahead of later jobs. The first attempt's
+        error stays on the row and marks the job as already rerun."""
+        if store.update_job(conn, job["id"], expect_status="running", status="queued", phase=None,
+                            progress=None, started_at=None, error=f"attempt 1: {error}"):
+            logger.warning(f"Backtest #{job['id']} aborted by timeout (cold data cache?), running it again")
 
     def _fail(self, conn, job: Dict, error: str, expect: str = "running") -> None:
         store.update_job(conn, job["id"], expect_status=expect, status="failed", error=error,
