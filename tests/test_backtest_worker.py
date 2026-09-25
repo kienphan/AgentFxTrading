@@ -24,7 +24,7 @@ START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 JOB = {
     "bot_name": "cbot-demo-demo-eurusd-all-flowrsi", "strategy": "flowrsi", "symbol": "EURUSD", "period": "m15",
     "algo": "FlowRsiBot.algo", "algo_sha": "abc", "algo_build_time": "2026-09-24T16:34:43Z",
-    "ctid": "trader@example.com", "account": "10115236", "pwd_file": "/root/ctrader_data/ctid_demo-demo_pwd",
+    "ctid_email": "trader@example.com", "account": "10115236", "pwd_file": "/root/ctrader_data/ctid_demo-demo_pwd",
     "start_date": "2026-07-24", "end_date": "2026-09-23", "data_mode": "ticks", "spread_pips": None,
     "balance": 10000.0, "overrides": {}, "params": {"TargetRiskReward": "1.5"}, "note": None,
 }

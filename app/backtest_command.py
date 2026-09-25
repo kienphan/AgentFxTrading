@@ -191,7 +191,7 @@ def build_container_spec(job: Dict, project_root: Path, ctrader_home: Path) -> D
 
     command = [
         "backtest", algo_mount,
-        f"--ctid={job['ctid']}", f"--pwd-file={PWD_MOUNT}", f"--account={job['account']}",
+        f"--ctid={job['ctid_email']}", f"--pwd-file={PWD_MOUNT}", f"--account={job['account']}",
         f"--symbol={job['symbol']}", f"--period={job['period']}",
         f"--start={_cli_date(job['start_date'])}", f"--end={_cli_date(job['end_date'])}",
         f"--data-mode={job['data_mode']}",

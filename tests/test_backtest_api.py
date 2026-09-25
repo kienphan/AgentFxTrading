@@ -118,10 +118,10 @@ def test_create_stores_a_queued_job(env):
     assert (job["algo"], job["algo_sha"], job["algo_build_time"]) == (
         "FlowRsiBot.algo", "f" * 64, "2026-09-24T16:34:43.3439105Z")
     assert (job["start_date"], job["end_date"], job["note"]) == ("2026-07-24", "2026-09-23", "rr 2")
-    assert job["pwd_file"] == "/root/ctrader_data/ctid_bttest_pwd"
+    assert (job["ctid_email"], job["pwd_file"]) == ("trader@example.com", "/root/ctrader_data/ctid_bttest_pwd")
     listed = client.get("/api/backtests").json()["jobs"]
     assert listed[0]["id"] == res["id"]
-    assert "ctid" not in listed[0] and "pwd_file" not in listed[0] and "params" not in listed[0]
+    assert "ctid_email" not in listed[0] and "pwd_file" not in listed[0] and "params" not in listed[0]
     detail = client.get(f"/api/backtests/{res['id']}").json()
     assert detail["params"]["TargetRiskReward"] == "2.0"
 

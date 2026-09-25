@@ -37,7 +37,7 @@ def homes(tmp_path):
 
 
 def make_job(**over):
-    job = {"id": 7, "strategy": "flowrsi", "algo": "FlowRsiBot.algo", "ctid": "trader@example.com",
+    job = {"id": 7, "strategy": "flowrsi", "algo": "FlowRsiBot.algo", "ctid_email": "trader@example.com",
            "account": "10115236", "pwd_file": "/root/ctrader_data/ctid_demo-demo_pwd",
            "symbol": "EURUSD", "period": "m15", "start_date": "2026-07-24", "end_date": "2026-09-23",
            "data_mode": "ticks", "spread_pips": None, "balance": 10000.0,

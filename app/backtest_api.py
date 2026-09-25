@@ -26,7 +26,7 @@ router = APIRouter()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MAX_SPAN_DAYS = 365
-PRIVATE_FIELDS = ("ctid", "pwd_file")
+PRIVATE_FIELDS = ("ctid_email", "pwd_file")
 # The list view never reads `params` (only `overrides`, for the chips); dropping it keeps the
 # 3 s poll of up to 200 rows light.
 LIST_OMITTED_FIELDS = PRIVATE_FIELDS + ("params",)
@@ -130,7 +130,7 @@ def api_create_backtest(req: BacktestCreate):
     fields = {
         "bot_name": source.name, "strategy": source.strategy, "symbol": source.symbol, "period": source.period,
         "algo": source.algo, "algo_sha": meta.get("sha256"), "algo_build_time": meta.get("BuildTime"),
-        "ctid": source.ctid, "account": source.account, "pwd_file": source.pwd_file,
+        "ctid_email": source.ctid, "account": source.account, "pwd_file": source.pwd_file,
         "start_date": req.start.isoformat(), "end_date": req.end.isoformat(), "data_mode": req.data_mode,
         "spread_pips": req.spread_pips, "balance": req.balance, "overrides": overrides,
         "params": job_params(source, overrides), "note": (req.note or "").strip() or None,

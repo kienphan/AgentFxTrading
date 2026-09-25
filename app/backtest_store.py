@@ -18,7 +18,7 @@ ACTIVE = ("queued", "running")
 JSON_COLUMNS = ("overrides", "params", "summary")
 COLUMNS = (
     "bot_name", "strategy", "symbol", "period", "algo", "algo_sha", "algo_build_time",
-    "ctid", "account", "pwd_file", "start_date", "end_date", "data_mode", "spread_pips", "balance",
+    "ctid_email", "account", "pwd_file", "start_date", "end_date", "data_mode", "spread_pips", "balance",
     "overrides", "params", "note", "status", "phase", "progress", "error", "summary",
     "created_at", "started_at", "finished_at",
 )
@@ -35,7 +35,7 @@ def init_schema(conn) -> None:
             algo TEXT NOT NULL,
             algo_sha TEXT,
             algo_build_time TEXT,
-            ctid TEXT NOT NULL,
+            ctid_email TEXT NOT NULL,        -- not `ctid`: PostgreSQL reserves it for a system column
             account TEXT NOT NULL,
             pwd_file TEXT NOT NULL,
             start_date TEXT NOT NULL,
