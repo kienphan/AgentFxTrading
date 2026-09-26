@@ -149,6 +149,36 @@ function btStatusHtml(job) {
     return `<span class="bt-status bt-status--${escapeHtml(job.status)}"${title}>${escapeHtml(job.status)}</span>`;
 }
 
+function btRunsInfoText(jobs, maxParallel) {
+    const count = status => jobs.filter(j => j.status === status).length;
+    const max = Number(maxParallel);
+    const slots = Number.isFinite(max) && max > 0 ? `${count('running')}/${max} running` : `${count('running')} running`;
+    return `${slots} · ${count('queued')} queued`;
+}
+
+function btParallelOptionsHtml(current, cap) {
+    const max = Math.max(1, Math.floor(Number(cap)) || 1);
+    const value = Number(current);
+    return Array.from({length: max}, (_, i) => i + 1)
+        .map(n => `<option value="${n}"${n === value ? ' selected' : ''}>${n}</option>`).join('');
+}
+
+async function btSaveParallel(e) {
+    const select = e.target;
+    select.disabled = true;
+    try {
+        const res = await btFetchJson('/api/backtests/settings',
+            {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({max_parallel: Number(select.value)})});
+        btMessage(`Up to ${res.max_parallel} backtest(s) now run at once.`);
+    } catch (err) {
+        btMessage(`Could not change the parallel limit: ${err.message}`, true);
+    } finally {
+        select.disabled = false;
+        select.blur();
+        await btRefreshJobs();
+    }
+}
+
 function btJobRowsHtml(jobs, selected) {
     if (!jobs.length) return '<tr><td colspan="13" class="td-dim" style="text-align:center;">No backtests yet</td></tr>';
     return jobs.map(j => {
@@ -329,6 +359,7 @@ function btInitForm() {
     document.getElementById('bt-data-mode').addEventListener('change', btToggleSpread);
     document.getElementById('bt-run-btn').addEventListener('click', btSubmit);
     document.getElementById('bt-compare-btn').addEventListener('click', btCompare);
+    document.getElementById('bt-parallel').addEventListener('change', btSaveParallel);
     document.getElementById('bt-compare-close').addEventListener('click', () => btHidePanel('bt-compare-panel'));
     const params = document.getElementById('bt-params');
     params.addEventListener('change', btOnParamChange);
@@ -481,7 +512,7 @@ async function btSubmit() {
     btMessage('Queuing…');
     try {
         const res = await btFetchJson('/api/backtests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-        btMessage(`Backtest #${res.id} queued (position ${res.queue_position}).`);
+        btMessage(`Backtest #${res.id} queued (position ${res.queue_position}; ${res.running}/${res.max_parallel} running).`);
         await btRefreshJobs();
     } catch (e) {
         btMessage(e.message, true);
@@ -498,6 +529,9 @@ async function btRefreshJobs() {
         const doneIds = new Set(bt.jobs.filter(j => j.status === 'done').map(j => Number(j.id)));
         bt.selected = new Set([...bt.selected].filter(id => doneIds.has(id)));
         document.getElementById('bt-jobs-tbody').innerHTML = btJobRowsHtml(bt.jobs, bt.selected);
+        document.getElementById('bt-runs-info').textContent = btRunsInfoText(bt.jobs, data.max_parallel);
+        const parallel = document.getElementById('bt-parallel');
+        if (document.activeElement !== parallel) parallel.innerHTML = btParallelOptionsHtml(data.max_parallel, data.max_parallel_cap);
         btUpdateCompareButton();
     } catch (e) {
         btMessage(`Could not load backtests: ${e.message}`, true);

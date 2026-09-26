@@ -1841,6 +1841,8 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .bt-run-btn{background:var(--accent-soft);color:var(--accent-bright);border-color:var(--accent)}
 .bt-chip{display:inline-block;font-size:0.65rem;padding:1px 6px;margin:1px 0;border-radius:10px;border:1px solid var(--border);background:var(--bg-surface);white-space:nowrap}
 .bt-small{font-size:0.65rem}
+.bt-runs-tools{display:flex;align-items:center;gap:10px}
+.bt-parallel{display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-muted)}
 .kpi-value.bt-kpi-wrap{white-space:normal}
 .bt-note{max-width:180px;overflow:hidden;text-overflow:ellipsis}
 .bt-actions{display:flex;gap:4px}

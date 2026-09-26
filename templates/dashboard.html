@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/css/dashboard.css?v=20260925_lbpicker">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/static/js/backtest.js?v=20260925_btpos" defer></script>
+    <script src="/static/js/backtest.js?v=20260926_btparallel2" defer></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body class="app-shell">
@@ -586,8 +586,13 @@
                 </section>
                 <section class="panel">
                     <div class="panel-header">
-                        <span class="panel-title"><i data-lucide="list" class="panel-icon text-blue"></i> Runs</span>
-                        <button id="bt-compare-btn" class="log-btn" disabled>Compare (0)</button>
+                        <span class="panel-title"><i data-lucide="list" class="panel-icon text-blue"></i> Runs <span id="bt-runs-info" class="td-dim bt-small"></span></span>
+                        <div class="bt-runs-tools">
+                            <label class="bt-parallel" title="How many backtests run at once. A run waits while another run of its symbol over overlapping dates is still loading data.">Parallel
+                                <select id="bt-parallel" class="log-select"></select>
+                            </label>
+                            <button id="bt-compare-btn" class="log-btn" disabled>Compare (0)</button>
+                        </div>
                     </div>
                     <div class="table-wrap">
                         <table class="data-table">

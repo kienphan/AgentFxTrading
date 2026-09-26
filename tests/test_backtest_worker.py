@@ -1,4 +1,4 @@
-"""Backtest worker: one bt-<id> container at a time, progress from the CLI's log, the report collected
+"""Backtest worker: bt-<id> containers up to max_parallel at once, progress from the CLI's log, the report collected
 from the exited container, timeouts, cancel, and restart reconciliation — all against a fake Docker
 client and a throwaway SQLite DB."""
 import io
@@ -14,7 +14,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import backtest_store as store  # noqa: E402
-from app.backtest_worker import TIMEOUT_S, BacktestWorker, parse_progress  # noqa: E402
+from app.backtest_worker import (DEFAULT_MAX_PARALLEL, MAX_PARALLEL_CAP, TIMEOUT_S, BacktestWorker,  # noqa: E402
+                                 max_parallel_from_env, parse_progress)
 
 REPORT = (ROOT / "tests" / "fixtures" / "backtest" / "report_small.json").read_bytes()
 # The fake clock sits before any real run date: a job the worker starts gets started_at = the real
@@ -109,7 +110,7 @@ def env(tmp_path):
         store.init_schema(conn)
     client, clock = FakeClient(), Clock()
     worker = BacktestWorker(client_provider=lambda: client, db_target=db, report_dir=tmp_path / "reports",
-                            project_root=project, ctrader_home_dir=ctrader, clock=clock)
+                            project_root=project, ctrader_home_dir=ctrader, clock=clock, max_parallel=2)
 
     class Env:
         pass
@@ -151,12 +152,105 @@ def test_a_queued_job_starts_in_its_bt_container(env):
     assert row["started_at"]
 
 
-def test_only_one_job_runs_at_a_time(env):
-    first, second = queue(env), queue(env)
+def test_jobs_of_different_symbols_run_in_parallel_up_to_the_limit(env):
+    eurusd, gbpusd, usdjpy = queue(env), queue(env, symbol="GBPUSD"), queue(env, symbol="USDJPY")
+    env.worker.tick()
+    assert [spec["name"] for spec in env.client.containers.runs] == [f"bt-{eurusd}", f"bt-{gbpusd}"]
+    assert [job(env, i)["status"] for i in (eurusd, gbpusd, usdjpy)] == ["running", "running", "queued"]
+    env.client.containers.items[f"bt-{eurusd}"].finish(0, REPORT)
+    env.worker.tick()
+    assert job(env, eurusd)["status"] == "done" and job(env, usdjpy)["status"] == "running"
+    assert len(env.client.containers.runs) == 3
+
+
+def test_a_job_waits_while_its_symbol_loads_the_same_dates_then_reads_the_cache(env):
+    first, second = queue(env), queue(env, start_date="2026-09-01", end_date="2026-09-30")
     env.worker.tick()
     env.worker.tick()
     assert len(env.client.containers.runs) == 1
     assert job(env, first)["status"] == "running" and job(env, second)["status"] == "queued"
+    container = env.client.containers.items[f"bt-{first}"]
+    container.log_bytes = b"Progress | Loading EURUSD, m15 | 33.87 % |\n"
+    env.worker.tick()
+    assert job(env, second)["status"] == "queued"
+    container.log_bytes += b"Progress | Backtesting | 1.50 % |\n"
+    env.worker.tick()                    # this tick sees "backtesting" and starts the second run
+    assert job(env, first)["status"] == "running" and job(env, second)["status"] == "running"
+    assert [spec["name"] for spec in env.client.containers.runs] == [f"bt-{first}", f"bt-{second}"]
+
+
+def test_runs_of_one_symbol_over_separate_dates_start_together(env):
+    july = queue(env, start_date="2026-07-01", end_date="2026-07-31")
+    august = queue(env, start_date="2026-08-01", end_date="2026-08-31")
+    touching = queue(env, start_date="2026-08-31", end_date="2026-09-15")      # shares Aug 31 with `august`
+    with store.connect(env.db) as conn:
+        env.worker.set_max_parallel(conn, 3)
+    env.worker.tick()
+    assert [job(env, i)["status"] for i in (july, august, touching)] == ["running", "running", "queued"]
+
+
+def test_a_job_waiting_on_its_symbol_does_not_hold_back_other_symbols(env):
+    first, same, other = queue(env), queue(env), queue(env, symbol="GBPUSD")
+    env.worker.tick()
+    assert [job(env, i)["status"] for i in (first, same, other)] == ["running", "queued", "running"]
+
+
+def test_the_limit_saved_on_the_page_replaces_the_default(env):
+    ids = [queue(env, symbol=s) for s in ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD")]
+    with store.connect(env.db) as conn:
+        assert env.worker.max_parallel(conn) == 2                  # the default until one is saved
+        env.worker.set_max_parallel(conn, 3)
+        assert env.worker.max_parallel(conn) == 3
+    env.worker.tick()
+    assert [job(env, i)["status"] for i in ids] == ["running", "running", "running", "queued"]
+
+
+def test_lowering_the_limit_lets_running_jobs_finish(env):
+    ids = [queue(env, symbol=s) for s in ("EURUSD", "GBPUSD", "USDJPY")]
+    env.worker.tick()
+    with store.connect(env.db) as conn:
+        env.worker.set_max_parallel(conn, 1)
+    env.client.containers.items[f"bt-{ids[0]}"].finish(0, REPORT)
+    env.worker.tick()
+    assert [job(env, i)["status"] for i in ids] == ["done", "running", "queued"]    # 1 running: no new start
+    env.client.containers.items[f"bt-{ids[1]}"].finish(0, REPORT)
+    env.worker.tick()
+    assert job(env, ids[2])["status"] == "running"
+
+
+@pytest.mark.parametrize("value", [0, -1, MAX_PARALLEL_CAP + 1])
+def test_a_limit_out_of_range_is_refused(env, value):
+    with store.connect(env.db) as conn:
+        with pytest.raises(ValueError):
+            env.worker.set_max_parallel(conn, value)
+        assert env.worker.max_parallel(conn) == 2
+
+
+def test_a_single_slot_runs_one_job_at_a_time(env):
+    with store.connect(env.db) as conn:
+        env.worker.set_max_parallel(conn, 1)
+    first, second = queue(env), queue(env, symbol="GBPUSD")
+    env.worker.tick()
+    env.worker.tick()
+    assert len(env.client.containers.runs) == 1 and job(env, second)["status"] == "queued"
+
+
+def test_a_failed_start_frees_its_slot_for_the_next_job(env):
+    broken = queue(env, pwd_file="/root/ctrader_data/missing_pwd")
+    first, second = queue(env, symbol="GBPUSD"), queue(env, symbol="USDJPY")
+    env.worker.tick()
+    assert job(env, broken)["status"] == "failed"
+    assert job(env, first)["status"] == "running" and job(env, second)["status"] == "running"
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("", DEFAULT_MAX_PARALLEL), ("abc", DEFAULT_MAX_PARALLEL), ("4", 4), (" 2 ", 2),
+    ("0", 1), ("-3", 1), ("99", MAX_PARALLEL_CAP),
+])
+def test_max_parallel_comes_from_the_environment(monkeypatch, raw, expected):
+    monkeypatch.setenv("BACKTEST_MAX_PARALLEL", raw)
+    assert max_parallel_from_env() == expected
+    assert BacktestWorker(client_provider=lambda: None).default_max_parallel == expected
 
 
 def test_progress_is_read_from_the_log(env):

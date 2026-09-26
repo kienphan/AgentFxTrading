@@ -48,9 +48,9 @@ def test_lists_newest_first_and_picks_the_oldest_queued(db):
     with store.connect(db) as conn:
         ids = [store.create_job(conn, FIELDS) for _ in range(3)]
         assert [j["id"] for j in store.list_jobs(conn)] == ids[::-1]
-        assert store.next_queued(conn)["id"] == ids[0]
+        assert [j["id"] for j in store.jobs_with_status(conn, "queued")] == ids
         store.update_job(conn, ids[0], status="running")
-        assert store.next_queued(conn)["id"] == ids[1]
+        assert [j["id"] for j in store.jobs_with_status(conn, "queued")] == ids[1:]
         assert [j["id"] for j in store.jobs_with_status(conn, "running")] == [ids[0]]
 
 
@@ -71,14 +71,13 @@ def test_update_encodes_summary(db):
         assert store.get_job(conn, job_id)["summary"] == {"net_profit": -0.98}
 
 
-def test_queue_position_counts_the_running_job_and_older_queued_ones(db):
+def test_queue_position_counts_only_older_queued_jobs(db):
     with store.connect(db) as conn:
         first, second, third = (store.create_job(conn, FIELDS) for _ in range(3))
         assert [store.queue_position(conn, i) for i in (first, second, third)] == [1, 2, 3]
         store.update_job(conn, first, status="running")
-        assert store.queue_position(conn, second) == 2        # behind the running one
-        store.update_job(conn, first, status="done")
-        assert store.queue_position(conn, second) == 1
+        assert store.queue_position(conn, second) == 1        # jobs run in parallel: running ones are not ahead
+        assert (store.count_status(conn, "running"), store.count_status(conn, "queued")) == (1, 2)
 
 
 def test_delete_job(db):
