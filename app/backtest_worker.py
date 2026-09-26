@@ -45,7 +45,7 @@ PROGRESS_RE = re.compile(r"^Progress \| (.+?) \| ([\d.]+) %", re.MULTILINE)
 ABORT_SIGN = "aborted by timeout"
 # Each container may take MEM_LIMIT (1 GB) and 2 CPUs (at a low cpu_shares, so the live bots come first).
 DEFAULT_MAX_PARALLEL = 3
-MAX_PARALLEL_CAP = 8
+MAX_PARALLEL_CAP = 32
 MAX_PARALLEL_KEY = "max_parallel"
 # A running job in one of these phases may still be writing its data into the shared cache.
 LOADING_PHASES = (None, "starting", "loading")
