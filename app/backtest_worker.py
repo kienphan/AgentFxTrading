@@ -1,6 +1,13 @@
 """
-Runs the Backtest page's jobs, one at a time, in `bt-<id>` containers
+Runs the Backtest page's jobs in `bt-<id>` containers, several at once
 (docs/superpowers/specs/2026-09-24-backtest-page-design.md).
+
+How many run at once is set on the page (backtest_settings.max_parallel); until it is set, the
+BACKTEST_MAX_PARALLEL environment variable or DEFAULT_MAX_PARALLEL. Every container shares the
+agentfx-bt-cache data volume, so two runs downloading the same days of one symbol would write the
+same cache files: a queued job waits while a running job of its symbol whose date range overlaps its
+own is still starting or loading. Once that one is backtesting, its data is in the cache and the
+queued job reads it from there. Other queued jobs go ahead meanwhile.
 
 The asyncio loop only schedules. tick() does the work in a thread, so Docker and DB calls never block
 the event loop that serves /trade and /ws/cbot. Containers outlive the app process, so every tick
@@ -11,6 +18,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re
 import tarfile
 from datetime import datetime, timezone
@@ -35,6 +43,28 @@ PROGRESS_RE = re.compile(r"^Progress \| (.+?) \| ([\d.]+) %", re.MULTILINE)
 # call timeout and the bot is "aborted by timeout" (backtest #1, 2026-09-25: 9 months of AUDUSD
 # ticks took 4 min). The failed run still leaves the ticks in the cache, so a rerun gets through.
 ABORT_SIGN = "aborted by timeout"
+# Each container may take MEM_LIMIT (1 GB) and 2 CPUs (at a low cpu_shares, so the live bots come first).
+DEFAULT_MAX_PARALLEL = 3
+MAX_PARALLEL_CAP = 8
+MAX_PARALLEL_KEY = "max_parallel"
+# A running job in one of these phases may still be writing its data into the shared cache.
+LOADING_PHASES = (None, "starting", "loading")
+
+
+def _clamp(value: int) -> int:
+    return max(1, min(MAX_PARALLEL_CAP, value))
+
+
+def max_parallel_from_env() -> int:
+    """BACKTEST_MAX_PARALLEL, clamped to 1..MAX_PARALLEL_CAP; unset or invalid gives the default."""
+    raw = os.environ.get("BACKTEST_MAX_PARALLEL", "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        if raw:
+            logger.warning(f"BACKTEST_MAX_PARALLEL={raw!r} is not a number, using {DEFAULT_MAX_PARALLEL}")
+        return DEFAULT_MAX_PARALLEL
+    return _clamp(value)
 
 
 def parse_progress(logs: str) -> Optional[Tuple[str, float]]:
@@ -58,13 +88,16 @@ def _utcnow() -> datetime:
 class BacktestWorker:
     def __init__(self, client_provider: Callable = _docker_client, db_target=None,
                  report_dir: Optional[Path] = None, project_root: Path = PROJECT_ROOT,
-                 ctrader_home_dir: Optional[Path] = None, clock: Callable[[], datetime] = _utcnow):
+                 ctrader_home_dir: Optional[Path] = None, clock: Callable[[], datetime] = _utcnow,
+                 max_parallel: Optional[int] = None):
         self.client_provider = client_provider
         self.db_target = db_target
         self.report_dir = report_dir
         self.project_root = Path(project_root)
         self.ctrader_home_dir = ctrader_home_dir
         self.clock = clock
+        # Used until the page saves a value (see max_parallel()).
+        self.default_max_parallel = _clamp(int(max_parallel)) if max_parallel is not None else max_parallel_from_env()
         self._running = False
 
     async def run_loop(self):
@@ -141,26 +174,57 @@ class BacktestWorker:
                     self._fail(conn, job, f"worker error: {e}")
                     if container is not None:
                         self._remove(container)
-            if not store.jobs_with_status(conn, "running"):
-                job = store.next_queued(conn)
-                if job:
-                    self._start(conn, client, job)
+            self._start_queued(conn, client)
 
-    def _start(self, conn, client, job: Dict) -> None:
+    def max_parallel(self, conn) -> int:
+        saved = store.get_setting(conn, MAX_PARALLEL_KEY)
+        try:
+            return _clamp(int(saved)) if saved is not None else self.default_max_parallel
+        except ValueError:
+            return self.default_max_parallel
+
+    def set_max_parallel(self, conn, value: int) -> None:
+        """Lowering it never stops a running job: new ones start once fewer than `value` run."""
+        if not 1 <= value <= MAX_PARALLEL_CAP:
+            raise ValueError(f"max_parallel must be between 1 and {MAX_PARALLEL_CAP}")
+        store.set_setting(conn, MAX_PARALLEL_KEY, str(value))
+
+    def _start_queued(self, conn, client) -> None:
+        """Oldest first, into the free slots; a job waits while another loads the same data."""
+        limit = self.max_parallel(conn)
+        running = store.jobs_with_status(conn, "running")
+        for job in store.jobs_with_status(conn, "queued"):
+            if len(running) >= limit:
+                return
+            if any(self._loads_same_data(other, job) for other in running):
+                continue
+            if self._start(conn, client, job):
+                running.append({**job, "status": "running", "phase": "starting"})
+
+    @staticmethod
+    def _loads_same_data(running: Dict, queued: Dict) -> bool:
+        """`running` may still be writing cache files `queued` would write too: the same symbol, over
+        overlapping dates (ISO text compares as dates), not yet past loading."""
+        return (running["symbol"] == queued["symbol"] and running.get("phase") in LOADING_PHASES
+                and running["start_date"] <= queued["end_date"] and queued["start_date"] <= running["end_date"])
+
+    def _start(self, conn, client, job: Dict) -> bool:
+        """Whether the job is now running."""
         try:
             home = self.ctrader_home_dir or Path(ctrader_home())
             container = client.containers.run(**build_container_spec(job, self.project_root, home))
         except Exception as e:
             self._fail(conn, job, f"start failed: {e}", expect="queued")
-            return
+            return False
         started = store.update_job(conn, job["id"], expect_status="queued", status="running", phase="starting",
                                    progress=0.0, started_at=store.now_text())
         if not started:
-            # A cancel won the race between next_queued() and this update: the row is no longer
+            # A cancel won the race between reading the queue and this update: the row is no longer
             # "queued", so leave it alone and stop the container that just started for it.
             self._remove(container)
-            return
+            return False
         logger.info(f"Backtest #{job['id']} started ({job['symbol']} {job['start_date']}..{job['end_date']})")
+        return True
 
     def _collect(self, conn, job: Dict, container) -> None:
         exit_code = (container.attrs.get("State") or {}).get("ExitCode")

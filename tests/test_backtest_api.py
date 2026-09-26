@@ -61,11 +61,13 @@ def env(tmp_path, monkeypatch):
         assert pm.add_cbot_config(name, "", build_run_command(ACCOUNT, strategy, "EURUSD", "/w", "/r"))
     with store.connect() as conn:
         conn.execute("DELETE FROM backtest_jobs")
+        conn.execute("DELETE FROM backtest_settings")
     yield cache
     for name in (FLOW, JUDAS):
         pm.delete_cbot_config(name)
     with store.connect() as conn:
         conn.execute("DELETE FROM backtest_jobs")
+        conn.execute("DELETE FROM backtest_settings")
 
 
 def body(**over):
@@ -127,7 +129,21 @@ def test_create_stores_a_queued_job(env):
 
 
 def test_queue_position_counts_jobs_ahead(env):
-    assert [create()["queue_position"] for _ in range(2)] == [1, 2]
+    first, second = create(), create()
+    assert (first["queue_position"], second["queue_position"]) == (1, 2)
+    assert (second["running"], second["max_parallel"]) == (0, api.backtest_worker.default_max_parallel)
+
+
+def test_the_parallel_limit_is_set_from_the_page(env):
+    listed = client.get("/api/backtests").json()
+    assert (listed["max_parallel"], listed["max_parallel_cap"]) == (
+        api.backtest_worker.default_max_parallel, api.MAX_PARALLEL_CAP)
+    assert client.put("/api/backtests/settings", json={"max_parallel": 5}).json() == {"max_parallel": 5}
+    assert client.get("/api/backtests").json()["max_parallel"] == 5
+    assert create()["max_parallel"] == 5
+    for bad in (0, api.MAX_PARALLEL_CAP + 1, "many", 2.5):
+        assert client.put("/api/backtests/settings", json={"max_parallel": bad}).status_code == 422, bad
+    assert client.get("/api/backtests").json()["max_parallel"] == 5
 
 
 @pytest.mark.parametrize("over", [

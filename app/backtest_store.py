@@ -57,6 +57,12 @@ def init_schema(conn) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_backtest_jobs_status ON backtest_jobs(status)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS backtest_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
 
 
 def now_text() -> str:
@@ -115,11 +121,6 @@ def list_jobs(conn, limit: int = 200) -> List[Dict]:
     return [_decode(r) for r in rows]
 
 
-def next_queued(conn) -> Optional[Dict]:
-    return _decode(conn.execute(
-        "SELECT * FROM backtest_jobs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone())
-
-
 def jobs_with_status(conn, status: str) -> List[Dict]:
     rows = conn.execute("SELECT * FROM backtest_jobs WHERE status = ? ORDER BY id", (status,)).fetchall()
     return [_decode(r) for r in rows]
@@ -143,11 +144,26 @@ def delete_job(conn, job_id: int) -> None:
 
 
 def queue_position(conn, job_id: int) -> int:
-    """1 = starts as soon as the worker looks; each running or older queued job adds one."""
+    """1 = first in line for a free slot; each older queued job adds one. Running jobs are not
+    counted: several run at once (app/backtest_worker.py)."""
     row = conn.execute(
-        "SELECT COUNT(*) FROM backtest_jobs WHERE status = 'running' OR (status = 'queued' AND id < ?)",
-        (int(job_id),)).fetchone()
+        "SELECT COUNT(*) FROM backtest_jobs WHERE status = 'queued' AND id < ?", (int(job_id),)).fetchone()
     return int(row[0]) + 1
+
+
+def count_status(conn, status: str) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM backtest_jobs WHERE status = ?", (status,)).fetchone()
+    return int(row[0])
+
+
+def get_setting(conn, key: str) -> Optional[str]:
+    row = conn.execute("SELECT value FROM backtest_settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_setting(conn, key: str, value: str) -> None:
+    conn.execute("INSERT INTO backtest_settings (key, value) VALUES (?, ?) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
 
 
 def report_path(job_id: int, report_dir: Optional[Path] = None) -> Path:

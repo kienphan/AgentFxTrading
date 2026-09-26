@@ -19,6 +19,7 @@ from app.backtest_command import BotSource, algo_host_path, describe_source, par
 from app.backtest_params import (DockerUnavailable, MetadataCache, MetadataError, OverrideError, job_params,
                                  param_view, validate_overrides)
 from app.backtest_report import ui_payload
+from app.backtest_worker import MAX_PARALLEL_CAP, backtest_worker
 from app.ctrader_accounts import ctrader_home
 from app.portfolio import get_portfolio_manager
 
@@ -138,14 +139,33 @@ def api_create_backtest(req: BacktestCreate):
     with store.connect() as conn:
         job_id = store.create_job(conn, fields)
         position = store.queue_position(conn, job_id)
-    return {"id": job_id, "status": "queued", "queue_position": position}
+        running = store.count_status(conn, "running")
+        max_parallel = backtest_worker.max_parallel(conn)
+    return {"id": job_id, "status": "queued", "queue_position": position, "running": running,
+            "max_parallel": max_parallel}
 
 
 @router.get("/api/backtests")
 def api_list_backtests():
     with store.connect() as conn:
         jobs = store.list_jobs(conn)
-    return {"jobs": [_public(j, LIST_OMITTED_FIELDS) for j in jobs], "docker_available": docker_available()}
+        max_parallel = backtest_worker.max_parallel(conn)
+    return {"jobs": [_public(j, LIST_OMITTED_FIELDS) for j in jobs], "docker_available": docker_available(),
+            "max_parallel": max_parallel, "max_parallel_cap": MAX_PARALLEL_CAP}
+
+
+class BacktestSettings(BaseModel):
+    max_parallel: int
+
+
+@router.put("/api/backtests/settings")
+def api_update_backtest_settings(req: BacktestSettings):
+    with store.connect() as conn:
+        try:
+            backtest_worker.set_max_parallel(conn, req.max_parallel)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    return {"max_parallel": req.max_parallel}
 
 
 @router.get("/api/backtests/{job_id}")

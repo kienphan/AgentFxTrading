@@ -43,7 +43,7 @@ def test_dashboard_has_the_backtest_nav_view_and_script():
     for element_id in ("bt-form-panel", "bt-bot", "bt-start", "bt-end", "bt-data-mode", "bt-spread-wrap",
                        "bt-spread", "bt-balance", "bt-note", "bt-params", "bt-locked", "bt-run-btn", "bt-form-msg",
                        "bt-compare-btn", "bt-jobs-tbody", "bt-detail-panel", "bt-detail", "bt-compare-panel",
-                       "bt-compare", "bt-compare-close"):
+                       "bt-compare", "bt-compare-close", "bt-runs-info", "bt-parallel"):
         assert f'id="{element_id}"' in html, element_id
     assert "Technical logic only" in html
 
@@ -126,6 +126,9 @@ out.rowNew = btJobRowsHtml([{...job, summary: stats}], new Set());
 out.rowOld = btJobRowsHtml([{...job, summary: {win_rate: 56.2, total_trades: 379}}], new Set());
 out.best = [btBestIndex([1, 3, 2], 'max'), btBestIndex([1, 3, 2], 'min'), btBestIndex([-5, -1, 2], 'zero'),
             btBestIndex([2, 2], 'max'), btBestIndex([1, 2], null)];
+out.runsInfo = [btRunsInfoText([{status: 'running'}, {status: 'queued'}, {status: 'queued'}, {status: 'done'}], 3),
+                btRunsInfoText([], undefined)];
+out.parallel = btParallelOptionsHtml(3, 4);
 console.log(JSON.stringify(out));
 """
 
@@ -151,6 +154,9 @@ def test_backtest_renderers_escape_external_strings():
     assert out["diff"] == [HOSTILE]                               # BotId is ignored
     assert out["warnings"] == ["date ranges differ"]
     assert out["best"] == [1, 0, 1, -1, -1]
+    assert out["runsInfo"] == ["1/3 running · 2 queued", "0 running · 0 queued"]
+    assert out["parallel"] == ('<option value="1">1</option><option value="2">2</option>'
+                               '<option value="3" selected>3</option><option value="4">4</option>')
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
