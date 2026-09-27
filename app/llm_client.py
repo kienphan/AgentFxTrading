@@ -188,7 +188,12 @@ class AnthropicClient(LLMClient):
                 messages=user_msgs,
                 **merged
             )
-            return response.content[0].text
+            # Models with adaptive thinking on by default (Sonnet 5, Opus 5) put a thinking
+            # block first; only the text blocks carry the answer.
+            text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
+            if not text:
+                raise ValueError(f"Anthropic response had no text block (stop_reason={response.stop_reason})")
+            return text
         except Exception as e:
             logger.warning(f"Anthropic chat error ({self.model}): {describe_llm_error(e)}")
             raise

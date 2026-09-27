@@ -1,4 +1,6 @@
+import asyncio
 import os
+from types import SimpleNamespace
 from unittest.mock import patch
 import pytest
 from app.llm_client import (
@@ -153,3 +155,31 @@ async def test_trade_thinking_can_be_switched_back_on(monkeypatch, tmp_path):
     monkeypatch.setattr(server_mod, "TRADE_LLM_ENABLE_THINKING", True)
     kwargs = await _trade_kwargs(monkeypatch, tmp_path)
     assert kwargs.get("extra_body") == {"enable_thinking": True}
+
+
+class _FakeMessages:
+    def __init__(self, content, stop_reason="end_turn"):
+        self.response = SimpleNamespace(content=content, stop_reason=stop_reason)
+
+    async def create(self, **kwargs):
+        return self.response
+
+
+def _anthropic_with(content, stop_reason="end_turn"):
+    client = AnthropicClient(api_key="k", model="claude-sonnet-5")
+    client.client = SimpleNamespace(messages=_FakeMessages(content, stop_reason))
+    return client
+
+
+def test_anthropic_chat_skips_thinking_blocks_and_returns_the_text():
+    # Sonnet 5 runs adaptive thinking by default: the first block is a ThinkingBlock with no .text
+    content = [SimpleNamespace(type="thinking", thinking="", signature="s"),
+               SimpleNamespace(type="text", text='{"decision": {"action": "WAIT"}}')]
+    out = asyncio.run(_anthropic_with(content).chat([{"role": "user", "content": "x"}]))
+    assert out == '{"decision": {"action": "WAIT"}}'
+
+
+def test_anthropic_chat_without_any_text_block_fails_with_the_stop_reason():
+    content = [SimpleNamespace(type="thinking", thinking="", signature="s")]
+    with pytest.raises(ValueError, match="max_tokens"):
+        asyncio.run(_anthropic_with(content, stop_reason="max_tokens").chat([{"role": "user", "content": "x"}]))
