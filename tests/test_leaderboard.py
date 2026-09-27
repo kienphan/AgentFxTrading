@@ -520,13 +520,16 @@ def test_dashboard_page_embeds_leaderboard_escaped(temp_db, monkeypatch):
     must not come out as markup."""
     conn = sqlite3.connect(str(temp_db))
     conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
-    _add_closed(conn, "<img src=x onerror=alert(1)>", 12.0)
+    # Inside the page's default 7-day window
+    recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    _add_closed(conn, "<img src=x onerror=alert(1)>", 12.0, exit_time=recent)
     conn.commit()
     conn.close()
     _use_leaderboard_db(monkeypatch, temp_db)
 
     html = TestClient(app).get("/demo/dashboard").text
     assert "const lbInitial = {" in html
+    assert '"period": "1w"' in html
     assert "<img src=x onerror" not in html.lower()
     assert "\\u003cimg src=x onerror" in html
 
