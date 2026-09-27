@@ -22,6 +22,10 @@ namespace cAlgo.Robots
         [Parameter("Agent API URL", Group = "API", DefaultValue = "http://127.0.0.1:8000/trade/mtf")]
         public string ApiUrl { get; set; }
 
+        // A full MTF reply with thinking took ~69 s on Claude Sonnet 5; 45 s dropped every decision.
+        [Parameter("AI timeout (s)", Group = "API", DefaultValue = 120, MinValue = 10, MaxValue = 600)]
+        public int AiTimeoutSeconds { get; set; }
+
         [Parameter("D1 bars", Group = "Candles", DefaultValue = 100, MinValue = 20)]
         public int D1Bars { get; set; }
 
@@ -71,7 +75,7 @@ namespace cAlgo.Robots
                 return;
             }
 
-            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(AiTimeoutSeconds) };
             _d1 = MarketData.GetBars(TimeFrame.Daily);
             _h4 = MarketData.GetBars(TimeFrame.Hour4);
             _h1 = MarketData.GetBars(TimeFrame.Hour);

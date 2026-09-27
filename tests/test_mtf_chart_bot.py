@@ -51,3 +51,11 @@ def test_forward_test_events_are_journaled():
     assert 'JournalEvent("error"' in src
     assert 'JournalEvent("expiry"' in src
     assert "ClientOrderId" in src
+
+
+def test_ai_timeout_is_a_parameter_long_enough_for_a_thinking_reply():
+    # a full MTF reply from Claude Sonnet 5 with thinking took ~69 s; 45 s dropped every decision
+    src = _src()
+    assert '[Parameter("AI timeout (s)", Group = "API", DefaultValue = 120' in src
+    assert "TimeSpan.FromSeconds(AiTimeoutSeconds)" in src
+    assert "TimeSpan.FromSeconds(45)" not in src
