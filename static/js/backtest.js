@@ -29,8 +29,10 @@ const BT_COMPARE_ROWS = [
     ['swaps', 'Swaps', 'zero', 'money'],
 ];
 const BT_IGNORED_PARAMS = new Set(['BotId', 'AccountLabel']);
+const BT_PAGE_SIZES = [10, 20, 50];
 const bt = {sources: [], view: null, overrides: {}, pendingOverrides: null, jobs: [], selected: new Set(),
-            pollTimer: null, charts: {}, loaded: false, helpBtn: null};
+            pollTimer: null, charts: {}, loaded: false, helpBtn: null,
+            page: 1, perPage: 20, total: 0, modalJobId: null};
 
 // ---------- formatting ----------
 
@@ -149,8 +151,9 @@ function btStatusHtml(job) {
     return `<span class="bt-status bt-status--${escapeHtml(job.status)}"${title}>${escapeHtml(job.status)}</span>`;
 }
 
-function btRunsInfoText(jobs, maxParallel) {
-    const count = status => jobs.filter(j => j.status === status).length;
+// counts: the list response's running / queued totals, over every page.
+function btRunsInfoText(counts, maxParallel) {
+    const count = status => Number(counts && counts[status]) || 0;
     const max = Number(maxParallel);
     const slots = Number.isFinite(max) && max > 0 ? `${count('running')}/${max} running` : `${count('running')} running`;
     return `${slots} · ${count('queued')} queued`;
@@ -242,14 +245,17 @@ function btTradeRowsHtml(trades) {
         <td>${btMoney(Number(t.commissions) + Number(t.swaps))}</td></tr>`).join('');
 }
 
+function btDetailTitleHtml(job) {
+    return `<strong>#${Number(job.id)} ${escapeHtml(job.symbol)} ${escapeHtml(job.period)}</strong>`
+        + `<span class="td-dim">${escapeHtml(btDateText(job.start_date))} – ${escapeHtml(btDateText(job.end_date))} · ${escapeHtml(job.data_mode)} · ${escapeHtml(job.bot_name)}</span>`
+        + (job.note ? `<span class="bt-modal-note">${escapeHtml(job.note)}</span>` : '');
+}
+
 function btDetailHtml(job) {
     const id = Number(job.id);
-    const head = `<div class="bt-detail-head"><strong>#${id} ${escapeHtml(job.symbol)} ${escapeHtml(job.period)}</strong>
-        <span class="td-dim">${escapeHtml(btDateText(job.start_date))} – ${escapeHtml(btDateText(job.end_date))} · ${escapeHtml(job.data_mode)} · ${escapeHtml(job.bot_name)}</span>
-        <button class="log-btn" data-act="close-detail">Close</button></div>`;
-    if (job.status === 'failed') return `${head}<pre class="bt-error">${escapeHtml(job.error || 'failed')}</pre>`;
-    if (!job.report) return `${head}<div class="td-dim">No report for this run.</div>`;
-    return `${head}${btKpiCardsHtml(job.summary || {})}
+    if (job.status === 'failed') return `<pre class="bt-error">${escapeHtml(job.error || 'failed')}</pre>`;
+    if (!job.report) return '<div class="td-dim">No report for this run.</div>';
+    return `${btKpiCardsHtml(job.summary || {})}
         <div class="bt-charts">
             <div class="bt-chart bt-chart--wide"><canvas id="bt-equity-chart"></canvas></div>
             <div class="bt-chart"><canvas id="bt-hour-chart"></canvas></div>
@@ -318,7 +324,44 @@ function btCompareHtml(jobs) {
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Parameter</th>${head}</tr></thead><tbody>${diffRows}</tbody></table></div>`;
 }
 
+// Page numbers around the current one, with the first and the last always reachable.
+function btPageList(page, pages) {
+    const keep = new Set([1, pages, page - 1, page, page + 1].filter(n => n >= 1 && n <= pages));
+    const list = [];
+    [...keep].sort((a, b) => a - b).forEach((n, i, arr) => {
+        if (i && n - arr[i - 1] > 1) list.push(null);                 // a gap: '…'
+        list.push(n);
+    });
+    return list;
+}
+
+function btPagerHtml(page, perPage, total) {
+    const pages = Math.max(1, Math.ceil(total / perPage));
+    const from = total ? (page - 1) * perPage + 1 : 0;
+    const to = Math.min(total, page * perPage);
+    const btn = (n, label, extra = '') =>
+        `<button type="button" class="log-btn bt-page" data-page="${n}"${extra}>${label}</button>`;
+    const numbers = btPageList(page, pages).map(n => (n === null
+        ? '<span class="bt-page-gap">…</span>'
+        : btn(n, n, n === page ? ' aria-current="page" disabled' : ''))).join('');
+    const nav = pages > 1
+        ? `<div class="bt-pager-btns">${btn(page - 1, '‹', page <= 1 ? ' disabled aria-label="Previous page"' : ' aria-label="Previous page"')}`
+          + `${numbers}${btn(page + 1, '›', page >= pages ? ' disabled aria-label="Next page"' : ' aria-label="Next page"')}</div>`
+        : '';
+    const sizes = BT_PAGE_SIZES.map(n => `<option value="${n}"${n === perPage ? ' selected' : ''}>${n}</option>`).join('');
+    return `<span class="td-dim">${from}–${to} of ${total}</span>${nav}`
+        + `<label class="bt-per-page td-dim">Rows <select class="log-select" data-act="per-page">${sizes}</select></label>`;
+}
+
 // ---------- DOM, fetch and charts ----------
+
+function btStored(key, fallback) {
+    try { return localStorage.getItem(key) ?? fallback; } catch (e) { return fallback; }
+}
+
+function btStore(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* private window: not remembered */ }
+}
 
 async function btFetchJson(url, options) {
     const resp = await fetch(url, options);
@@ -351,16 +394,36 @@ async function btOnShow() {
 }
 
 function btInitForm() {
+    const perPage = Number(btStored('bt-per-page', ''));
+    if (BT_PAGE_SIZES.includes(perPage)) bt.perPage = perPage;
+    btSetFormOpen(btStored('bt-form-collapsed', 'false') !== 'true');
+    document.getElementById('bt-form-toggle').addEventListener('click', () => {
+        const open = document.getElementById('bt-form-panel').classList.contains('bt-collapsed');
+        btSetFormOpen(open);
+        btStore('bt-form-collapsed', String(!open));
+    });
+    const pager = document.getElementById('bt-pager');
+    pager.addEventListener('click', e => {
+        const b = e.target.closest('.bt-page');
+        if (b && !b.disabled) btGoToPage(Number(b.dataset.page));
+    });
+    pager.addEventListener('change', e => {
+        if (e.target.dataset.act !== 'per-page') return;
+        bt.perPage = Number(e.target.value);
+        btStore('bt-per-page', String(bt.perPage));
+        btGoToPage(1);
+    });
+    btInitModal();
     const day = 86400000;
     const end = new Date(Date.now() - day);
     document.getElementById('bt-end').value = end.toISOString().slice(0, 10);
     document.getElementById('bt-start').value = new Date(end.getTime() - 59 * day).toISOString().slice(0, 10);
     document.getElementById('bt-bot').addEventListener('change', () => { bt.overrides = {}; bt.pendingOverrides = null; btLoadParams(); });
     document.getElementById('bt-data-mode').addEventListener('change', btToggleSpread);
+    ['bt-start', 'bt-end'].forEach(id => document.getElementById(id).addEventListener('change', btUpdateFormSummary));
     document.getElementById('bt-run-btn').addEventListener('click', btSubmit);
     document.getElementById('bt-compare-btn').addEventListener('click', btCompare);
     document.getElementById('bt-parallel').addEventListener('change', btSaveParallel);
-    document.getElementById('bt-compare-close').addEventListener('click', () => btHidePanel('bt-compare-panel'));
     const params = document.getElementById('bt-params');
     params.addEventListener('change', btOnParamChange);
     params.addEventListener('click', e => {
@@ -389,10 +452,25 @@ function btInitForm() {
         if (e.target.checked) bt.selected.add(id); else bt.selected.delete(id);
         btUpdateCompareButton();
     });
-    document.getElementById('bt-detail').addEventListener('click', e => {
-        if (e.target.closest('[data-act="close-detail"]')) btHidePanel('bt-detail-panel');
-    });
     btToggleSpread();
+}
+
+function btSetFormOpen(open) {
+    document.getElementById('bt-form-panel').classList.toggle('bt-collapsed', !open);
+    document.getElementById('bt-form-toggle').setAttribute('aria-expanded', String(open));
+    if (!open) btHideHelp();
+    btUpdateFormSummary();
+}
+
+// What the folded form would run, so it can stay closed while runs are browsed.
+function btUpdateFormSummary() {
+    const el = document.getElementById('bt-form-summary');
+    const bot = document.getElementById('bt-bot').value;
+    const changed = Object.keys(bt.overrides).length;
+    el.textContent = bot
+        ? `${bot} · ${btDateText(document.getElementById('bt-start').value)} – ${btDateText(document.getElementById('bt-end').value)}`
+          + (changed ? ` · ${changed} changed` : '')
+        : '';
 }
 
 function btToggleSpread() {
@@ -440,6 +518,7 @@ function btRenderParams() {
     const container = document.getElementById('bt-params');
     const open = new Set([...container.querySelectorAll('details.bt-group[open]')].map(d => d.dataset.group));
     container.innerHTML = btParamGroupsHtml(bt.view, bt.overrides, open);
+    btUpdateFormSummary();
 }
 
 // One tooltip for every "?" icon, fixed to the viewport: .panel clips whatever overflows it. It opens
@@ -523,23 +602,35 @@ async function btSubmit() {
 
 async function btRefreshJobs() {
     clearTimeout(bt.pollTimer);
+    let active = false;
     try {
-        const data = await btFetchJson('/api/backtests');
+        const data = await btFetchJson(`/api/backtests?page=${bt.page}&per_page=${bt.perPage}`);
         bt.jobs = data.jobs || [];
-        const doneIds = new Set(bt.jobs.filter(j => j.status === 'done').map(j => Number(j.id)));
-        bt.selected = new Set([...bt.selected].filter(id => doneIds.has(id)));
+        bt.page = data.page || 1;                     // the server falls back to the last page
+        bt.total = data.total || 0;
+        active = data.active > 0;
+        // A selection may sit on another page: drop only the runs this page shows as not done.
+        const notDone = new Set(bt.jobs.filter(j => j.status !== 'done').map(j => Number(j.id)));
+        bt.selected = new Set([...bt.selected].filter(id => !notDone.has(id)));
         document.getElementById('bt-jobs-tbody').innerHTML = btJobRowsHtml(bt.jobs, bt.selected);
-        document.getElementById('bt-runs-info').textContent = btRunsInfoText(bt.jobs, data.max_parallel);
+        document.getElementById('bt-runs-info').textContent = btRunsInfoText(data, data.max_parallel);
         const parallel = document.getElementById('bt-parallel');
         if (document.activeElement !== parallel) parallel.innerHTML = btParallelOptionsHtml(data.max_parallel, data.max_parallel_cap);
+        document.getElementById('bt-pager').innerHTML = btPagerHtml(bt.page, bt.perPage, bt.total);
         btUpdateCompareButton();
+        btUpdateModalNav();
     } catch (e) {
         btMessage(`Could not load backtests: ${e.message}`, true);
     }
-    // Poll only while something is queued or running and the page is on screen.
-    const active = bt.jobs.some(j => j.status === 'queued' || j.status === 'running');
+    // Poll only while something is queued or running (on any page) and the page is on screen.
     const visible = document.getElementById('view-backtest').classList.contains('active');
     if (active && visible) bt.pollTimer = setTimeout(btRefreshJobs, BT_POLL_MS);
+}
+
+async function btGoToPage(page) {
+    bt.page = Math.max(1, page);
+    await btRefreshJobs();
+    document.getElementById('bt-jobs-tbody').closest('.panel').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
 function btUpdateCompareButton() {
@@ -548,14 +639,66 @@ function btUpdateCompareButton() {
     btn.disabled = bt.selected.size < 2 || bt.selected.size > 4;
 }
 
-function btShowPanel(id) {
-    const panel = document.getElementById(id);
-    panel.style.display = '';
-    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+// ---------- modal: run detail and compare ----------
+
+function btInitModal() {
+    const modal = document.getElementById('bt-modal');
+    modal.addEventListener('click', e => { if (e.target === modal) btCloseModal(); });     // the backdrop
+    document.getElementById('bt-modal-close').addEventListener('click', btCloseModal);
+    document.getElementById('bt-modal-prev').addEventListener('click', () => btStepDetail(-1));
+    document.getElementById('bt-modal-next').addEventListener('click', () => btStepDetail(1));
+    document.addEventListener('keydown', e => {
+        if (modal.hidden) return;
+        if (e.key === 'Escape') btCloseModal();
+        else if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+        else if (e.key === 'ArrowLeft') btStepDetail(-1);
+        else if (e.key === 'ArrowRight') btStepDetail(1);
+    });
 }
 
-function btHidePanel(id) {
-    document.getElementById(id).style.display = 'none';
+function btOpenModal(titleHtml, bodyHtml, jobId = null) {
+    const modal = document.getElementById('bt-modal');
+    document.getElementById('bt-modal-title').innerHTML = titleHtml;
+    document.getElementById('bt-modal-body').innerHTML = bodyHtml;
+    bt.modalJobId = jobId;
+    btUpdateModalNav();
+    if (modal.hidden) {
+        modal.hidden = false;
+        document.body.classList.add('bt-modal-open');
+        document.getElementById('bt-modal-close').focus();
+    }
+    document.getElementById('bt-modal-body').scrollTop = 0;
+}
+
+function btCloseModal() {
+    const modal = document.getElementById('bt-modal');
+    if (modal.hidden) return;
+    modal.hidden = true;
+    document.body.classList.remove('bt-modal-open');
+    ['equity', 'hour', 'weekday', 'compare'].forEach(btDestroyChart);
+    bt.modalJobId = null;
+}
+
+// The runs of this page the detail can step to: the ones a View button opens.
+function btViewableIds() {
+    return bt.jobs.filter(j => j.status === 'done' || j.status === 'failed').map(j => Number(j.id));
+}
+
+function btUpdateModalNav() {
+    const ids = btViewableIds();
+    const at = ids.indexOf(bt.modalJobId);
+    const prev = document.getElementById('bt-modal-prev');
+    const next = document.getElementById('bt-modal-next');
+    prev.hidden = next.hidden = bt.modalJobId === null;
+    prev.disabled = at <= 0;
+    next.disabled = at < 0 || at >= ids.length - 1;
+}
+
+function btStepDetail(step) {
+    if (bt.modalJobId === null) return;
+    const ids = btViewableIds();
+    const at = ids.indexOf(bt.modalJobId);
+    if (at >= 0 && ids[at + step] !== undefined) btShowDetail(ids[at + step]).catch(e => btMessage(e.message, true));
 }
 
 async function btOnJobAction(e) {
@@ -586,9 +729,8 @@ async function btOnJobAction(e) {
 
 async function btShowDetail(id) {
     const job = await btFetchJson(`/api/backtests/${id}`);
-    document.getElementById('bt-detail').innerHTML = btDetailHtml(job);
-    btShowPanel('bt-detail-panel');
-    if (job.report) btDrawDetailCharts(job.report);
+    btOpenModal(btDetailTitleHtml(job), btDetailHtml(job), Number(job.id));
+    if (job.report) btDrawDetailCharts(job.report);           // the canvases must be on screen first
 }
 
 async function btClone(id) {
@@ -609,6 +751,7 @@ async function btClone(id) {
     bt.pendingOverrides = Object.fromEntries(Object.entries(job.overrides || {}).map(([k, c]) => [k, c.to]));
     await btLoadParams();
     btMessage(`Form filled from #${id}: change a parameter and run.`);
+    btSetFormOpen(true);
     document.getElementById('bt-form-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
@@ -617,8 +760,8 @@ async function btCompare() {
     if (ids.length < 2) return;
     try {
         const jobs = await Promise.all(ids.map(id => btFetchJson(`/api/backtests/${id}`)));
-        document.getElementById('bt-compare').innerHTML = btCompareHtml(jobs);
-        btShowPanel('bt-compare-panel');
+        const title = `<strong>Compare</strong><span class="td-dim">${jobs.map(j => `#${Number(j.id)} ${escapeHtml(j.symbol)}`).join(' · ')}</span>`;
+        btOpenModal(title, btCompareHtml(jobs));
         btDrawCompareChart(jobs);
     } catch (e) {
         btMessage(`Compare failed: ${e.message}`, true);

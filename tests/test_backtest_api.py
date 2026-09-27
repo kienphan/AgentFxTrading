@@ -128,6 +128,18 @@ def test_create_stores_a_queued_job(env):
     assert detail["params"]["TargetRiskReward"] == "2.0"
 
 
+def test_list_is_paged_newest_first(env):
+    ids = [create()["id"] for _ in range(5)]
+    first = client.get("/api/backtests?per_page=2").json()
+    assert [j["id"] for j in first["jobs"]] == ids[:-3:-1]
+    assert (first["page"], first["per_page"], first["total"], first["active"]) == (1, 2, 5, 5)
+    assert [j["id"] for j in client.get("/api/backtests?page=3&per_page=2").json()["jobs"]] == [ids[0]]
+    past = client.get("/api/backtests?page=9&per_page=2").json()      # after a delete emptied the page
+    assert past["page"] == 3 and [j["id"] for j in past["jobs"]] == [ids[0]]
+    assert client.get("/api/backtests?per_page=500").status_code == 422
+    assert client.get("/api/backtests?page=0").status_code == 422
+
+
 def test_queue_position_counts_jobs_ahead(env):
     first, second = create(), create()
     assert (first["queue_position"], second["queue_position"]) == (1, 2)

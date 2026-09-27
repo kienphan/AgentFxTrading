@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Literal, Optional, Union
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -146,11 +146,16 @@ def api_create_backtest(req: BacktestCreate):
 
 
 @router.get("/api/backtests")
-def api_list_backtests():
+def api_list_backtests(page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le=100)):
+    """One page of runs, newest first. A page past the end (the last run on it was deleted) falls back
+    to the last page."""
     with store.connect() as conn:
-        jobs = store.list_jobs(conn)
+        counts = store.count_jobs(conn)
+        page = min(page, max(1, math.ceil(counts["total"] / per_page)))
+        jobs = store.list_jobs(conn, limit=per_page, offset=(page - 1) * per_page)
         max_parallel = backtest_worker.max_parallel(conn)
-    return {"jobs": [_public(j, LIST_OMITTED_FIELDS) for j in jobs], "docker_available": docker_available(),
+    return {"jobs": [_public(j, LIST_OMITTED_FIELDS) for j in jobs], "page": page, "per_page": per_page,
+            **counts, "docker_available": docker_available(),
             "max_parallel": max_parallel, "max_parallel_cap": MAX_PARALLEL_CAP}
 
 
