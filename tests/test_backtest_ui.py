@@ -42,8 +42,9 @@ def test_dashboard_has_the_backtest_nav_view_and_script():
     assert '<script src="/static/js/backtest.js' in html and " defer></script>" in html
     for element_id in ("bt-form-panel", "bt-bot", "bt-start", "bt-end", "bt-data-mode", "bt-spread-wrap",
                        "bt-spread", "bt-balance", "bt-note", "bt-params", "bt-locked", "bt-run-btn", "bt-form-msg",
-                       "bt-compare-btn", "bt-jobs-tbody", "bt-detail-panel", "bt-detail", "bt-compare-panel",
-                       "bt-compare", "bt-compare-close", "bt-runs-info", "bt-parallel"):
+                       "bt-form-toggle", "bt-form-body", "bt-form-summary", "bt-compare-btn", "bt-jobs-tbody",
+                       "bt-pager", "bt-modal", "bt-modal-title", "bt-modal-body", "bt-modal-prev", "bt-modal-next",
+                       "bt-modal-close", "bt-runs-info", "bt-parallel"):
         assert f'id="{element_id}"' in html, element_id
     assert "Technical logic only" in html
 
@@ -109,6 +110,9 @@ const job = {id: 3, bot_name: H, symbol: H, period: H, start_date: H, end_date: 
 out.rows = btJobRowsHtml([job, {...job, id: 4, status: 'failed', error: H},
                           {...job, id: 5, status: 'running', phase: H, progress: 42}], new Set([3]));
 out.detail = btDetailHtml(job);
+out.title = btDetailTitleHtml(job);
+out.pages = [btPageList(1, 1), btPageList(1, 3), btPageList(6, 12), btPageList(12, 12)];
+out.pager = [btPagerHtml(2, 20, 57), btPagerHtml(1, 20, 0), btPagerHtml(1, 50, 45)];
 out.failed = btDetailHtml({...job, status: 'failed', error: H});
 const other = {...job, id: 6, start_date: '2026-01-01',
                report: {...job.report, parameters: {[H]: 'other', BotId: 'bt-6'}}};
@@ -126,8 +130,8 @@ out.rowNew = btJobRowsHtml([{...job, summary: stats}], new Set());
 out.rowOld = btJobRowsHtml([{...job, summary: {win_rate: 56.2, total_trades: 379}}], new Set());
 out.best = [btBestIndex([1, 3, 2], 'max'), btBestIndex([1, 3, 2], 'min'), btBestIndex([-5, -1, 2], 'zero'),
             btBestIndex([2, 2], 'max'), btBestIndex([1, 2], null)];
-out.runsInfo = [btRunsInfoText([{status: 'running'}, {status: 'queued'}, {status: 'queued'}, {status: 'done'}], 3),
-                btRunsInfoText([], undefined)];
+out.runsInfo = [btRunsInfoText({running: 1, queued: 2, total: 9}, 3),
+                btRunsInfoText({}, undefined)];
 out.parallel = btParallelOptionsHtml(3, 4);
 console.log(JSON.stringify(out));
 """
@@ -146,7 +150,7 @@ def _render() -> dict:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_backtest_renderers_escape_external_strings():
     out = _render()
-    for name in ("sources", "params", "locked", "help", "rows", "detail", "failed", "compare"):
+    for name in ("sources", "params", "locked", "help", "rows", "detail", "title", "failed", "compare"):
         assert "<img" not in out[name], name
         assert "evil&lt;img" in out[name], name
     assert out["params"].count('class="bt-help"') == 1         # only the parameter that has help
@@ -171,3 +175,24 @@ def test_position_stats_lead_and_deal_stats_stay_labelled():
     assert "42.22<div" in out["rowNew"] and "56.20 deals" in out["rowNew"]
     assert "270<div" in out["rowNew"] and "379 deals" in out["rowNew"]
     assert "—<div" in out["rowOld"] and "56.20 deals" in out["rowOld"]   # saved before position stats
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_pager_keeps_the_ends_and_the_neighbours():
+    out = _render()
+    assert out["pages"] == [[1], [1, 2, 3], [1, None, 5, 6, 7, None, 12], [1, None, 11, 12]]
+    middle, empty, single = out["pager"]
+    assert "21–40 of 57" in middle and 'data-page="2" aria-current="page" disabled' in middle
+    assert 'data-page="1" aria-label="Previous page"' in middle and 'data-page="3" aria-label="Next page"' in middle
+    assert '<option value="20" selected>' in middle
+    assert "0–0 of 0" in empty and "bt-pager-btns" not in empty      # one page: no buttons
+    assert "1–45 of 45" in single and "bt-pager-btns" not in single and "<option value=\"50\" selected>" in single
+
+
+def test_run_detail_and_compare_open_in_a_modal_and_the_form_folds():
+    src = JS.read_text(encoding="utf-8")
+    assert "btOpenModal(btDetailTitleHtml(job), btDetailHtml(job)" in src and "btOpenModal(title, btCompareHtml(jobs))" in src
+    assert "`/api/backtests?page=${bt.page}&per_page=${bt.perPage}`" in src
+    assert "btStore('bt-form-collapsed'" in src
+    css = (ROOT / "static" / "css" / "dashboard.css").read_text(encoding="utf-8")
+    assert "#bt-form-panel.bt-collapsed #bt-form-body{display:none}" in css and ".bt-modal-backdrop[hidden]{display:none}" in css

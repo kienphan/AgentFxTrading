@@ -1853,8 +1853,6 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .bt-status--queued,.bt-status--cancelled{color:var(--text-dim)}
 .bt-progress{height:4px;width:110px;background:var(--bg-surface);border-radius:2px;margin-top:3px;overflow:hidden}
 .bt-progress div{height:100%;background:#4fc3f7}
-.bt-detail-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-.bt-detail-head .log-btn{margin-left:auto}
 .bt-charts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
 .bt-chart{position:relative;height:220px}
 .bt-chart--wide{grid-column:1 / -1;height:260px}
@@ -1864,5 +1862,38 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .bt-error{white-space:pre-wrap;font-size:0.72rem;color:var(--loss);background:var(--bg-surface);padding:10px;border-radius:6px;max-height:320px;overflow:auto}
 .bt-best{font-weight:700;color:var(--accent-bright)}
 .bt-subtitle{margin:14px 0 6px;font-size:0.75rem;color:var(--accent-bright)}
-@media (max-width:640px){.bt-field--wide{grid-column:auto}.bt-charts{grid-template-columns:1fr}.bt-param-grid{grid-template-columns:1fr}}
+/* New Backtest folds to its header; the summary says what it would run */
+.bt-form-toggle{display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:0;border:none;background:none;cursor:pointer;text-align:left;color:inherit;font:inherit}
+.bt-form-toggle:focus-visible{outline:1px solid var(--accent);outline-offset:3px;border-radius:4px}
+.bt-chevron{color:var(--text-muted);font-size:0.8rem;transition:transform .15s}
+.bt-collapsed .bt-chevron{transform:rotate(-90deg)}
+.bt-form-summary{display:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.72rem;color:var(--text-dim)}
+.bt-collapsed .bt-form-summary{display:block}
+#bt-form-panel.bt-collapsed .panel-header{border-bottom:none}
+#bt-form-panel.bt-collapsed #bt-form-body{display:none}
+/* Runs pager */
+.bt-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 16px;font-size:0.72rem;border-top:1px solid var(--border-subtle)}
+.bt-pager:empty{display:none}
+.bt-pager-btns{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.bt-page{min-width:30px}
+.bt-page[aria-current="page"],.bt-page[aria-current="page"]:hover{opacity:1;background:var(--accent-soft);color:var(--accent-bright);border-color:var(--accent);cursor:default}
+.bt-page-gap{color:var(--text-dim);padding:0 2px}
+.bt-per-page{display:flex;align-items:center;gap:6px}
+/* Run detail / Compare modal: above the mobile bottom nav (z-index 99999) */
+.bt-modal-backdrop{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.72);backdrop-filter:blur(3px)}
+.bt-modal-backdrop[hidden]{display:none}
+.bt-modal{display:flex;flex-direction:column;width:100%;max-width:1280px;max-height:100%;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 10px 40px rgba(0,0,0,0.6);overflow:hidden}
+.bt-modal-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-elevated);border-bottom:1px solid var(--border-subtle)}
+.bt-modal-title{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-primary)}
+.bt-modal-title .td-dim{font-size:0.72rem}
+.bt-modal-note{font-size:0.72rem;color:var(--accent-bright);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-modal-nav{display:flex;align-items:center;gap:4px;flex:none}
+.bt-modal-nav .log-btn{min-width:30px;font-size:0.9rem}
+.bt-modal-nav .log-btn[hidden]{display:none}
+.bt-modal-close{background:none;border:none;color:var(--text-muted);font-size:1.5rem;line-height:1;padding:2px 6px;cursor:pointer}
+.bt-modal-close:hover{color:var(--text-primary)}
+.bt-modal-body{padding:16px;overflow-y:auto;overscroll-behavior:contain}
+body.bt-modal-open{overflow:hidden}
+@media (max-width:640px){.bt-field--wide{grid-column:auto}.bt-charts{grid-template-columns:1fr}.bt-param-grid{grid-template-columns:1fr}
+    .bt-modal-backdrop{padding:0}.bt-modal{max-width:none;height:100%;border-radius:0;border:none}.bt-modal-body{padding:12px}}
 

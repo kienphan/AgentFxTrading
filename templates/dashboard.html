@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgentFxTrading Dashboard</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260925_lbpicker">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260927_btpage">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/static/js/backtest.js?v=20260926_btparallel2" defer></script>
+    <script src="/static/js/backtest.js?v=20260927_btpage" defer></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body class="app-shell">
@@ -558,9 +558,13 @@
             <div id="view-backtest" class="view-section">
                 <section class="panel" id="bt-form-panel">
                     <div class="panel-header">
-                        <span class="panel-title"><i data-lucide="flask-conical" class="panel-icon text-blue"></i> New Backtest</span>
+                        <button type="button" id="bt-form-toggle" class="bt-form-toggle" aria-expanded="true" aria-controls="bt-form-body">
+                            <span class="bt-chevron" aria-hidden="true">▾</span>
+                            <span class="panel-title"><i data-lucide="flask-conical" class="panel-icon text-blue"></i> New Backtest</span>
+                            <span id="bt-form-summary" class="bt-form-summary"></span>
+                        </button>
                     </div>
-                    <div class="panel-body">
+                    <div class="panel-body" id="bt-form-body">
                         <div class="bt-form-grid">
                             <label class="bt-field bt-field--wide">Bot <select id="bt-bot" class="log-select"></select></label>
                             <label class="bt-field">From (UTC) <input id="bt-start" type="date" class="log-input"></label>
@@ -600,20 +604,22 @@
                             <tbody id="bt-jobs-tbody"></tbody>
                         </table>
                     </div>
+                    <div id="bt-pager" class="bt-pager"></div>
                 </section>
-                <section class="panel" id="bt-detail-panel" style="display:none;">
-                    <div class="panel-header">
-                        <span class="panel-title"><i data-lucide="line-chart" class="panel-icon text-blue"></i> Run Detail</span>
+                <!-- Run detail and Compare open over the page instead of below the list -->
+                <div id="bt-modal" class="bt-modal-backdrop" hidden>
+                    <div class="bt-modal" role="dialog" aria-modal="true" aria-labelledby="bt-modal-title">
+                        <div class="bt-modal-header">
+                            <div id="bt-modal-title" class="bt-modal-title"></div>
+                            <div class="bt-modal-nav">
+                                <button type="button" id="bt-modal-prev" class="log-btn" title="Newer run (←)" aria-label="Newer run">‹</button>
+                                <button type="button" id="bt-modal-next" class="log-btn" title="Older run (→)" aria-label="Older run">›</button>
+                                <button type="button" id="bt-modal-close" class="bt-modal-close" title="Close (Esc)" aria-label="Close">&times;</button>
+                            </div>
+                        </div>
+                        <div id="bt-modal-body" class="bt-modal-body"></div>
                     </div>
-                    <div class="panel-body" id="bt-detail"></div>
-                </section>
-                <section class="panel" id="bt-compare-panel" style="display:none;">
-                    <div class="panel-header">
-                        <span class="panel-title"><i data-lucide="columns" class="panel-icon text-blue"></i> Compare</span>
-                        <button id="bt-compare-close" class="log-btn">Close</button>
-                    </div>
-                    <div class="panel-body" id="bt-compare"></div>
-                </section>
+                </div>
             </div>
 
             <!-- Docker Bots View -->

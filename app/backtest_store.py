@@ -116,9 +116,20 @@ def get_job(conn, job_id: int) -> Optional[Dict]:
     return _decode(conn.execute("SELECT * FROM backtest_jobs WHERE id = ?", (int(job_id),)).fetchone())
 
 
-def list_jobs(conn, limit: int = 200) -> List[Dict]:
-    rows = conn.execute("SELECT * FROM backtest_jobs ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+def list_jobs(conn, limit: int = 200, offset: int = 0) -> List[Dict]:
+    rows = conn.execute("SELECT * FROM backtest_jobs ORDER BY id DESC LIMIT ? OFFSET ?",
+                        (int(limit), int(offset))).fetchall()
     return [_decode(r) for r in rows]
+
+
+def count_jobs(conn) -> Dict[str, int]:
+    """All jobs, and the running and queued ones among them: the page shows those counts and polls
+    while there are any, wherever they sit in the paged list."""
+    rows = conn.execute("SELECT status, COUNT(*) FROM backtest_jobs GROUP BY status").fetchall()
+    by_status = {r[0]: int(r[1]) for r in rows}
+    counts = {"total": sum(by_status.values()), "running": by_status.get("running", 0),
+              "queued": by_status.get("queued", 0)}
+    return {**counts, "active": counts["running"] + counts["queued"]}
 
 
 def jobs_with_status(conn, status: str) -> List[Dict]:

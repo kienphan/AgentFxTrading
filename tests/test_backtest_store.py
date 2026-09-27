@@ -54,6 +54,16 @@ def test_lists_newest_first_and_picks_the_oldest_queued(db):
         assert [j["id"] for j in store.jobs_with_status(conn, "running")] == [ids[0]]
 
 
+def test_list_pages_and_counts(db):
+    with store.connect(db) as conn:
+        ids = [store.create_job(conn, FIELDS) for _ in range(5)]
+        store.update_job(conn, ids[0], status="done")
+        store.update_job(conn, ids[1], status="running")
+        assert [j["id"] for j in store.list_jobs(conn, limit=2)] == [ids[4], ids[3]]
+        assert [j["id"] for j in store.list_jobs(conn, limit=2, offset=4)] == [ids[0]]
+        assert store.count_jobs(conn) == {"total": 5, "running": 1, "queued": 3, "active": 4}
+
+
 def test_update_with_expected_status_is_a_guard(db):
     with store.connect(db) as conn:
         job_id = store.create_job(conn, FIELDS)
