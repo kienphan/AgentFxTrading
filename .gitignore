@@ -49,6 +49,8 @@ logs/
 # Data
 data/
 *.csv
+# Forward-test journals (append-only evidence, lives on the server)
+trades/
 
 webui_data/
 # OS
