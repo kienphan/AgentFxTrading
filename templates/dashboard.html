@@ -463,7 +463,7 @@
                             <div class="lb-period">
                                 <button type="button" id="lb-period-btn" class="lb-period-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="lb-period-pop">
                                     <i data-lucide="calendar" class="btn-icon"></i>
-                                    <span id="lb-period-label" class="lb-period-label">All time</span>
+                                    <span id="lb-period-label" class="lb-period-label">Last 7 days</span>
                                     <span id="lb-period-dates" class="lb-period-dates" hidden></span>
                                     <i data-lucide="chevron-down" class="btn-icon lb-period-caret"></i>
                                 </button>
@@ -2297,7 +2297,7 @@
             lot: 'Weight: 30% WinRate + 30% ProfitFactor + 20% Return/DD + 20% Consistency · each closed trade over its risk at entry',
         };
         let lbTab = 'usd';
-        let lbPeriod = 'all';
+        let lbPeriod = '1w';  // default: a deleted bot's old trades drop out after a week
         let lbDateFrom = '';  // custom range, 'YYYY-MM-DD' in Vietnam time; '' = open side
         let lbDateTo = '';
         try {
@@ -2771,8 +2771,8 @@
         }
         applyLbControls();
 
-        // First paint from the page's own payload (all time, the page's account scope) when the
-        // saved period is "all"; otherwise the view's first fetch fills the tables.
+        // First paint from the page's own payload (last 7 days, the page's account scope) when the
+        // period is the default "1w"; otherwise the view's first fetch fills the tables.
         const lbInitial = {{ leaderboard | tojson }};
         if (lbInitial && lbInitial.period === lbPeriod) {
             lbShownQuery = lbQuery();

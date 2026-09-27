@@ -619,7 +619,7 @@ async def dashboard_page(request: Request):
     positions = get_active_positions(filter_acc)
     history = get_trade_history(filter_acc)
     pnl_history = get_daily_pnl_history(30, filter_acc)
-    leaderboard = compute_bot_leaderboard(filter_acc)
+    leaderboard = compute_bot_leaderboard(filter_acc, period="1w")  # the leaderboard's default period
     
     registry = get_account_registry()
     all_accounts = registry.list_accounts(include_unconfigured=False)
@@ -673,7 +673,7 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 @router.get("/api/leaderboard")
 @router.get("/api/dashboard/leaderboard")
 async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None,
-                                    period: str = "all", date_from: Optional[str] = None,
+                                    period: str = "1w", date_from: Optional[str] = None,
                                     date_to: Optional[str] = None):
     """API endpoint for bot performance leaderboard and quant tier ranking.
 
