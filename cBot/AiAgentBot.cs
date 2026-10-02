@@ -98,16 +98,16 @@ namespace cAlgo.Robots
         [Parameter("Checkmark Threshold", Group = "Exit", DefaultValue = 0.0, MinValue = 0)]
         public double CheckMarkThreshold { get; set; }
 
-        [Parameter("Breakeven Trigger (x ATR)", Group = "Exit", DefaultValue = 0.8, MinValue = 0, Step = 0.1)]
+        [Parameter("Breakeven Trigger (x ATR)", Group = "Exit", DefaultValue = 1.5, MinValue = 0, Step = 0.1)]
         public double BreakevenTriggerAtr { get; set; }
 
         [Parameter("Breakeven Offset (x ATR)", Group = "Exit", DefaultValue = 0.1, MinValue = 0, Step = 0.05)]
         public double BreakevenOffsetAtr { get; set; }
 
-        [Parameter("Trail Trigger (x ATR)", Group = "Exit", DefaultValue = 1.2, MinValue = 0, Step = 0.1)]
+        [Parameter("Trail Trigger (x ATR)", Group = "Exit", DefaultValue = 2.0, MinValue = 0, Step = 0.1)]
         public double TrailTriggerAtr { get; set; }
 
-        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 1.0, MinValue = 0.1, Step = 0.1)]
+        [Parameter("Trail Distance (x ATR)", Group = "Exit", DefaultValue = 1.2, MinValue = 0.1, Step = 0.1)]
         public double TrailDistanceAtr { get; set; }
 
         // Tier 2 is reached at Tier2TriggerAtr x ATR, at Tier2TriggerPips, or at 65% of the TP,
@@ -1395,9 +1395,21 @@ namespace cAlgo.Robots
             foreach (var pos in GetBotPositions())
             {
                 double pnlPips = GetPnlPips(pos);
+                double initialRisk = _positionInitialRiskPips.ContainsKey(pos.Id) && _positionInitialRiskPips[pos.Id] > 0
+                    ? _positionInitialRiskPips[pos.Id]
+                    : ((pos.StopLoss != null && pos.StopLoss.Value > 0) ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize : 0);
+                if (initialRisk <= 0)
+                {
+                    initialRisk = (AtrSlMultiplier > 0 ? AtrSlMultiplier : 1.5) * atrInPips;
+                }
+
+                // Minimum 1:1 R:R floor for Breakeven:
+                // Orders must be allowed to breathe ("gồng lâu hơn, R:R cần tối thiểu 1:1").
+                // Breakeven moves SL only when profit >= trigger ATR AND profit >= 1:1 initial risk.
+                double effectiveBeTriggerPips = Math.Max(beTriggerPips, initialRisk);
 
                 // Breakeven: move SL to entry + offset when profit >= trigger
-                if (BreakevenTriggerAtr > 0 && pnlPips >= beTriggerPips && !_breakevenApplied.Contains(pos.Id))
+                if (BreakevenTriggerAtr > 0 && pnlPips >= effectiveBeTriggerPips && !_breakevenApplied.Contains(pos.Id))
                 {
                     double beSl = pos.EntryPrice + (pos.TradeType == TradeType.Buy ? 1 : -1) * beOffsetPips * Symbol.PipSize;
 
@@ -1453,12 +1465,14 @@ namespace cAlgo.Robots
                                 Print($"[Partial Close Skipped] Pos#{pos.Id} volume ({pos.VolumeInUnits / Symbol.LotSize} lots) too small for partial close (remaining {remainingVolume / Symbol.LotSize} < min {Symbol.VolumeInUnitsMin / Symbol.LotSize}). Holding full position with BE SL.");
                             }
                         }
-                        if (ShowLogs) Print($"[BE] Pos#{pos.Id} SL → {beSl:F5} (pnl={pnlPips:F1}p, trigger={beTriggerPips:F1}p)");
+                        if (ShowLogs) Print($"[BE] Pos#{pos.Id} SL → {beSl:F5} (pnl={pnlPips:F1}p, trigger={effectiveBeTriggerPips:F1}p)");
                     }
                 }
 
                 // Trailing: trail SL when profit >= trail trigger
-                if (TrailTriggerAtr > 0 && pnlPips >= trailTriggerPips && pos.StopLoss != null)
+                // Position must hold and breathe: ensure trailing stop triggers only after achieving at least 1:1 R:R (1.2R buffer)
+                double effectiveTrailTriggerPips = Math.Max(trailTriggerPips, initialRisk * 1.2);
+                if (TrailTriggerAtr > 0 && pnlPips >= effectiveTrailTriggerPips && pos.StopLoss != null)
                 {
                     double totalTpPips = 0;
                     if (pos.TakeProfit != null)

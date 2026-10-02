@@ -1888,10 +1888,11 @@ namespace cAlgo.Robots
                 {
                     double minRequiredPips = MinBreakEvenPips > 0 ? MinBreakEvenPips : 10.0;
 
+                    // Enforce minimum 1:1 R:R floor: positions need room to run, not get closed prematurely.
+                    double effectiveBeTriggerRr = Math.Max(1.0, BreakEvenTriggerRr);
                     bool beTriggered = BeMode == BreakEvenTriggerMode.Risk_Reward_Ratio 
-                        ? (currentRr >= BreakEvenTriggerRr && pnlPips >= minRequiredPips) 
-                        : (pnlPips >= Math.Max(BreakEvenTriggerPips, minRequiredPips));
-
+                        ? (currentRr >= effectiveBeTriggerRr && pnlPips >= minRequiredPips) 
+                        : (pnlPips >= Math.Max(BreakEvenTriggerPips, minRequiredPips) && currentRr >= 1.0);
                     if (beTriggered)
                     {
                         double zeroLossSL = GetZeroLossStopLossPrice(pos, extraBufferPips: BreakEvenExtraPips);
@@ -1952,21 +1953,22 @@ namespace cAlgo.Robots
                 // silently turned every TrailingStopDistancePips in the preset table into dead
                 // config. Arm partway to the target instead, still clear of the 1.0R BE move.
                 const double armFractionOfTp = 0.8;
-                double effectiveTrailTriggerRr = TrailingStopTriggerRr;
+                double effectiveTrailTriggerRr = Math.Max(1.0, TrailingStopTriggerRr);
                 if (pos.TakeProfit.HasValue && initialSlDist > 0)
                 {
                     double tpRr = Math.Abs(pos.TakeProfit.Value - pos.EntryPrice) / Symbol.PipSize / initialSlDist;
                     if (tpRr > 0 && effectiveTrailTriggerRr >= tpRr)
-                        effectiveTrailTriggerRr = tpRr * armFractionOfTp;
+                        effectiveTrailTriggerRr = Math.Max(1.0, tpRr * armFractionOfTp);
                 }
 
                 if (EnableTrailingStop && currentRr >= effectiveTrailTriggerRr)
                 {
                     double minTrailDistPips = TrailingStopDistancePips;
 
-                    // Tiered Trailing: Normal trailing gives breathing room (100% of initial SL distance).
-                    // Tier 2 (currentRr >= 2.5R): Tighten to 60% of initial SL distance to lock in profits.
-                    double trailMultiplier = currentRr >= 2.5 ? 0.6 : 1.0;
+
+                    // Tiered Trailing: Normal trailing gives breathing room (120% of initial SL distance).
+                    // Tier 2 (currentRr >= 2.5R): Tighten to 80% of initial SL distance to lock in profits.
+                    double trailMultiplier = currentRr >= 2.5 ? 0.8 : 1.2;
                     double effectiveTrailDistPips = Math.Max(minTrailDistPips, initialSlDist * trailMultiplier);
 
                     // Trail in steps, not on every tick. Without a step the stop chased each tick a

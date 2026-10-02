@@ -1612,12 +1612,20 @@ namespace cAlgo.Robots
             var positions = Positions.FindAll(label, SymbolName);
             foreach (var pos in positions)
             {
+                double initialSlDistancePips = pos.StopLoss.HasValue 
+                    ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize 
+                    : stoplossPip;
+                if (initialSlDistancePips <= 0) initialSlDistancePips = stoplossPip > 0 ? stoplossPip : 100;
+                // Trailing stop requires at least 1:1 R:R (1.2R buffer) before activation
+                double effectiveTrigger = Math.Max(TrailingStopTrigger, initialSlDistancePips * 1.2);
+                double effectiveStep = Math.Max(TrailingStopStep, initialSlDistancePips * 1.0);
+
                 if (pos.TradeType == TradeType.Buy)
                 {
                     double distance = (Symbol.Bid - pos.EntryPrice) / Symbol.PipSize;
-                    if (distance >= TrailingStopTrigger)
+                    if (distance >= effectiveTrigger)
                     {
-                        double newSL = Symbol.Bid - TrailingStopStep * Symbol.PipSize;
+                        double newSL = Symbol.Bid - effectiveStep * Symbol.PipSize;
                         if (pos.StopLoss == null || newSL > pos.StopLoss)
                         {
                             SafeModifyPosition(pos, newSL, pos.TakeProfit, source: "TrailingStop");
@@ -1627,9 +1635,9 @@ namespace cAlgo.Robots
                 else if (pos.TradeType == TradeType.Sell)
                 {
                     double distance = (pos.EntryPrice - Symbol.Ask) / Symbol.PipSize;
-                    if (distance >= TrailingStopTrigger)
+                    if (distance >= effectiveTrigger)
                     {
-                        double newSL = Symbol.Ask + TrailingStopStep * Symbol.PipSize;
+                        double newSL = Symbol.Ask + effectiveStep * Symbol.PipSize;
                         if (pos.StopLoss == null || newSL < pos.StopLoss)
                         {
                             SafeModifyPosition(pos, newSL, pos.TakeProfit, source: "TrailingStop");
@@ -1685,23 +1693,26 @@ namespace cAlgo.Robots
                 }
 
                 bool isTriggered = false;
+                double initialSlDistancePips = pos.StopLoss.HasValue 
+                    ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize 
+                    : stoplossPip;
+                if (initialSlDistancePips <= 0) initialSlDistancePips = stoplossPip > 0 ? stoplossPip : 100;
+
                 if (breakEvenMode == BreakEvenTriggerMode.Risk_Reward_Ratio)
                 {
-                    double initialSlDistancePips = pos.StopLoss.HasValue 
-                        ? Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize 
-                        : stoplossPip;
-
-                    if (initialSlDistancePips <= 0) initialSlDistancePips = stoplossPip > 0 ? stoplossPip : 100;
-
                     double currentRr = pipsGain / initialSlDistancePips;
-                    if (currentRr >= breakEvenRrTrigger)
+                    // Enforce minimum 1:1 R:R floor for BE move
+                    double effectiveBeRrTrigger = Math.Max(1.0, breakEvenRrTrigger);
+                    if (currentRr >= effectiveBeRrTrigger)
                     {
                         isTriggered = true;
                     }
                 }
                 else // Fixed_Pips
                 {
-                    if (pipsGain >= breakEvenTrigger)
+                    // Enforce minimum 1:1 R:R floor even in Fixed_Pips mode
+                    double minTriggerPips = Math.Max(breakEvenTrigger, initialSlDistancePips);
+                    if (pipsGain >= minTriggerPips)
                     {
                         isTriggered = true;
                     }
