@@ -15,7 +15,8 @@ misbehaves, e.g. one that sizes far past its risk budget.
 import math
 from typing import Dict, Iterable, List, Optional, Tuple
 
-STRATEGIES = ("flowrsi", "tms", "judas")
+SCOPES = ("account", "strategy", "container")
+STRATEGIES = ("flowrsi", "tms", "judas", "turtle")
 
 # (scope, target, max daily loss in $). "*" means every account / every container.
 DEFAULT_LIMITS: Tuple[Tuple[str, str, float], ...] = (
@@ -30,7 +31,9 @@ DEFAULT_LIMITS: Tuple[Tuple[str, str, float], ...] = (
 def strategy_of(bot_id: Optional[str]) -> Optional[str]:
     """The strategy a bot runs, by the same name tests as is_flow_rsi_bot/is_judas_sweep_bot.
 
-    Everything that is neither FlowRSI nor Judas is a session (TMS/ORB) bot.
+    Everything that is neither FlowRSI, Judas nor Turtle is a session (TMS/ORB) bot. Turtle
+    needs its own bucket rather than the TMS one: its units hold for weeks, so the TMS
+    strategy and container layers — sized for intraday stops — would trip on the first unit.
     """
     name = (bot_id or "").lower()
     if not name:
@@ -39,6 +42,8 @@ def strategy_of(bot_id: Optional[str]) -> Optional[str]:
         return "flowrsi"
     if "judas" in name or "asian" in name or "sweep" in name:
         return "judas"
+    if "turtle" in name:
+        return "turtle"
     return "tms"
 
 
@@ -80,13 +85,22 @@ def save(conn, updates: Iterable[Dict]) -> None:
     Each update names an existing (scope, target) and may set max_daily_loss (a positive
     number of dollars) and/or enabled (a bool). Switching a layer off is done with enabled,
     so a zero or negative amount is refused rather than read as "no limit".
+
+    An update may also CREATE a row for one account, one container, or a known strategy — an
+    explicit target, never "*" — because a bot that does not belong to the intraday risk
+    budget (Turtle) gets its own account and container rows. A new row must carry its amount;
+    a target the caller mistyped is then simply a row nothing matches, which is a cheaper
+    failure than editing a limit the running book actually depends on.
     """
     known = {(r["scope"], r["target"]) for r in load(conn)}
     changes = []
+    inserts = {}
     for update in updates:
-        key = (update.get("scope"), update.get("target"))
-        if key not in known:
-            raise ValueError(f"Unknown limit {key[0]}/{key[1]}")
+        scope, target = update.get("scope"), update.get("target")
+        key = (scope, target)
+        is_new = key not in known
+        if is_new and not _creatable(scope, target):
+            raise ValueError(f"Unknown limit {scope}/{target}")
         change = {}
         if update.get("max_daily_loss") is not None:
             try:
@@ -100,15 +114,36 @@ def save(conn, updates: Iterable[Dict]) -> None:
             if not isinstance(update["enabled"], bool):
                 raise ValueError(f"{key[0]}/{key[1]}: enabled must be true or false")
             change["enabled"] = 1 if update["enabled"] else 0
-        if change:
-            changes.append((key, change))
+        if is_new:
+            if "max_daily_loss" not in change:
+                raise ValueError(f"{scope}/{target}: a new limit needs max_daily_loss")
+            inserts[key] = change
+            continue
+        if not change:
+            continue
+        changes.append((key, change))
 
+    for (scope, target), change in inserts.items():
+        conn.execute(
+            "INSERT INTO risk_limits (scope, target, max_daily_loss, enabled) VALUES (?, ?, ?, ?)",
+            (scope, target, change["max_daily_loss"], change.get("enabled", 1)),
+        )
     for (scope, target), change in changes:
         columns = ", ".join(f"{column} = ?" for column in change)
         conn.execute(
             f"UPDATE risk_limits SET {columns}, updated_at = datetime('now') WHERE scope = ? AND target = ?",
             (*change.values(), scope, target),
         )
+
+
+def _creatable(scope: Optional[str], target: Optional[str]) -> bool:
+    """Whether a missing row may be created: one account, one container, or a known strategy.
+
+    Never a wildcard — "*" is seeded and edited, not invented by a caller.
+    """
+    if scope == "strategy":
+        return target in STRATEGIES
+    return scope in ("account", "container") and isinstance(target, str) and target.strip() not in ("", "*")
 
 
 def _zero() -> Dict[str, float]:
@@ -145,23 +180,35 @@ def usage_by_scope(closed: Iterable[Tuple[str, Optional[float]]],
     return usage
 
 
-def breached(limits: List[Dict], usage: Dict, bot_id: Optional[str]) -> Optional[str]:
+def breached(limits: List[Dict], usage: Dict, bot_id: Optional[str],
+             account_id: Optional[str] = None) -> Optional[str]:
     """The reason to refuse bot_id a new entry, or None.
 
     Checked narrowest first (container, strategy, account) so the reason names the scope
     that actually ran out. Without a bot_id only the account limit can be applied.
+
+    An explicit row — this container, this account — wins over the "*" default of its scope.
+    That is how a bot whose risk budget is not the intraday one (Turtle on its own account)
+    runs without being measured against the $30/day container fuse.
     """
     by_key = {(r["scope"], r["target"]): r for r in limits}
+
+    def resolve(scope: str, target: Optional[str]) -> Optional[Dict]:
+        if target:
+            explicit = by_key.get((scope, target))
+            if explicit is not None:
+                return explicit
+        return by_key.get((scope, "*"))
+
     checks = []
     if bot_id:
-        checks.append(("container", "*", usage["container"].get(bot_id), f"container {bot_id}"))
+        checks.append((resolve("container", bot_id), usage["container"].get(bot_id), f"container {bot_id}"))
         strategy = strategy_of(bot_id)
         if strategy:
-            checks.append(("strategy", strategy, usage["strategy"].get(strategy), f"strategy {strategy}"))
-    checks.append(("account", "*", usage["account"], "account"))
+            checks.append((resolve("strategy", strategy), usage["strategy"].get(strategy), f"strategy {strategy}"))
+    checks.append((resolve("account", account_id), usage["account"], "account"))
 
-    for scope, target, used, label in checks:
-        limit = by_key.get((scope, target))
+    for limit, used, label in checks:
         if not limit or not limit["enabled"] or not used:
             continue
         if used["total"] <= -limit["max_daily_loss"]:
