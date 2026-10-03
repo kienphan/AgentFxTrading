@@ -15,7 +15,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app import backtest_store as store
-from app.backtest_command import BotSource, algo_host_path, describe_source, parse_run_command
+from app.backtest_command import (DAILY_MAX_SPAN_DAYS, DAILY_PERIODS, MAX_SPAN_DAYS,
+                                  BotSource, algo_host_path, describe_source, parse_run_command)
 from app.backtest_params import (DockerUnavailable, MetadataCache, MetadataError, OverrideError, job_params,
                                  param_view, validate_overrides)
 from app.backtest_report import ui_payload
@@ -26,7 +27,9 @@ from app.portfolio import get_portfolio_manager
 router = APIRouter()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MAX_SPAN_DAYS = 365
+# The daily bots (Turtle) need years of bars; intraday bots stay on the one-year cap, which
+# is what their tick-data runs can actually finish in a reasonable time.
+DAILY_PERIODS_SET = {p.lower() for p in DAILY_PERIODS}
 PRIVATE_FIELDS = ("ctid_email", "pwd_file")
 # The list view never reads `params` (only `overrides`, for the chips); dropping it keeps the
 # 3 s poll of up to 200 rows light.
@@ -54,13 +57,19 @@ class BacktestCreate(BaseModel):
     overrides: Dict[str, Union[bool, int, float, str]] = Field(default_factory=dict)
 
 
-def validate_run_config(req: BacktestCreate, today: date) -> None:
+def max_span_days(period: Optional[str]) -> int:
+    """The longest range the backtest of a `period` chart may cover."""
+    return DAILY_MAX_SPAN_DAYS if (period or "").lower() in DAILY_PERIODS_SET else MAX_SPAN_DAYS
+
+
+def validate_run_config(req: BacktestCreate, today: date, period: Optional[str] = None) -> None:
     if req.start > req.end:
         raise HTTPException(422, "start must be on or before end")
     if req.end > today:
         raise HTTPException(422, "end must not be after today (UTC)")
-    if (req.end - req.start).days + 1 > MAX_SPAN_DAYS:
-        raise HTTPException(422, f"the range must be at most {MAX_SPAN_DAYS} days")
+    span_cap = max_span_days(period)
+    if (req.end - req.start).days + 1 > span_cap:
+        raise HTTPException(422, f"the range must be at most {span_cap} days")
     if req.data_mode == "m1":
         if req.spread_pips is None or not math.isfinite(req.spread_pips) or req.spread_pips <= 0:
             raise HTTPException(422, "m1 data needs a finite spread in pips (> 0): m1 bars carry no spread")
@@ -121,8 +130,8 @@ def api_backtest_source_params(bot_name: str):
 
 @router.post("/api/backtests", status_code=201)
 def api_create_backtest(req: BacktestCreate):
-    validate_run_config(req, today_utc())
     source = _load_source(req.bot_name)
+    validate_run_config(req, today_utc(), source.period)
     meta = _metadata(source)
     try:
         overrides = validate_overrides(meta, source, req.overrides)

@@ -34,12 +34,12 @@ def pm(tmp_path):
     return PortfolioManager(db_path=str(tmp_path / "risk.db"))
 
 
-def _closed(pm, bot_id, pnl, symbol="EURUSD", ctrader_id=None):
+def _closed(pm, bot_id, pnl, symbol="EURUSD", ctrader_id=None, account=ACCOUNT):
     pm.register_position(bot_id=bot_id, symbol=symbol, side="Buy", volume=0.05,
-                         entry_price=1.1, sl_pips=15, tp_pips=22, account_id=ACCOUNT,
+                         entry_price=1.1, sl_pips=15, tp_pips=22, account_id=account,
                          ctrader_id=ctrader_id)
     assert pm.close_position(bot_id=bot_id, symbol=symbol, exit_price=1.1, pnl=pnl,
-                             account_id=ACCOUNT, ctrader_id=ctrader_id)
+                             account_id=account, ctrader_id=ctrader_id)
 
 
 def _open(pm, bot_id, symbol="EURUSD", sl_pnl=None, unrealized=0.0):
@@ -49,8 +49,8 @@ def _open(pm, bot_id, symbol="EURUSD", sl_pnl=None, unrealized=0.0):
     pm.update_position_metrics(bot_id, unrealized, 0.0, account_id=ACCOUNT, levels=levels)
 
 
-def _check(pm, bot_id):
-    return pm.check_risk("EURUSD", None, 0.01, account_balance=2000.0, account_id=ACCOUNT,
+def _check(pm, bot_id, account=ACCOUNT):
+    return pm.check_risk("EURUSD", None, 0.01, account_balance=2000.0, account_id=account,
                          used_margin=0.0, bot_id=bot_id)
 
 
@@ -63,6 +63,8 @@ def _check(pm, bot_id):
     ("cbot-demo-demo-usdjpy-tokyo", "tms"),
     (TMS, "tms"),
     ("cbot-demo-demo-ustec-newyork", "tms"),
+    ("cbot-demo-turtle-xauusd-turtle", "turtle"),
+    ("cbot-live-turtle-xauusd", "turtle"),
     (None, None),
     ("", None),
 ])
@@ -271,6 +273,78 @@ def test_api_refuses_invalid_limits(api):
 
 
 # --- wiring -----------------------------------------------------------------------------
+
+# --- a budget of its own: Turtle on its own account and container -----------------------
+#
+# One Turtle unit's 2N stop is wider than the $30/day container fuse the intraday bots are
+# sized against, so the bot is refused on entry rather than mis-sized. An explicit row for
+# this container, or for this account, replaces the "*" default of its scope — that is the
+# whole carve-out: nothing about the intraday layers changes for the bots already running.
+
+TURTLE = "cbot-demo-turtle-xauusd-turtle"
+TURTLE_ACCOUNT = "acct-turtle"
+
+
+def test_a_container_row_replaces_the_wildcard_fuse_for_that_bot_only(pm):
+    # -$50 today is past the $30 wildcard fuse every intraday container shares...
+    _closed(pm, TMS, -50.0)
+    assert _check(pm, TMS)[0] is False
+
+    # ...and the same day on the turtle container is refused too, until it has its own row.
+    _closed(pm, TURTLE, -50.0)
+    assert _check(pm, TURTLE)[0] is False
+
+    pm.update_risk_limits([{"scope": "container", "target": TURTLE, "max_daily_loss": 300}])
+    assert _check(pm, TURTLE) == (True, "OK")
+
+
+def test_an_account_row_replaces_the_wildcard_account_limit(pm):
+    """A dedicated account can carry a bigger day than the shared $200 the others run on."""
+    pm.update_risk_limits([
+        {"scope": "account", "target": TURTLE_ACCOUNT, "max_daily_loss": 1500},
+        {"scope": "container", "target": TURTLE, "max_daily_loss": 1000},
+        # Raised for FLOW_A so the account layer, not the container or strategy one, is what
+        # refuses it: the layers are checked narrowest first (see breached()).
+        {"scope": "container", "target": FLOW_A, "max_daily_loss": 1000},
+        {"scope": "strategy", "target": "flowrsi", "max_daily_loss": 1000},
+    ])
+    _closed(pm, TURTLE, -300.0, account=TURTLE_ACCOUNT)
+    assert _check(pm, TURTLE, account=TURTLE_ACCOUNT) == (True, "OK")
+
+    # The wildcard still governs every other account: the same -$300 on the shared account
+    # trips the account layer it never opted out of.
+    _closed(pm, FLOW_A, -300.0)
+    ok, reason = _check(pm, FLOW_A)
+    assert ok is False and reason.startswith("Daily loss limit (account)")
+
+
+def test_a_new_limit_must_name_one_target_and_carry_an_amount(pm):
+    pm.update_risk_limits([{"scope": "container", "target": TURTLE, "max_daily_loss": 300}])
+    limits = {(r["scope"], r["target"]): r["max_daily_loss"] for r in pm.get_risk_limits()}
+    assert limits[("container", TURTLE)] == 300.0
+
+    pm.update_risk_limits([{"scope": "container", "target": TURTLE, "max_daily_loss": 250}])
+    limits = {(r["scope"], r["target"]): r["max_daily_loss"] for r in pm.get_risk_limits()}
+    assert limits[("container", TURTLE)] == 250.0
+
+
+@pytest.mark.parametrize("update", [
+    {"scope": "container", "target": "cbot-demo-demo-eurusd-london"},          # no amount
+    {"scope": "strategy", "target": "mystery", "max_daily_loss": 10.0},        # not a strategy
+    {"scope": "nonsense", "target": "x", "max_daily_loss": 10.0},              # not a scope
+])
+def test_an_unknown_limit_cannot_be_invented(pm, update):
+    with pytest.raises(ValueError):
+        pm.update_risk_limits([update])
+
+
+def test_a_wildcard_row_is_edited_never_invented(pm):
+    """Both "*" rows are seeded by init_schema, so an edit is an edit — and there is no way
+    to create a second one that would silently double the account's day."""
+    pm.update_risk_limits([{"scope": "account", "target": "*", "max_daily_loss": 250.0}])
+    assert [r["max_daily_loss"] for r in pm.get_risk_limits()
+            if (r["scope"], r["target"]) == ("account", "*")] == [250.0]
+
 
 def test_server_passes_the_bot_to_every_risk_check():
     src = (ROOT / "app" / "server.py").read_text(encoding="utf-8")

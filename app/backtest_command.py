@@ -34,10 +34,19 @@ STRATEGY_BY_ALGO = {
     "FlowRsiBot.algo": "flowrsi",
     "AsianRangeJudasSweepBot.algo": "judas",
     "AiAgentBot.algo": "tms_orb",
+    "TurtleBot.algo": "turtle",
+    "OrbBot.algo": "orb",
 }
-SUPPORTED_STRATEGIES = {"flowrsi"}
+SUPPORTED_STRATEGIES = {"flowrsi", "turtle", "orb"}
 UNSUPPORTED_REASON = "Judas/TMS+ORB enter only through the AI; backtest mode not implemented yet"
 DATA_MODES = ("ticks", "m1")
+
+# Turtle runs on a daily chart, so its backtest needs years of bars where the intraday bots
+# need months of ticks: 20/10 needs a couple of hundred daily bars to warm up and produce
+# trades, 55/20 close to a thousand before its distribution means anything.
+DAILY_PERIODS = ("d1", "w1", "mn1")
+MAX_SPAN_DAYS = 365
+DAILY_MAX_SPAN_DAYS = 3653          # ten calendar years, leap days included
 
 # cTrader CLI options that sit next to the cBot parameters in a `run` command.
 CLI_OPTIONS = {"ctid", "pwd-file", "password", "account", "broker", "symbol", "period", "reconnect-timeout"}
@@ -54,6 +63,18 @@ LOCKED_PARAMS: Dict[str, Dict[str, str]] = {
         "EnableTelegramAlerts": "false",
         "SendChartScreenshot": "false",
         "SendAiAdjustAlerts": "false",
+    },
+    # Turtle is pure rules: no AI, no news, no Telegram. The report endpoint is still locked
+    # away so a backtest can never book trades into the production dashboard.
+    "turtle": {
+        "ApiUrl": DISABLED_URL,
+        "AiReportUrl": DISABLED_URL,
+    },
+    # ORB is pure rules too, and it is the reason the Backtest page can finally test an opening
+    # range breakout without the AI layer AiAgentBot wraps around its own ORB.
+    "orb": {
+        "ApiUrl": DISABLED_URL,
+        "AiReportUrl": DISABLED_URL,
     },
 }
 # Never passed to a backtest container, whatever the bot's command says.

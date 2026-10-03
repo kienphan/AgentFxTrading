@@ -513,7 +513,7 @@ class PortfolioManager:
 
             # 4. Daily loss limits: container, strategy, account
             reason = risk_limits.breached(
-                risk_limits.load(conn), self._daily_loss_usage(conn, account_id), bot_id)
+                risk_limits.load(conn), self._daily_loss_usage(conn, account_id), bot_id, account_id)
             if reason:
                 return False, reason
             # 5. Margin usage. Prefer the margin the broker reports. The fallback prices every
