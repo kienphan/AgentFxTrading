@@ -71,6 +71,10 @@ backups/
 # cBot build artifacts
 *.algo
 
+# Private cBot source: built locally and shipped as .algo, never committed
+# (HolyBot carries its order-tag secret, see cBot/HolyBot.cs)
+cBot/HolyBot.cs
+
 # Superpowers SDD scratch workspace
 .superpowers/
 
