@@ -70,7 +70,8 @@ namespace cAlgo.Robots
     public enum OrbStopMode
     {
         OppositeOrBoundary = 0,
-        FixedPips = 1
+        FixedPips = 1,
+        DailyAtr = 2
     }
 
     public enum OrbDirection
@@ -141,6 +142,45 @@ namespace cAlgo.Robots
         [Parameter("Prev-Day OR Stop", Group = "Prev-Day OR", DefaultValue = false)]
         public bool PrevDayOrSlEnabled { get; set; }
 
+        // Bias from previous day's close vs previous day's OR:
+        // Long only if prev close > prev OR high, Short only if prev close < prev OR low.
+        // Otherwise neutral -> no trade today.
+        [Parameter("Prev-Day Close vs OR Bias", Group = "Prev-Day OR", DefaultValue = false)]
+        public bool PrevDayCloseBiasEnabled { get; set; }
+
+        // Daily ATR multiplier for DailyAtr stop mode (e.g. 1.0 = 1x yesterday's Daily ATR)
+        [Parameter("Daily ATR Multiplier", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Step = 0.05)]
+        public double DailyAtrMultiplier { get; set; }
+
+        [Parameter("Daily ATR Period", Group = "Risk", DefaultValue = 14, MinValue = 1, MaxValue = 100)]
+        public int DailyAtrPeriod { get; set; }
+
+        // Take Profit in R multiple (0 = off / use TakeProfitPips)
+        [Parameter("Take Profit (R multiple, 0=off)", Group = "Risk", DefaultValue = 0.0, MinValue = 0.0, MaxValue = 20.0, Step = 0.1)]
+        public double TakeProfitRMultiple { get; set; }
+
+        // ---- Breakeven ----
+        // Breakeven trigger in R multiple (e.g. 1.5 = move SL to entry when profit >= 1.5R; 0 = off)
+        [Parameter("Breakeven Trigger (R multiple, 0=off)", Group = "Risk", DefaultValue = 0.0, MinValue = 0.0, MaxValue = 10.0, Step = 0.1)]
+        public double BreakevenTriggerR { get; set; }
+
+        // Breakeven buffer/offset in pips past entry to lock in spread/commission
+        [Parameter("Breakeven Offset (pips)", Group = "Risk", DefaultValue = 5.0, MinValue = 0.0)]
+        public double BreakevenOffsetPips { get; set; }
+
+        // Partial close ratio at Breakeven trigger (e.g. 0.5 = close 50% volume; 0 = off)
+        [Parameter("Partial Close at BE (0-1)", Group = "Risk", DefaultValue = 0.0, MinValue = 0.0, MaxValue = 0.9, Step = 0.1)]
+        public double PartialCloseRatio { get; set; }
+
+        // ---- Trailing Stop ----
+        // Trailing Stop trigger in R multiple (e.g. 2.0 = trail SL once profit >= 2.0R; 0 = off)
+        [Parameter("Trail Trigger (R multiple, 0=off)", Group = "Risk", DefaultValue = 0.0, MinValue = 0.0, MaxValue = 10.0, Step = 0.1)]
+        public double TrailTriggerR { get; set; }
+
+        // Trailing distance behind market price in R multiple (e.g. 1.0 = trail 1.0R behind current price)
+        [Parameter("Trail Distance (R multiple)", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 5.0, Step = 0.1)]
+        public double TrailDistanceR { get; set; }
+
         // ---- Breakout quality ----------------------------------------------------------------
         // Refuse to chase a bar that closed far past the boundary. 0 disables the check.
         [Parameter("Max Breakout Distance (pips, 0=off)", Group = "Breakout Quality", DefaultValue = 0.0, MinValue = 0.0)]
@@ -171,7 +211,7 @@ namespace cAlgo.Robots
         public bool AtrExcludeOrWindowBars { get; set; }
 
         // ---- Risk ----------------------------------------------------------------------------
-        [Parameter("Stop Mode", Group = "Risk", DefaultValue = OrbStopMode.OppositeOrBoundary)]
+        [Parameter("Stop Mode", Group = "Risk", DefaultValue = OrbStopMode.DailyAtr)]
         public OrbStopMode StopMode { get; set; }
 
         [Parameter("Fixed Stop (pips, FixedPips mode)", Group = "Risk", DefaultValue = 0.0, MinValue = 0.0)]
@@ -241,10 +281,14 @@ namespace cAlgo.Robots
         private bool _prevOrFresh;
         private DateTime _prevOrDate = DateTime.MinValue;
         private readonly HashSet<string> _prevOrBlockLogged = new HashSet<string>();
+        private double _prevDayClose = double.NaN;
+        private Bar _lastClosedBar;
+        private Bars _dailyBars;
 
         // ---- Execution -----------------------------------------------------------------------
         private readonly Dictionary<int, double> _initialSlPips = new Dictionary<int, double>();
         private readonly Dictionary<int, string> _closeReasons = new Dictionary<int, string>();
+        private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
 
         private DateTime _lastTickAt = DateTime.MinValue;
         private volatile bool _isStopped;
@@ -270,6 +314,7 @@ namespace cAlgo.Robots
                   $"risk {RiskPerTradePercent:F2}%/trade");
 
             Positions.Closed += OnPositionClosed;
+            _dailyBars = MarketData.GetBars(TimeFrame.Daily);
             SendAccountSync();
             Evaluate();
         }
@@ -286,6 +331,7 @@ namespace cAlgo.Robots
             // logic runs here. OnTick only carries the end-of-day flatten, which must not wait for
             // another bar to close.
             var closed = Bars.Last(1);
+            _lastClosedBar = closed;
             _lastTickAt = Server.Time;      // a bar closed, so a quote did arrive
             RollOverSessionIfNeeded(closed.OpenTime);
             CollectOrBar(closed);
@@ -419,13 +465,18 @@ namespace cAlgo.Robots
             _prevOrLow = _orLow;
             _prevOrDate = _sessionDate;
             _prevOrFresh = true;
+            if (_lastClosedBar != null)
+                _prevDayClose = _lastClosedBar.Close;
+            else if (Bars.Count >= 2)
+                _prevDayClose = Bars.ClosePrices.Last(1);
+
             if (ShowLogs)
                 Print($"[ORB] Prev-OR captured | session {_prevOrDate:yyyy-MM-dd} " +
-                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}]");
+                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}], prevClose={_prevDayClose:F5}");
         }
 
         private string PrevOrDescription() => _prevOrFresh
-            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}]"
+            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}] (prevClose {(!double.IsNaN(_prevDayClose) ? _prevDayClose.ToString("F5") : "none")})"
             : "prevOR none";
 
         /// <summary>Extends today's range with a closed bar inside the window, then judges the
@@ -529,6 +580,66 @@ namespace cAlgo.Robots
             return reference;
         }
 
+        /// <summary>
+        /// Checks whether the trade direction is allowed under PrevDayCloseBias:
+        /// If prevDayClose > prevOrHigh -> LongOnly
+        /// If prevDayClose < prevOrLow -> ShortOnly
+        /// Otherwise (closed inside prevOR) -> Neutral (neither side allowed).
+        /// </summary>
+        private bool PassesPrevDayCloseBias(TradeType side)
+        {
+            if (!PrevDayCloseBiasEnabled) return true;
+            if (!PrevOrReady || double.IsNaN(_prevDayClose)) return true; // cold start / no data -> pass through
+
+            bool isLong = side == TradeType.Buy;
+            if (isLong && _prevDayClose <= _prevOrHigh)
+            {
+                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
+                if (ShowLogs && _prevOrBlockLogged.Add(key))
+                    Print($"[ORB] Prev-Day Close Bias blocked Buy: prevClose {_prevDayClose:F5} <= prevOR high {_prevOrHigh:F5}");
+                return false;
+            }
+            if (!isLong && _prevDayClose >= _prevOrLow)
+            {
+                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
+                if (ShowLogs && _prevOrBlockLogged.Add(key))
+                    Print($"[ORB] Prev-Day Close Bias blocked Sell: prevClose {_prevDayClose:F5} >= prevOR low {_prevOrLow:F5}");
+                return false;
+            }
+            return true;
+        }
+
+        private double GetYesterdayDailyAtrPips()
+        {
+            try
+            {
+                var dBars = _dailyBars ?? MarketData.GetBars(TimeFrame.Daily);
+                if (dBars == null || dBars.Count < 2) return 0.0;
+
+                int count = Math.Min(dBars.Count - 1, DailyAtrPeriod);
+                if (count <= 0) return 0.0;
+
+                double trSum = 0.0;
+                // Calculate over closed daily bars (1 to count)
+                for (int i = 1; i <= count; i++)
+                {
+                    int idx = dBars.Count - 1 - i;
+                    if (idx < 0) break;
+                    double h = dBars.HighPrices[idx];
+                    double l = dBars.LowPrices[idx];
+                    double pc = idx > 0 ? dBars.ClosePrices[idx - 1] : l;
+                    double tr = Math.Max(h - l, Math.Max(Math.Abs(h - pc), Math.Abs(l - pc)));
+                    trSum += tr;
+                }
+                double avgTr = trSum / count;
+                return avgTr / Symbol.PipSize;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
         #endregion
 
         #region Breakout
@@ -551,6 +662,8 @@ namespace cAlgo.Robots
             bool allowShort = Direction != OrbDirection.LongOnly;
 
             if (!((longConfirm && allowLong) || (shortConfirm && allowShort))) return;
+            if (longConfirm && allowLong && !PassesPrevDayCloseBias(TradeType.Buy)) return;
+            if (shortConfirm && allowShort && !PassesPrevDayCloseBias(TradeType.Sell)) return;
 
             // Structural gate first: it depends only on levels already fixed for the day, so a
             // rejected direction costs nothing and the other direction stays available.
@@ -725,6 +838,11 @@ namespace cAlgo.Robots
                 slPips = side == TradeType.Buy
                     ? (entry - _orLow) / Symbol.PipSize
                     : (_orHigh - entry) / Symbol.PipSize;
+            else if (StopMode == OrbStopMode.DailyAtr)
+            {
+                double dailyAtr = GetYesterdayDailyAtrPips();
+                slPips = dailyAtr > 0 ? dailyAtr * DailyAtrMultiplier : DefaultSlPips;
+            }
             else
                 slPips = FixedSlPips > 0 ? FixedSlPips : DefaultSlPips;
 
@@ -746,6 +864,7 @@ namespace cAlgo.Robots
             }
 
             double? tpPips = TakeProfitPips > 0 ? TakeProfitPips : (double?)null;
+            if (TakeProfitRMultiple > 0) tpPips = slPips * TakeProfitRMultiple;
             string comment = side == TradeType.Buy
                 ? $"{LongTag} {_sessionDate:yyyy-MM-dd}"
                 : $"{ShortTag} {_sessionDate:yyyy-MM-dd}";
@@ -826,6 +945,9 @@ namespace cAlgo.Robots
                     _eodFlattened = true;
                     FlattenAll("End of session");
                 }
+
+                ManageBreakeven();
+                ManageTrailingStop();
             }
             catch (Exception ex)
             {
@@ -850,6 +972,94 @@ namespace cAlgo.Robots
             return ClosePosition(position);
         }
 
+        private void ManageBreakeven()
+        {
+            if (BreakevenTriggerR <= 0) return;
+
+            foreach (var pos in Positions.FindAll(BotId, SymbolName))
+            {
+                if (_breakevenApplied.Contains(pos.Id)) continue;
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+
+                double profitPips = pos.Pips;
+                double triggerPips = initialSlPips * BreakevenTriggerR;
+                if (profitPips < triggerPips) continue;
+
+                double beSlPrice = pos.TradeType == TradeType.Buy
+                    ? pos.EntryPrice + BreakevenOffsetPips * Symbol.PipSize
+                    : pos.EntryPrice - BreakevenOffsetPips * Symbol.PipSize;
+
+                bool shouldMove = pos.TradeType == TradeType.Buy
+                    ? (pos.StopLoss == null || beSlPrice > pos.StopLoss.Value)
+                    : (pos.StopLoss == null || beSlPrice < pos.StopLoss.Value);
+
+                if (!shouldMove)
+                {
+                    _breakevenApplied.Add(pos.Id);
+                    continue;
+                }
+
+                var res = pos.ModifyStopLossPrice(beSlPrice);
+                if (res != null && res.IsSuccessful)
+                {
+                    _breakevenApplied.Add(pos.Id);
+                    Print($"[ORB] Breakeven applied on #{pos.Id} {pos.TradeType} | SL moved to {beSlPrice:F5} (+{BreakevenOffsetPips:F1} pips past entry)");
+
+                    // Partial Close at Breakeven
+                    if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
+                    {
+                        double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
+                        double remainingVolume = pos.VolumeInUnits - volumeToClose;
+                        if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
+                        {
+                            var partialRes = pos.ModifyVolume(remainingVolume);
+                            if (partialRes != null && partialRes.IsSuccessful)
+                            {
+                                Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
+                            }
+                            else
+                            {
+                                Print($"[ORB] Partial Close failed on #{pos.Id}: {partialRes?.Error}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void ManageTrailingStop()
+        {
+            if (TrailTriggerR <= 0 || TrailDistanceR <= 0) return;
+
+            foreach (var pos in Positions.FindAll(BotId, SymbolName))
+            {
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+
+                double profitPips = pos.Pips;
+                double triggerPips = initialSlPips * TrailTriggerR;
+                if (profitPips < triggerPips) continue;
+
+                double trailDistancePips = initialSlPips * TrailDistanceR;
+                double currentPrice = pos.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+                double newSlPrice = pos.TradeType == TradeType.Buy
+                    ? currentPrice - trailDistancePips * Symbol.PipSize
+                    : currentPrice + trailDistancePips * Symbol.PipSize;
+
+                bool shouldMove = pos.TradeType == TradeType.Buy
+                    ? (pos.StopLoss == null || newSlPrice > pos.StopLoss.Value + Symbol.PipSize)
+                    : (pos.StopLoss == null || newSlPrice < pos.StopLoss.Value - Symbol.PipSize);
+
+                if (shouldMove)
+                {
+                    var res = pos.ModifyStopLossPrice(newSlPrice);
+                    if (res != null && res.IsSuccessful)
+                    {
+                        Print($"[ORB] Trailing Stop updated on #{pos.Id} {pos.TradeType} | SL moved to {newSlPrice:F5} (current price {currentPrice:F5}, trail {trailDistancePips:F1} pips)");
+                    }
+                }
+            }
+        }
+
         private void OnPositionClosed(PositionClosedEventArgs args)
         {
             BeginInvokeOnMainThread(() =>
@@ -871,6 +1081,7 @@ namespace cAlgo.Robots
                     _closeReasons.Remove(position.Id);
                     double initialSl = _initialSlPips.TryGetValue(position.Id, out double sl) ? sl : 0.0;
                     _initialSlPips.Remove(position.Id);
+                    _breakevenApplied.Remove(position.Id);
 
                     string reason;
                     if (args.Reason == PositionCloseReason.StopLoss)
