@@ -83,6 +83,13 @@ def test_flowrsi_badge_renders_on_dashboard():
     assert "bot-badge--flowrsi" in resp_demo.text
     assert "FlowRSI" in resp_demo.text
 
+
+def test_gotobi_badge_renders_on_dashboard():
+    """Gotobi bots must render with their dedicated amber 'Gotobi' badge rather than falling back to TMS+ORB."""
+    resp = client.get("/demo/dashboard")
+    assert resp.status_code == 200
+    assert "bot-badge--gotobi" in resp.text
+    assert "Gotobi" in resp.text
 def _position():
     return {
         "bot_id": "uk100_m15",

@@ -134,6 +134,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
 .bot-badge--tms{background:rgba(0,188,212,0.12);color:#4dd0e1;border:1px solid rgba(0,188,212,0.35)}
 .bot-badge--judas{background:rgba(171,71,188,0.15);color:#ce93d8;border:1px solid rgba(171,71,188,0.35)}
 .bot-badge--flowrsi{background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.35)}
+.bot-badge--gotobi{background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.35)}
 .bot-badge--default{background:rgba(158,158,158,0.12);color:#bdbdbd;border:1px solid rgba(158,158,158,0.3)}
 .bot-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
 .bot-id-text{font-family:var(--font-mono);font-size:0.72rem;color:var(--text-dim);font-weight:500;white-space:nowrap}

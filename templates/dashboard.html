@@ -238,6 +238,8 @@
                                             {% set b_lower = (pos.bot_id or '') | lower %}
                                             {% set is_flowrsi = 'flowrsi' in b_lower or 'flow_rsi' in b_lower or 'nestedrsi' in b_lower %}
                                             {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
+                                            {% set is_gotobi = 'gotobi' in b_lower or 'holy' in b_lower %}
+                                            {% set is_manual = b_lower == 'manual' %}
                                             <div class="bot-cell">
                                                 {% if is_flowrsi %}
                                                 <span class="bot-badge bot-badge--flowrsi">
@@ -246,6 +248,14 @@
                                                 {% elif is_judas %}
                                                 <span class="bot-badge bot-badge--judas">
                                                     <span class="bot-dot"></span>Judas SMC
+                                                </span>
+                                                {% elif is_gotobi %}
+                                                <span class="bot-badge bot-badge--gotobi">
+                                                    <span class="bot-dot"></span>Gotobi
+                                                </span>
+                                                {% elif is_manual %}
+                                                <span class="bot-badge bot-badge--default">
+                                                    <span class="bot-dot"></span>Manual
                                                 </span>
                                                 {% else %}
                                                 <span class="bot-badge bot-badge--tms">
@@ -335,6 +345,8 @@
                                             {% set b_lower = (trade.bot_id or '') | lower %}
                                             {% set is_flowrsi = 'flowrsi' in b_lower or 'flow_rsi' in b_lower or 'nestedrsi' in b_lower %}
                                             {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
+                                            {% set is_gotobi = 'gotobi' in b_lower or 'holy' in b_lower %}
+                                            {% set is_manual = b_lower == 'manual' %}
                                             <div class="bot-cell">
                                                 {% if is_flowrsi %}
                                                 <span class="bot-badge bot-badge--flowrsi">
@@ -343,6 +355,14 @@
                                                 {% elif is_judas %}
                                                 <span class="bot-badge bot-badge--judas">
                                                     <span class="bot-dot"></span>Judas SMC
+                                                </span>
+                                                {% elif is_gotobi %}
+                                                <span class="bot-badge bot-badge--gotobi">
+                                                    <span class="bot-dot"></span>Gotobi
+                                                </span>
+                                                {% elif is_manual %}
+                                                <span class="bot-badge bot-badge--default">
+                                                    <span class="bot-dot"></span>Manual
                                                 </span>
                                                 {% else %}
                                                 <span class="bot-badge bot-badge--tms">
@@ -1630,8 +1650,10 @@
             const bl=String(b).toLowerCase();
             const isF=bl.includes('flowrsi')||bl.includes('flow_rsi')||bl.includes('nestedrsi');
             const isJ=bl.includes('judas')||bl.includes('asian')||bl.includes('smc');
-            const badgeCls = isF ? 'bot-badge--flowrsi' : (isJ ? 'bot-badge--judas' : 'bot-badge--tms');
-            const badgeText = isF ? 'FlowRSI' : (isJ ? 'Judas SMC' : 'TMS+ORB');
+            const isG=bl.includes('gotobi')||bl.includes('holy');
+            const isM=bl==='manual';
+            const badgeCls = isF ? 'bot-badge--flowrsi' : (isJ ? 'bot-badge--judas' : (isG ? 'bot-badge--gotobi' : (isM ? 'bot-badge--default' : 'bot-badge--tms')));
+            const badgeText = isF ? 'FlowRSI' : (isJ ? 'Judas SMC' : (isG ? 'Gotobi' : (isM ? 'Manual' : 'TMS+ORB')));
             const safe=escapeHtml(b);
             return `<div class="bot-cell">
                 <span class="bot-badge ${badgeCls}"><span class="bot-dot"></span>${badgeText}</span>
