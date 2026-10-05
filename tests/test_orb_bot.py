@@ -245,3 +245,25 @@ def test_the_bot_is_pure_rules_with_no_ai_or_news_layer():
 def test_reporting_is_live_only_so_a_backtest_never_books_trades():
     assert SOURCE.count("if (RunningMode != RunningMode.RealTime) return;") >= 3
     assert SOURCE.count("_httpClient.") == 1
+
+
+def test_prev_day_close_bias_uses_daily_bars_or_prior_session_close():
+    assert "_dailyBars = MarketData.GetBars(TimeFrame.Daily);" in SOURCE
+    assert "_prevDayClose = dBars.ClosePrices.Last(1);" in SOURCE
+    # Rollover must run before updating _lastClosedBar with today's bar
+    assert "RollOverSessionIfNeeded(closed.OpenTime);" in SOURCE
+    assert SOURCE.index("RollOverSessionIfNeeded(closed.OpenTime);") < SOURCE.index("_lastClosedBar = closed;")
+
+
+def test_partial_close_at_breakeven_reports_to_portfolio_hub():
+    assert 'action = "partial_close"' in SOURCE
+    assert "ReportPartialClose(" in SOURCE
+    assert "closed_volume = Math.Round(closedLots, 2)" in SOURCE
+    assert "remaining_volume = Math.Round(remainingLots, 2)" in SOURCE
+    assert "realized_pnl = Math.Round(realizedPnl, 2)" in SOURCE
+
+
+def test_tp_rmultiple_reported_accurately_on_open_and_close():
+    assert "ReportPositionOpen(result.Position, slPips, tpPips, reason);" in SOURCE
+    assert "tp_pips = tpPips.HasValue ? Math.Round(tpPips.Value, 1) :" in SOURCE
+    assert "Math.Abs(position.TakeProfit.Value - position.EntryPrice) / Symbol.PipSize" in SOURCE

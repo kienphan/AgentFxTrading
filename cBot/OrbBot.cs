@@ -315,10 +315,11 @@ namespace cAlgo.Robots
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
+            if (_dailyBars != null && _dailyBars.Count >= 2)
+                _prevDayClose = _dailyBars.ClosePrices.Last(1);
             SendAccountSync();
             Evaluate();
         }
-
         protected override void OnTick()
         {
             _lastTickAt = Server.Time;
@@ -331,13 +332,12 @@ namespace cAlgo.Robots
             // logic runs here. OnTick only carries the end-of-day flatten, which must not wait for
             // another bar to close.
             var closed = Bars.Last(1);
-            _lastClosedBar = closed;
             _lastTickAt = Server.Time;      // a bar closed, so a quote did arrive
             RollOverSessionIfNeeded(closed.OpenTime);
+            _lastClosedBar = closed;
             CollectOrBar(closed);
             EvaluateBreakout(closed);
         }
-
         protected override void OnStop()
         {
             _isStopped = true;
@@ -465,11 +465,13 @@ namespace cAlgo.Robots
             _prevOrLow = _orLow;
             _prevOrDate = _sessionDate;
             _prevOrFresh = true;
-            if (_lastClosedBar != null)
+            var dBars = _dailyBars ?? MarketData.GetBars(TimeFrame.Daily);
+            if (dBars != null && dBars.Count >= 2)
+                _prevDayClose = dBars.ClosePrices.Last(1);
+            else if (_lastClosedBar != null)
                 _prevDayClose = _lastClosedBar.Close;
             else if (Bars.Count >= 2)
                 _prevDayClose = Bars.ClosePrices.Last(1);
-
             if (ShowLogs)
                 Print($"[ORB] Prev-OR captured | session {_prevOrDate:yyyy-MM-dd} " +
                       $"[{_prevOrLow:F5} - {_prevOrHigh:F5}], prevClose={_prevDayClose:F5}");
@@ -620,6 +622,7 @@ namespace cAlgo.Robots
                 if (count <= 0) return 0.0;
 
                 double trSum = 0.0;
+                int actualCount = 0;
                 // Calculate over closed daily bars (1 to count)
                 for (int i = 1; i <= count; i++)
                 {
@@ -630,8 +633,10 @@ namespace cAlgo.Robots
                     double pc = idx > 0 ? dBars.ClosePrices[idx - 1] : l;
                     double tr = Math.Max(h - l, Math.Max(Math.Abs(h - pc), Math.Abs(l - pc)));
                     trSum += tr;
+                    actualCount++;
                 }
-                double avgTr = trSum / count;
+                if (actualCount <= 0) return 0.0;
+                double avgTr = trSum / actualCount;
                 return avgTr / Symbol.PipSize;
             }
             catch
@@ -883,7 +888,7 @@ namespace cAlgo.Robots
                 string reason = prevOrStop.HasValue
                     ? "ORB breakout, stop on the previous session's opening range"
                     : "ORB breakout of the opening range";
-                ReportPositionOpen(result.Position, slPips, reason);
+                ReportPositionOpen(result.Position, slPips, tpPips, reason);
             }
             else
             {
@@ -1012,10 +1017,20 @@ namespace cAlgo.Robots
                         double remainingVolume = pos.VolumeInUnits - volumeToClose;
                         if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
                         {
+                            double pnlBeforePartial = pos.NetProfit;
                             var partialRes = pos.ModifyVolume(remainingVolume);
                             if (partialRes != null && partialRes.IsSuccessful)
                             {
+                                double realizedPnl = pnlBeforePartial - pos.NetProfit;
+                                try
+                                {
+                                    var partialHist = History.LastOrDefault(h => h.PositionId == pos.Id);
+                                    if (partialHist != null) realizedPnl = partialHist.NetProfit;
+                                }
+                                catch { }
+
                                 Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
+                                ReportPartialClose(pos, volumeToClose / Symbol.LotSize, remainingVolume / Symbol.LotSize, realizedPnl, "Partial close at Breakeven");
                             }
                             else
                             {
@@ -1087,7 +1102,12 @@ namespace cAlgo.Robots
                     if (args.Reason == PositionCloseReason.StopLoss)
                         reason = $"Stop loss ({initialSl:F1} pips)";
                     else if (args.Reason == PositionCloseReason.TakeProfit)
-                        reason = $"Take profit ({TakeProfitPips:F1} pips)";
+                    {
+                        double tpDisplay = (position.TakeProfit.HasValue && position.EntryPrice > 0)
+                            ? Math.Abs(position.TakeProfit.Value - position.EntryPrice) / Symbol.PipSize
+                            : (TakeProfitPips > 0 ? TakeProfitPips : 0.0);
+                        reason = $"Take profit ({tpDisplay:F1} pips)";
+                    }
                     else if (args.Reason == PositionCloseReason.Closed)
                         reason = hasBotReason ? botReason : "Closed outside the bot";
                     else
@@ -1160,7 +1180,7 @@ namespace cAlgo.Robots
             }
         }
 
-        private void ReportPositionOpen(Position position, double slPips, string reason)
+        private void ReportPositionOpen(Position position, double slPips, double? tpPips, string reason)
         {
             if (RunningMode != RunningMode.RealTime) return;
             try
@@ -1177,7 +1197,7 @@ namespace cAlgo.Robots
                     sl_price = position.StopLoss,
                     tp_price = position.TakeProfit,
                     sl_pips = Math.Round(slPips, 1),
-                    tp_pips = TakeProfitPips,
+                    tp_pips = tpPips.HasValue ? Math.Round(tpPips.Value, 1) : (TakeProfitPips > 0 ? TakeProfitPips : 0.0),
                     reason = reason,
                     entry_indicators = JsonSerializer.Serialize(new
                     {
@@ -1256,6 +1276,46 @@ namespace cAlgo.Robots
             catch (Exception ex)
             {
                 if (ShowLogs) Print($"[ORB] ReportPositionClosed error: {ex.Message}");
+            }
+        }
+
+        private void ReportPartialClose(Position position, double closedLots, double remainingLots, double realizedPnl, string reason)
+        {
+            if (RunningMode != RunningMode.RealTime || position == null) return;
+            try
+            {
+                var report = new
+                {
+                    ctrader_id = position.Id,
+                    bot_id = BotId,
+                    action = "partial_close",
+                    symbol = position.SymbolName,
+                    side = position.TradeType.ToString(),
+                    closed_volume = Math.Round(closedLots, 2),
+                    remaining_volume = Math.Round(remainingLots, 2),
+                    realized_pnl = Math.Round(realizedPnl, 2),
+                    reason = string.IsNullOrWhiteSpace(reason) ? "Partial close at Breakeven" : reason,
+                    account_number = Account.Number.ToString(CultureInfo.InvariantCulture),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = AccountLabel,
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
+                };
+
+                string json = JsonSerializer.Serialize(report);
+                string url = ReportUrl();
+                Task.Run(async () =>
+                {
+                    string error = await PostReportAsync(url, json);
+                    if (error != null)
+                        Print($"[ORB] Failed to report partial close #{position.Id}: {error}");
+                    else if (ShowLogs)
+                        Print($"[ORB] Reported partial close #{position.Id} {closedLots:F2} lots, pnl {realizedPnl:F2}");
+                });
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[ORB] ReportPartialClose error: {ex.Message}");
             }
         }
 
