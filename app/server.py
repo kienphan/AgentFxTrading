@@ -231,6 +231,8 @@ portfolio_manager = init_portfolio()
 # Create LLM client based on LLM_PROVIDER env variable
 # Supports: "qwen", "openai", "anthropic", "deepseek", "openai_compatible"
 llm_client = create_llm_client()
+from app.mtf_agent import register_mtf_routes
+register_mtf_routes(app, lambda: llm_client)
 
 # /trade answers a cBot that is waiting on the other end of an HTTP call (FlowRsiBot gives
 # up after 60 s), so the client-wide LLM_TIMEOUT x LLM_MAX_RETRIES budget (90 s x 4 tries)
