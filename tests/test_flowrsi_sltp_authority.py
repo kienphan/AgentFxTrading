@@ -103,7 +103,7 @@ async def test_entry_strips_the_models_levels_so_the_engine_stop_wins(monkeypatc
         "tp_pips": 418.0,
         "new_sl_price": 2772.83,
         "new_tp_price": 2701.49,
-        "confidence": 76.0,
+        "confidence": 85.0,
         "reason": "Bearish cross in premium",
     })
 

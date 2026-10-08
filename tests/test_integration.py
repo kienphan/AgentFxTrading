@@ -996,7 +996,7 @@ def test_judas_harmonized_pips_use_the_cbot_pip_size():
         "account_balance": 10000.0, "account_equity": 10000.0,
     }
     # 250.0 USTEC points of SL at PipSize 0.1 is 2500 pips; the FX scale logged 2,516,000p.
-    llm = AsyncMock(return_value='{"action": "BUY", "volume_lots": 0.0, "sl_pips": 0, "tp_pips": 0, "new_sl_price": 28725.30, "new_tp_price": 29064.50, "confidence": 78.0, "reason": "JUDAS_SWEEP_BUY"}')
+    llm = AsyncMock(return_value='{"action": "BUY", "volume_lots": 0.0, "sl_pips": 0, "tp_pips": 0, "new_sl_price": 28725.30, "new_tp_price": 29064.50, "confidence": 85.0, "reason": "JUDAS_SWEEP_BUY"}')
     with patch.object(app.server.llm_client, "chat", new=llm):
         data = client.post("/trade", json=payload).json()
     assert data["action"] == "BUY"

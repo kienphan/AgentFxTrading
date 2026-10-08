@@ -196,7 +196,7 @@ namespace cAlgo.Robots
         #endregion
 
         #region Position Protection (Anti-Drawdown & True Zero-Loss BE)
-        [Parameter("Enable True Break-Even", Group = "Position Protection", DefaultValue = true)]
+        [Parameter("Enable True Break-Even", Group = "Position Protection", DefaultValue = false)]
         public bool EnableBreakEven { get; set; }
 
         [Parameter("Break-Even Trigger Mode", Group = "Position Protection", DefaultValue = BreakEvenTriggerMode.Risk_Reward_Ratio)]
@@ -259,7 +259,7 @@ namespace cAlgo.Robots
         // 0 turns them off.
         [Parameter("Command Poll (ms, 0=off)", Group = "AI Agent Integration", DefaultValue = 2000, MinValue = 0)]
         public int CommandPollMs { get; set; }
-        [Parameter("AI Minimum Confidence (%)", Group = "AI Agent Integration", DefaultValue = 65.0, MinValue = 50.0, MaxValue = 100.0)]
+        [Parameter("AI Minimum Confidence (%)", Group = "AI Agent Integration", DefaultValue = 75.0, MinValue = 50.0, MaxValue = 100.0)]
         public double AiConfidenceThreshold { get; set; }
         #endregion
 

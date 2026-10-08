@@ -16,7 +16,7 @@
     {"PropertyName": "AiTelemetryUrl", "FriendlyName": "Telemetry Endpoint", "GroupName": "AI Agent Integration", "Type": "String", "DefaultValue": "http://127.0.0.1:8000/api/tick"},
     {"PropertyName": "AiReportUrl", "FriendlyName": "Portfolio Report Endpoint", "GroupName": "AI Agent Integration", "Type": "String", "DefaultValue": "http://127.0.0.1:8000/portfolio/report"},
     {"PropertyName": "CommandPollMs", "FriendlyName": "Command Poll (ms, 0=off)", "GroupName": "AI Agent Integration", "Type": "Integer", "DefaultValue": 2000, "MinValue": 0},
-    {"PropertyName": "AiConfidenceThreshold", "FriendlyName": "AI Minimum Confidence (%)", "GroupName": "AI Agent Integration", "Type": "Double", "DefaultValue": 65.0, "MinValue": 50.0, "MaxValue": 100.0},
+    {"PropertyName": "AiConfidenceThreshold", "FriendlyName": "AI Minimum Confidence (%)", "GroupName": "AI Agent Integration", "Type": "Double", "DefaultValue": 75.0, "MinValue": 50.0, "MaxValue": 100.0},
     {"PropertyName": "EnableNewsFilter", "FriendlyName": "Enable News Filter", "GroupName": "News Filter", "Type": "Boolean", "DefaultValue": true},
     {"PropertyName": "MinsBeforeNews", "FriendlyName": "Minutes Before News", "GroupName": "News Filter", "Type": "Integer", "DefaultValue": 30, "MinValue": 5},
     {"PropertyName": "EnableTelegramAlerts", "FriendlyName": "Enable Telegram Alerts", "GroupName": "Telegram Integration", "Type": "Boolean", "DefaultValue": false},

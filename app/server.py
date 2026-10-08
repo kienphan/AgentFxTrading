@@ -2004,8 +2004,7 @@ async def trade_decision(snapshot: MarketSnapshot):
             "2. CUT LOSS EARLY (CLOSE_ALL): Only execute CLOSE_ALL when an open position suffers MEANINGFUL adverse movement "
             "(loss >= 0.5R or >= 10 pips FX / >= 100 pips Gold) AND clear market structure decisively breaks against it "
             "(e.g. sustained opposing RSI crossover with structural swing breakdown). Never exit early on minor noise.\n"
-            "3. PROTECT PROFITS (ADJUST or CLOSE_ALL): When an open position has captured significant profit (>= 1.0 R:R or >= 15 pips FX / >= 150 pips Gold) "
-            "and displays clear momentum exhaustion or structural reversal, lock in gains by adjusting SL or closing. Do not exit prematurely for petty cents.\n"
+            "3. LET RUNNERS RUN / HOLD TO SL & TP: Avoid micromanaging, tightening SL to Breakeven (BE) prematurely, or early exits. Moving SL to BE frequently kills positions on normal market pullbacks. Allow positions full breathing room to reach technical TP or initial SL.\n"
             "4. NEW ENTRIES: If candidate_action is BUY/SELL, confirm with confidence >= 75% only when Nested RSI cross and SMC zone align."
         )
         # SMC Swing Structure & Multi-timeframe / Indicator context
