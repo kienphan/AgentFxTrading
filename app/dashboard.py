@@ -664,6 +664,27 @@ async def api_dashboard_history(account_id: str = "all", page: int = 1, page_siz
     return get_trade_history(account_id, page, page_size)
 
 
+@router.post("/api/trades/sync-manual")
+async def api_sync_manual_trades():
+    """Trigger manual trade sync from cTrader."""
+    try:
+        def _do_sync():
+            from scripts.sync_manual_trades import run_probe_and_collect_trades, sync_trades_to_db
+            trades = run_probe_and_collect_trades()
+            count, inserted = sync_trades_to_db(trades)
+            return count, inserted
+
+        count, inserted = await asyncio.to_thread(_do_sync)
+        if count > 0:
+            try:
+                await broadcast_update(account_id="live-6094347")
+            except Exception:
+                pass
+        return {"success": True, "synced_count": count, "message": f"Successfully synced {count} manual trades"}
+    except Exception as e:
+        logger.error(f"Manual trades sync error: {e}", exc_info=True)
+        return {"success": False, "synced_count": 0, "message": str(e)}
+
 @router.get("/api/dashboard/pnl-history")
 async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
     """API endpoint for daily P&L history."""

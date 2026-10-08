@@ -193,3 +193,25 @@ def test_dashboard_page_renders_recent_trades_pager():
     assert 'id="history-next"' in html
     assert 'id="history-page-label"' in html
     assert "<th>Open / Close</th>" in html
+
+
+def test_dashboard_page_renders_sync_manual_button():
+    html = client.get("/demo/dashboard").text
+    assert 'id="sync-manual-btn"' in html
+    assert "Đồng bộ lệnh tay" in html
+
+
+def test_api_sync_manual_trades_endpoint(monkeypatch):
+    def fake_collect():
+        return []
+    def fake_sync(trades):
+        return 0, []
+    import scripts.sync_manual_trades as smt
+    monkeypatch.setattr(smt, "run_probe_and_collect_trades", fake_collect)
+    monkeypatch.setattr(smt, "sync_trades_to_db", fake_sync)
+
+    resp = client.post("/api/trades/sync-manual")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert data["synced_count"] == 0

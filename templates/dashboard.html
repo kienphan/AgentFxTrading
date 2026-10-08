@@ -239,6 +239,7 @@
                                             {% set is_flowrsi = 'flowrsi' in b_lower or 'flow_rsi' in b_lower or 'nestedrsi' in b_lower %}
                                             {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
                                             {% set is_gotobi = 'gotobi' in b_lower or 'holy' in b_lower %}
+                                            {% set is_orb = 'orb' in b_lower and 'tms' not in b_lower %}
                                             {% set is_manual = b_lower == 'manual' %}
                                             <div class="bot-cell">
                                                 {% if is_flowrsi %}
@@ -252,6 +253,10 @@
                                                 {% elif is_gotobi %}
                                                 <span class="bot-badge bot-badge--gotobi">
                                                     <span class="bot-dot"></span>Gotobi
+                                                </span>
+                                                {% elif is_orb %}
+                                                <span class="bot-badge bot-badge--orb">
+                                                    <span class="bot-dot"></span>ORB
                                                 </span>
                                                 {% elif is_manual %}
                                                 <span class="bot-badge bot-badge--default">
@@ -306,10 +311,15 @@
                 <section class="panel recent-trades-panel">
                     <div class="panel-header">
                         <span class="panel-title">Recent Trades</span>
-                        <div class="pager">
-                            <button id="history-prev" class="log-btn" type="button" {% if history.page <= 1 %}disabled{% endif %}>&lsaquo; Prev</button>
-                            <span id="history-page-label" class="pager-label">Page {{ history.page }} / {{ history.total_pages }}</span>
-                            <button id="history-next" class="log-btn" type="button" {% if history.page >= history.total_pages %}disabled{% endif %}>Next &rsaquo;</button>
+                        <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+                            <button id="sync-manual-btn" class="log-btn" type="button" title="Đồng bộ lịch sử lệnh đánh tay từ cTrader">
+                                <i data-lucide="refresh-cw" class="btn-icon"></i> Đồng bộ lệnh tay
+                            </button>
+                            <div class="pager">
+                                <button id="history-prev" class="log-btn" type="button" {% if history.page <= 1 %}disabled{% endif %}>&lsaquo; Prev</button>
+                                <span id="history-page-label" class="pager-label">Page {{ history.page }} / {{ history.total_pages }}</span>
+                                <button id="history-next" class="log-btn" type="button" {% if history.page >= history.total_pages %}disabled{% endif %}>Next &rsaquo;</button>
+                            </div>
                         </div>
                     </div>
                     <div class="panel-body">
@@ -346,6 +356,7 @@
                                             {% set is_flowrsi = 'flowrsi' in b_lower or 'flow_rsi' in b_lower or 'nestedrsi' in b_lower %}
                                             {% set is_judas = 'judas' in b_lower or 'asian' in b_lower or 'smc' in b_lower %}
                                             {% set is_gotobi = 'gotobi' in b_lower or 'holy' in b_lower %}
+                                            {% set is_orb = 'orb' in b_lower and 'tms' not in b_lower %}
                                             {% set is_manual = b_lower == 'manual' %}
                                             <div class="bot-cell">
                                                 {% if is_flowrsi %}
@@ -359,6 +370,10 @@
                                                 {% elif is_gotobi %}
                                                 <span class="bot-badge bot-badge--gotobi">
                                                     <span class="bot-dot"></span>Gotobi
+                                                </span>
+                                                {% elif is_orb %}
+                                                <span class="bot-badge bot-badge--orb">
+                                                    <span class="bot-dot"></span>ORB
                                                 </span>
                                                 {% elif is_manual %}
                                                 <span class="bot-badge bot-badge--default">
@@ -1651,9 +1666,10 @@
             const isF=bl.includes('flowrsi')||bl.includes('flow_rsi')||bl.includes('nestedrsi');
             const isJ=bl.includes('judas')||bl.includes('asian')||bl.includes('smc');
             const isG=bl.includes('gotobi')||bl.includes('holy');
+            const isO=bl.includes('orb') && !bl.includes('tms');
             const isM=bl==='manual';
-            const badgeCls = isF ? 'bot-badge--flowrsi' : (isJ ? 'bot-badge--judas' : (isG ? 'bot-badge--gotobi' : (isM ? 'bot-badge--default' : 'bot-badge--tms')));
-            const badgeText = isF ? 'FlowRSI' : (isJ ? 'Judas SMC' : (isG ? 'Gotobi' : (isM ? 'Manual' : 'TMS+ORB')));
+            const badgeCls = isF ? 'bot-badge--flowrsi' : (isJ ? 'bot-badge--judas' : (isG ? 'bot-badge--gotobi' : (isO ? 'bot-badge--orb' : (isM ? 'bot-badge--default' : 'bot-badge--tms'))));
+            const badgeText = isF ? 'FlowRSI' : (isJ ? 'Judas SMC' : (isG ? 'Gotobi' : (isO ? 'ORB' : (isM ? 'Manual' : 'TMS+ORB'))));
             const safe=escapeHtml(b);
             return `<div class="bot-cell">
                 <span class="bot-badge ${badgeCls}"><span class="bot-dot"></span>${badgeText}</span>
@@ -2194,6 +2210,32 @@
         });
         document.getElementById('history-next')?.addEventListener('click', () => {
             historyPage += 1; fetchTradeHistory();
+        });
+        document.getElementById('sync-manual-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('sync-manual-btn');
+            if (!btn || btn.disabled) return;
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="btn-icon btn-icon--spin"></i> Đang đồng bộ...';
+            if (window.lucide) lucide.createIcons();
+            try {
+                const resp = await fetch('/api/trades/sync-manual', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    alert(`Đồng bộ thành công! Tìm thấy và cập nhật ${data.synced_count} lệnh mới.`);
+                    refreshDashboardData();
+                    fetchTradeHistory();
+                    if (typeof fetchLeaderboard === 'function') fetchLeaderboard();
+                } else {
+                    alert(`Đồng bộ thất bại: ${data.message || 'Lỗi không xác định'}`);
+                }
+            } catch (e) {
+                alert(`Lỗi kết nối khi đồng bộ: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                if (window.lucide) lucide.createIcons();
+            }
         });
 
         // Auto-refresh when tab returns to focus

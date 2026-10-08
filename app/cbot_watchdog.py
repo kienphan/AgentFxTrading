@@ -23,6 +23,15 @@ logger = logging.getLogger("AgentFxTrading.Watchdog")
 # ---------------------------------------------------------------------------
 
 DEFAULT_STALE_FEED_SECONDS = 2400  # 40 min: > one M15 bar + LLM latency, < two bars
+PERIOD_STALE_FEED_SECONDS: Dict[str, int] = {
+    "m1": 300,      # 5 min
+    "m5": 900,      # 15 min
+    "m15": 2400,    # 40 min (> 1 M15 bar, < 2 bars)
+    "m30": 4200,    # 70 min
+    "h1": 7200,     # 120 min (> 1 H1 bar, < 2 bars)
+    "h4": 21600,    # 360 min
+}
+
 
 _snapshot_seen_at: Dict[str, float] = {}
 
@@ -82,6 +91,12 @@ def parse_bot_id(run_command: Optional[str]) -> str:
     """The --BotId a bot's docker run command passes, or "" when absent."""
     m = re.search(r'--BotId=("?)([^"\s\\]+)\1', run_command or "")
     return m.group(2) if m else ""
+
+def parse_period(run_command: Optional[str]) -> str:
+    """The --period a bot's docker run command passes, or 'm15' when absent."""
+    m = re.search(r'--period=("?)([^"\s\\]+)\1', run_command or "")
+    return m.group(2).lower() if m else "m15"
+
 
 
 def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -407,8 +422,10 @@ class CbotWatchdog:
         if now - _tick_seen_at[bot_id] > TICK_GAP_SECONDS:
             return None
 
+        period = parse_period(run_command)
+        stale_limit = PERIOD_STALE_FEED_SECONDS.get(period, self.stale_feed_seconds)
         silence = now - max(_bar_advanced_at[bot_id], _tick_run_since[bot_id])
-        if silence <= self.stale_feed_seconds:
+        if silence <= stale_limit:
             return None
 
         stuck_on = _bar_seen[bot_id]
@@ -418,7 +435,7 @@ class CbotWatchdog:
 
         return (
             f"Ticks streaming for {silence / 60:.0f} min but no bar handled since {stuck_on} "
-            f"(bar cycle is M15)"
+            f"(bar cycle is {period.upper()})"
         )
 
     async def run_loop(self):
