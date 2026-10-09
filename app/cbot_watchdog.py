@@ -104,8 +104,10 @@ def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]
 
     Returns None for bots that run no bar cycle (the Judas sweep bots carry no
     --OrbStartHour/--SessionEndHour) or when the command cannot be parsed.
+    Supports both AiAgentBot (--OrbStartHour/--SessionEndHour) and
+    OrbBot (--SessionOpenHourWinterUtc/--EodFlattenHourWinterUtc).
     """
-    if not run_command or "--OrbStartHour" not in run_command or "--SessionEndHour" not in run_command:
+    if not run_command:
         return None
 
     def number(key: str) -> Optional[int]:
@@ -116,20 +118,34 @@ def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]
         m = re.search(rf'--{key}=("?)([^"\s\\]+)\1', run_command)
         return m.group(2) if m else ""
 
-    start_hour, end_hour = number("OrbStartHour"), number("SessionEndHour")
+    start_hour = number("OrbStartHour")
+    end_hour = number("SessionEndHour")
+    start_minute = number("OrbStartMinute") or 0
+    end_minute = number("SessionEndMinute") or 0
+    session_name = text("SessionName")
+    dst_rule = text("SessionDstRule") or "None"
+
+    if start_hour is None or end_hour is None:
+        # Check OrbBot parameter format
+        start_hour = number("SessionOpenHourWinterUtc")
+        end_hour = number("EodFlattenHourWinterUtc")
+        start_minute = number("SessionOpenMinute") or 0
+        end_minute = number("EodFlattenMinute") or 0
+        if not session_name:
+            session_name = "ORB"
+
     if start_hour is None or end_hour is None:
         return None
 
     return {
         "bot_id": parse_bot_id(run_command),
-        "session_name": text("SessionName") or "unknown",
+        "session_name": session_name or "unknown",
         "start_hour": start_hour,
-        "start_minute": number("OrbStartMinute") or 0,
+        "start_minute": start_minute,
         "end_hour": end_hour,
-        "end_minute": number("SessionEndMinute") or 0,
-        "dst_rule": text("SessionDstRule") or "None",
+        "end_minute": end_minute,
+        "dst_rule": dst_rule,
     }
-
 
 def _nth_sunday(year: int, month: int, n: int) -> datetime.date:
     first = datetime.date(year, month, 1)

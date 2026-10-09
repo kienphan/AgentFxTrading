@@ -168,12 +168,43 @@ class DockerManager:
         lines = [line.strip() for line in logs.strip().splitlines() if line.strip()]
         all_retry_idx = -1
         logged_in_idx = -1
+        stopped_idx = -1
+        started_idx = -1
         for idx, l in enumerate(lines):
             l_low = l.lower()
             if "all login retry attempts failed" in l_low:
                 all_retry_idx = idx
-            if "logged in" in l_low or "cbot instance [" in l_low or "aiagentbot started" in l_low or "asianrangejudassweepbot started" in l_low or "flowrsi" in l_low or "[gotobi]" in l_low or "holybot" in l_low:
+            if (
+                "logged in" in l_low
+                or ("cbot instance [" in l_low and "started" in l_low)
+                or "aiagentbot started" in l_low
+                or "asianrangejudassweepbot started" in l_low
+                or "[orb] starting" in l_low
+                or "starting cbot" in l_low
+                or "flowrsi" in l_low
+                or "[gotobi]" in l_low
+                or "holybot" in l_low
+            ):
                 logged_in_idx = idx
+                started_idx = idx
+            if (
+                "stopped by user" in l_low
+                or ("cbot instance [" in l_low and "stopped" in l_low)
+                or "cbot stopped itself" in l_low
+                or "[orb] stopped on" in l_low
+                or "[flowrsi] cbot stopped on" in l_low
+            ):
+                stopped_idx = idx
+
+        # Check if cBot instance was stopped and not subsequently restarted
+        if stopped_idx != -1 and started_idx <= stopped_idx:
+            return {
+                "name": name,
+                "status": status,
+                "healthy": False,
+                "stuck": True,
+                "reason": f"cBot instance stopped inside container ('{lines[stopped_idx]}')"
+            }
 
         if all_retry_idx != -1 and logged_in_idx < all_retry_idx:
             return {
@@ -186,7 +217,7 @@ class DockerManager:
         # Check for persistent repeated login failure loop in recent lines without any healthy indicator
         recent_lines = lines[-15:]
         has_errors = any("connection error:" in l.lower() or "login failed" in l.lower() for l in recent_lines)
-        has_healthy = any("logged in" in l.lower() or "cbot instance [" in l.lower() or "executing market order" in l.lower() or "reported position" in l.lower() or "flowrsi" in l.lower() or "[gotobi]" in l.lower() or "holybot" in l.lower() for l in recent_lines)
+        has_healthy = any("logged in" in l.lower() or ("cbot instance [" in l.lower() and "started" in l.lower()) or "executing market order" in l.lower() or "reported position" in l.lower() or "flowrsi" in l.lower() or "[gotobi]" in l.lower() or "holybot" in l.lower() for l in recent_lines)
         if has_errors and not has_healthy and all_retry_idx != -1:
             return {
                 "name": name,

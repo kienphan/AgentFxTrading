@@ -95,14 +95,41 @@ def sync_trades_to_db(trades):
     conn = get_db_connection()
     try:
         pids = [int(t["pid"]) for t in trades if t.get("pid")]
-        cur = conn.execute("SELECT ctrader_id FROM positions WHERE ctrader_id = ANY(%s)", (pids,))
-        existing_pids = set(r[0] for r in cur.fetchall())
+        cur = conn.execute("SELECT ctrader_id, status, id FROM positions WHERE ctrader_id = ANY(%s)", (pids,))
+        existing_rows = {r[0]: {"status": r[1], "id": r[2]} for r in cur.fetchall()}
 
         inserted_trades = []
+        updated_trades = []
         for t in trades:
             pid = int(t["pid"])
-            if pid in existing_pids:
+            # Case A: Position already in DB
+            if pid in existing_rows:
+                row_info = existing_rows[pid]
+                if row_info["status"] == "open":
+                    exit_price = float(t.get("closePrice", 0))
+                    exit_time = t.get("closeTime") + "+00"
+                    pnl = float(t.get("net", 0))
+                    conn.execute("""
+                        UPDATE positions
+                        SET status = 'closed',
+                            exit_price = %(exit_price)s,
+                            exit_time = %(exit_time)s,
+                            pnl = %(pnl)s,
+                            close_reason = %(close_reason)s
+                        WHERE id = %(id)s
+                    """, {
+                        "id": row_info["id"],
+                        "exit_price": exit_price,
+                        "exit_time": exit_time,
+                        "pnl": pnl,
+                        "close_reason": "Manual close on cTrader",
+                    })
+                    updated_trades.append({"id": row_info["id"], "pid": pid, "pnl": pnl})
+                    logger.info(f"Reconciled open position #{row_info['id']} | PID {pid} -> CLOSED | PnL: ${pnl}")
                 continue
+
+            label = t.get("label", "")
+            is_manual = not label
 
             vol_lots = float(t.get("vol", 1)) / 100.0 if float(t.get("vol", 1)) >= 100 else (float(t.get("vol", 1)) * 0.01 if float(t.get("vol", 1)) == 1 else float(t.get("vol", 0.01)))
             # Standard lot conversion: 1 unit Gold = 0.01 lots
@@ -112,7 +139,7 @@ def sync_trades_to_db(trades):
                 vol_lots = 0.05
 
             record = {
-                "bot_id": "manual",
+                "bot_id": "manual" if is_manual else label,
                 "symbol": t.get("sym", "XAUUSD"),
                 "side": t.get("type", "Buy"),
                 "volume": vol_lots,
@@ -129,7 +156,7 @@ def sync_trades_to_db(trades):
                 "ctrader_id": pid,
                 "sl_price": None,
                 "tp_price": None,
-                "close_reason": "Manual close on cTrader",
+                "close_reason": "Manual close on cTrader" if is_manual else "Closed on cTrader (recovered)",
                 "initial_volume": vol_lots,
             }
 
@@ -145,12 +172,12 @@ def sync_trades_to_db(trades):
                 ) RETURNING id
             """, record)
             row_id = cur.fetchone()[0]
-            existing_pids.add(pid)
+            existing_rows[pid] = {"status": "closed", "id": row_id}
             inserted_trades.append({**record, "id": row_id})
             logger.info(f"Inserted manual trade row #{row_id} | PID {pid} | {record['symbol']} {record['side']} PnL: ${record['pnl']}")
 
         conn.commit()
-        return len(inserted_trades), inserted_trades
+        return len(inserted_trades) + len(updated_trades), inserted_trades + updated_trades
     finally:
         conn.close()
 
