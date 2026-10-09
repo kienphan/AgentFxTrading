@@ -112,18 +112,12 @@ def sync_trades_to_db(trades):
                     conn.execute("""
                         UPDATE positions
                         SET status = 'closed',
-                            exit_price = %(exit_price)s,
-                            exit_time = %(exit_time)s,
-                            pnl = %(pnl)s,
-                            close_reason = %(close_reason)s
-                        WHERE id = %(id)s
-                    """, {
-                        "id": row_info["id"],
-                        "exit_price": exit_price,
-                        "exit_time": exit_time,
-                        "pnl": pnl,
-                        "close_reason": "Manual close on cTrader",
-                    })
+                            exit_price = ?,
+                            exit_time = ?,
+                            pnl = ?,
+                            close_reason = ?
+                        WHERE id = ?
+                    """, (exit_price, exit_time, pnl, "Manual close on cTrader", row_info["id"]))
                     updated_trades.append({"id": row_info["id"], "pid": pid, "pnl": pnl})
                     logger.info(f"Reconciled open position #{row_info['id']} | PID {pid} -> CLOSED | PnL: ${pnl}")
                 continue
@@ -166,11 +160,17 @@ def sync_trades_to_db(trades):
                     entry_time, exit_time, exit_price, pnl, status, account_id,
                     created_at, ctrader_id, sl_price, tp_price, close_reason, initial_volume
                 ) VALUES (
-                    %(bot_id)s, %(symbol)s, %(side)s, %(volume)s, %(entry_price)s, %(sl_pips)s, %(tp_pips)s,
-                    %(entry_time)s, %(exit_time)s, %(exit_price)s, %(pnl)s, %(status)s, %(account_id)s,
-                    %(created_at)s, %(ctrader_id)s, %(sl_price)s, %(tp_price)s, %(close_reason)s, %(initial_volume)s
+                    ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?
                 ) RETURNING id
-            """, record)
+            """, (
+                record["bot_id"], record["symbol"], record["side"], record["volume"], record["entry_price"],
+                record["sl_pips"], record["tp_pips"], record["entry_time"], record["exit_time"],
+                record["exit_price"], record["pnl"], record["status"], record["account_id"],
+                record["created_at"], record["ctrader_id"], record["sl_price"], record["tp_price"],
+                record["close_reason"], record["initial_volume"]
+            ))
             row_id = cur.fetchone()[0]
             existing_rows[pid] = {"status": "closed", "id": row_id}
             inserted_trades.append({**record, "id": row_id})
