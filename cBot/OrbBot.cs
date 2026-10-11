@@ -12,11 +12,6 @@
 //
 // The "previous session's OR" regime (the bias this bot exists to test):
 //
-//   PrevOrFilterEnabled  The previous session's OR sits ENTIRELY on the wrong side of today's:
-//                          LONG : prevOR_low  > todayOR_high  (today opened below yesterday) -> skip
-//                          SHORT: prevOR_high < todayOR_low   (today opened above yesterday) -> skip
-//                        Only the SIGNAL is rejected, not the session: the opposite direction can
-//                        still trade, because both ORs are already fixed for the day.
 //   PrevOrSlEnabled      Anchor the stop at the opposite boundary of the previous session's OR
 //                        (LONG -> prevOR_low, SHORT -> prevOR_high). Falls back to StopMode when
 //                        that level is missing or on the wrong side of the entry.
@@ -27,12 +22,9 @@
 //                        reference in place, because the market was simply shut.
 //
 // What the rules cost was measured on XAUUSD M15 (2023-01 -> 2026-08, 927 sessions, spread $0.20,
-// NY-open OR): the previous-OR FILTER has no edge — breakout direction does not persist from one
-// session to the next (50.5% agreement against a 50.0% coin flip, z = +0.33), and the filter alone
-// left total R unchanged. The previous-OR STOP does cut drawdown roughly in half (-46R -> -17R) but
-// also cuts return, and the comparison flips sign with the stop floor. Both switches therefore
-// default to OFF, exactly as in the Python reference; see research/orb_prevday/SUMMARY.md.
-//
+// NY-open OR): the previous-OR STOP does cut drawdown roughly in half (-46R -> -17R) but
+// also cuts return, and the comparison flips sign with the stop floor. The switch therefore
+// defaults to OFF, exactly as in the Python reference; see research/orb_prevday/SUMMARY.md.
 // Two guardrails that analysis showed are not optional:
 //
 //   MinSlPips   The previous-OR stop can land a few cents from the entry when the ranges barely
@@ -136,18 +128,8 @@ namespace cAlgo.Robots
         public double BufferPips { get; set; }
 
         // ---- Previous session's opening range (regime / bias) ---------------------------------
-        [Parameter("Prev-Day OR Gap Filter", Group = "Prev-Day OR", DefaultValue = false)]
-        public bool PrevDayOrFilterEnabled { get; set; }
-
         [Parameter("Prev-Day OR Stop", Group = "Prev-Day OR", DefaultValue = false)]
         public bool PrevDayOrSlEnabled { get; set; }
-
-        // Bias from previous day's close vs previous day's OR:
-        // Long only if prev close > prev OR high, Short only if prev close < prev OR low.
-        // Otherwise neutral -> no trade today.
-        [Parameter("Prev-Day Close vs OR Bias", Group = "Prev-Day OR", DefaultValue = false)]
-        public bool PrevDayCloseBiasEnabled { get; set; }
-
         // Daily ATR multiplier for DailyAtr stop mode (e.g. 1.0 = 1x yesterday's Daily ATR)
         [Parameter("Daily ATR Multiplier", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Step = 0.05)]
         public double DailyAtrMultiplier { get; set; }
@@ -280,9 +262,6 @@ namespace cAlgo.Robots
         private double _prevOrLow = double.MaxValue;
         private bool _prevOrFresh;
         private DateTime _prevOrDate = DateTime.MinValue;
-        private readonly HashSet<string> _prevOrBlockLogged = new HashSet<string>();
-        private double _prevDayClose = double.NaN;
-        private Bar _lastClosedBar;
         private Bars _dailyBars;
 
         // ---- Execution -----------------------------------------------------------------------
@@ -309,14 +288,12 @@ namespace cAlgo.Robots
             Print($"[ORB] Starting '{BotId}' on {SymbolName} ({TimeFrame}) | OR {OpeningRangeMinutes}m from " +
                   $"{SessionOpenHourWinterUtc:00}:{SessionOpenMinute:00} UTC (winter), EOD flatten " +
                   $"{EodFlattenHourWinterUtc:00}:{EodFlattenMinute:00} UTC | dir {Direction} | " +
-                  $"stop {StopMode} (min {MinSlPips:F0} pips) | PrevOR[filter=" +
-                  $"{(PrevDayOrFilterEnabled ? "on" : "off")} sl={(PrevDayOrSlEnabled ? "on" : "off")}] | " +
+                  $"stop {StopMode} (min {MinSlPips:F0} pips) | PrevOR[sl=" +
+                  $"{(PrevDayOrSlEnabled ? "on" : "off")}] | " +
                   $"risk {RiskPerTradePercent:F2}%/trade");
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
-            if (_dailyBars != null && _dailyBars.Count >= 2)
-                _prevDayClose = _dailyBars.ClosePrices.Last(1);
             SendAccountSync();
             Evaluate();
         }
@@ -334,7 +311,6 @@ namespace cAlgo.Robots
             var closed = Bars.Last(1);
             _lastTickAt = Server.Time;      // a bar closed, so a quote did arrive
             RollOverSessionIfNeeded(closed.OpenTime);
-            _lastClosedBar = closed;
             CollectOrBar(closed);
             EvaluateBreakout(closed);
         }
@@ -430,7 +406,6 @@ namespace cAlgo.Robots
             _tradesFired = 0;
             _blockedAfterStop = false;
             _eodFlattened = false;
-            _prevOrBlockLogged.Clear();
 
             if (ShowLogs) Print($"[ORB] New session {date:yyyy-MM-dd} | " + PrevOrDescription());
         }
@@ -456,7 +431,7 @@ namespace cAlgo.Robots
             {
                 if (_prevOrFresh)
                     Print($"[ORB] Prev-OR dropped | session {_sessionDate:yyyy-MM-dd} opening range under " +
-                          $"{MinOrWidthPips:F0} pips -> the D-1 gate and stop are off for the new session");
+                          $"{MinOrWidthPips:F0} pips -> the D-1 stop is off for the new session");
                 _prevOrFresh = false;
                 return;
             }
@@ -465,20 +440,13 @@ namespace cAlgo.Robots
             _prevOrLow = _orLow;
             _prevOrDate = _sessionDate;
             _prevOrFresh = true;
-            var dBars = _dailyBars ?? MarketData.GetBars(TimeFrame.Daily);
-            if (dBars != null && dBars.Count >= 2)
-                _prevDayClose = dBars.ClosePrices.Last(1);
-            else if (_lastClosedBar != null)
-                _prevDayClose = _lastClosedBar.Close;
-            else if (Bars.Count >= 2)
-                _prevDayClose = Bars.ClosePrices.Last(1);
             if (ShowLogs)
                 Print($"[ORB] Prev-OR captured | session {_prevOrDate:yyyy-MM-dd} " +
-                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}], prevClose={_prevDayClose:F5}");
+                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}]");
         }
 
         private string PrevOrDescription() => _prevOrFresh
-            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}] (prevClose {(!double.IsNaN(_prevDayClose) ? _prevDayClose.ToString("F5") : "none")})"
+            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}]"
             : "prevOR none";
 
         /// <summary>Extends today's range with a closed bar inside the window, then judges the
@@ -554,21 +522,6 @@ namespace cAlgo.Robots
         private bool PrevOrReady => _prevOrFresh && _prevOrHigh > double.MinValue && _prevOrLow < double.MaxValue;
 
         /// <summary>
-        /// True when the previous session's range sits entirely on the wrong side of today's in the
-        /// direction of the breakout — the market opened away from the trade:
-        ///   LONG : prevOR_low  > todayOR_high  (today is below yesterday)
-        ///   SHORT: prevOR_high &lt; todayOR_low   (today is above yesterday)
-        /// Missing D-1 data never blocks; that keeps the first session of a window and a cold start
-        /// behaving like the plain ORB instead of silently refusing to trade.
-        /// </summary>
-        private bool PrevDayOrBlocks(TradeType side)
-        {
-            if (!PrevDayOrFilterEnabled) return false;
-            if (!PrevOrReady || !_orValid) return false;
-            return side == TradeType.Buy ? _prevOrLow > _orHigh : _prevOrHigh < _orLow;
-        }
-
-        /// <summary>
         /// The stop anchored at the opposite boundary of the previous session's range, or null when
         /// the switch is off, the levels are missing, or the level is on the wrong side of the
         /// entry — in which case the caller falls back to StopMode.
@@ -582,34 +535,6 @@ namespace cAlgo.Robots
             return reference;
         }
 
-        /// <summary>
-        /// Checks whether the trade direction is allowed under PrevDayCloseBias:
-        /// If prevDayClose > prevOrHigh -> LongOnly
-        /// If prevDayClose < prevOrLow -> ShortOnly
-        /// Otherwise (closed inside prevOR) -> Neutral (neither side allowed).
-        /// </summary>
-        private bool PassesPrevDayCloseBias(TradeType side)
-        {
-            if (!PrevDayCloseBiasEnabled) return true;
-            if (!PrevOrReady || double.IsNaN(_prevDayClose)) return true; // cold start / no data -> pass through
-
-            bool isLong = side == TradeType.Buy;
-            if (isLong && _prevDayClose <= _prevOrHigh)
-            {
-                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
-                if (ShowLogs && _prevOrBlockLogged.Add(key))
-                    Print($"[ORB] Prev-Day Close Bias blocked Buy: prevClose {_prevDayClose:F5} <= prevOR high {_prevOrHigh:F5}");
-                return false;
-            }
-            if (!isLong && _prevDayClose >= _prevOrLow)
-            {
-                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
-                if (ShowLogs && _prevOrBlockLogged.Add(key))
-                    Print($"[ORB] Prev-Day Close Bias blocked Sell: prevClose {_prevDayClose:F5} >= prevOR low {_prevOrLow:F5}");
-                return false;
-            }
-            return true;
-        }
 
         private double GetYesterdayDailyAtrPips()
         {
@@ -667,21 +592,6 @@ namespace cAlgo.Robots
             bool allowShort = Direction != OrbDirection.LongOnly;
 
             if (!((longConfirm && allowLong) || (shortConfirm && allowShort))) return;
-            if (longConfirm && allowLong && !PassesPrevDayCloseBias(TradeType.Buy)) return;
-            if (shortConfirm && allowShort && !PassesPrevDayCloseBias(TradeType.Sell)) return;
-
-            // Structural gate first: it depends only on levels already fixed for the day, so a
-            // rejected direction costs nothing and the other direction stays available.
-            if (longConfirm && allowLong && PrevDayOrBlocks(TradeType.Buy))
-            {
-                RejectPrevDayOrGap(TradeType.Buy, closed.Close);
-                return;
-            }
-            if (shortConfirm && allowShort && PrevDayOrBlocks(TradeType.Sell))
-            {
-                RejectPrevDayOrGap(TradeType.Sell, closed.Close);
-                return;
-            }
 
             if (!PassesAtrFilter(closed, longConfirm && allowLong, shortConfirm && allowShort)) return;
             if (!PassesBreakoutDistance(closed, longConfirm && allowLong, shortConfirm && allowShort)) return;
@@ -698,19 +608,6 @@ namespace cAlgo.Robots
             if (longConfirm && allowLong) TryOpen(TradeType.Buy, closed.Close);
             else if (shortConfirm && allowShort) TryOpen(TradeType.Sell, closed.Close);
         }
-
-        private void RejectPrevDayOrGap(TradeType side, double close)
-        {
-            bool isLong = side == TradeType.Buy;
-            double reference = isLong ? _prevOrLow : _prevOrHigh;
-            double todayBound = isLong ? _orHigh : _orLow;
-            string key = $"{side}-{_prevOrDate:yyyy-MM-dd}";
-            if (ShowLogs && _prevOrBlockLogged.Add(key))
-                Print($"[ORB] Prev-OR gap filter rejected {side} | prevOR {(isLong ? "low" : "high")} " +
-                      $"{reference:F5} {(isLong ? ">" : "<")} today OR {(isLong ? "high" : "low")} " +
-                      $"{todayBound:F5} | close {close:F5} — still armed");
-        }
-
         #endregion
 
         #region Breakout quality filters
@@ -1207,7 +1104,6 @@ namespace cAlgo.Robots
                         prev_or_high = PrevOrReady ? Math.Round(_prevOrHigh, Symbol.Digits) : (double?)null,
                         prev_or_low = PrevOrReady ? Math.Round(_prevOrLow, Symbol.Digits) : (double?)null,
                         prev_or_date = PrevOrReady ? _prevOrDate.ToString("yyyy-MM-dd") : null,
-                        prev_or_filter = PrevDayOrFilterEnabled,
                         prev_or_stop = PrevDayOrSlEnabled,
                         spread = Math.Round((Symbol.Ask - Symbol.Bid) / Symbol.PipSize, 1)
                     }),
