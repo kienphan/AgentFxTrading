@@ -288,9 +288,9 @@ namespace cAlgo.Robots
             Print($"[ORB] Starting '{BotId}' on {SymbolName} ({TimeFrame}) | OR {OpeningRangeMinutes}m from " +
                   $"{SessionOpenHourWinterUtc:00}:{SessionOpenMinute:00} UTC (winter), EOD flatten " +
                   $"{EodFlattenHourWinterUtc:00}:{EodFlattenMinute:00} UTC | dir {Direction} | " +
-                  $"stop {StopMode} (min {MinSlPips:F0} pips) | PrevOR[sl=" +
-                  $"{(PrevDayOrSlEnabled ? "on" : "off")}] | " +
-                  $"risk {RiskPerTradePercent:F2}%/trade");
+                  $"stop {StopMode} (min {MinSlPips:F0} pips) | BE {BreakevenTriggerR:F1}R (partial {PartialCloseRatio:F2}) | " +
+                  $"TP {(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : (TakeProfitPips > 0 ? $"{TakeProfitPips:F0}p" : "none"))} | " +
+                  $"PrevOR[sl={(PrevDayOrSlEnabled ? "on" : "off")}] | risk {RiskPerTradePercent:F2}%/trade");
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
@@ -779,6 +779,7 @@ namespace cAlgo.Robots
                 Print($"[ORB] Opened #{result.Position.Id} {side} {volume / Symbol.LotSize:F2} lots " +
                       $"{SymbolName} @ {result.Position.EntryPrice} | stop {slPips:F1} pips " +
                       (rawSlPips < slPips ? $"(clamped up from {rawSlPips:F1}) " : "") +
+                      (tpPips.HasValue ? $"| tp {tpPips.Value:F1} pips ({(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : "")}) " : "") +
                       $"| risk ${dollarRisk:F2} | OR [{_orLow:F5} - {_orHigh:F5}]" +
                       (prevOrStop.HasValue ? $" | stop at prevOR {prevOrStop.Value:F5}" : ""));
 
