@@ -908,31 +908,43 @@ namespace cAlgo.Robots
                     _breakevenApplied.Add(pos.Id);
                     Print($"[ORB] Breakeven applied on #{pos.Id} {pos.TradeType} | SL moved to {beSlPrice:F5} (+{BreakevenOffsetPips:F1} pips past entry)");
 
-                    // Partial Close at Breakeven
+                    // Partial Close at Breakeven (chỉ khi vị thế đủ lớn, nếu đang ở minLot thì giữ nguyên toàn bộ)
                     if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
                     {
-                        double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
-                        double remainingVolume = pos.VolumeInUnits - volumeToClose;
-                        if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
+                        if (pos.VolumeInUnits <= Symbol.VolumeInUnitsMin)
                         {
-                            double pnlBeforePartial = pos.NetProfit;
-                            var partialRes = pos.ModifyVolume(remainingVolume);
-                            if (partialRes != null && partialRes.IsSuccessful)
+                            if (ShowLogs)
+                                Print($"[ORB] Partial close skipped on #{pos.Id}: volume ({pos.VolumeInUnits / Symbol.LotSize:F2} lots) is at minimum lot ({Symbol.VolumeInUnitsMin / Symbol.LotSize:F2}). Holding full position at BE.");
+                        }
+                        else
+                        {
+                            double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio, RoundingMode.Down);
+                            double remainingVolume = pos.VolumeInUnits - volumeToClose;
+                            if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
                             {
-                                double realizedPnl = pnlBeforePartial - pos.NetProfit;
-                                try
+                                double pnlBeforePartial = pos.NetProfit;
+                                var partialRes = pos.ModifyVolume(remainingVolume);
+                                if (partialRes != null && partialRes.IsSuccessful)
                                 {
-                                    var partialHist = History.LastOrDefault(h => h.PositionId == pos.Id);
-                                    if (partialHist != null) realizedPnl = partialHist.NetProfit;
-                                }
-                                catch { }
+                                    double realizedPnl = pnlBeforePartial - pos.NetProfit;
+                                    try
+                                    {
+                                        var partialHist = History.LastOrDefault(h => h.PositionId == pos.Id);
+                                        if (partialHist != null) realizedPnl = partialHist.NetProfit;
+                                    }
+                                    catch { }
 
-                                Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
-                                ReportPartialClose(pos, volumeToClose / Symbol.LotSize, remainingVolume / Symbol.LotSize, realizedPnl, "Partial close at Breakeven");
+                                    Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
+                                    ReportPartialClose(pos, volumeToClose / Symbol.LotSize, remainingVolume / Symbol.LotSize, realizedPnl, "Partial close at Breakeven");
+                                }
+                                else
+                                {
+                                    Print($"[ORB] Partial Close failed on #{pos.Id}: {partialRes?.Error}");
+                                }
                             }
-                            else
+                            else if (ShowLogs)
                             {
-                                Print($"[ORB] Partial Close failed on #{pos.Id}: {partialRes?.Error}");
+                                Print($"[ORB] Partial close skipped on #{pos.Id}: volume ({pos.VolumeInUnits / Symbol.LotSize:F2} lots) cannot be split into valid sub-lots (close={volumeToClose / Symbol.LotSize:F2}, rem={remainingVolume / Symbol.LotSize:F2}, min={Symbol.VolumeInUnitsMin / Symbol.LotSize:F2}). Holding full position at BE.");
                             }
                         }
                     }
