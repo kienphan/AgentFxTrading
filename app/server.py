@@ -2649,6 +2649,8 @@ async def report_position(request: dict):
             except Exception:
                 pass
             return {"status": "success", "message": f"Account {account_id} synced", "account_id": account_id}
+        elif action in ("tick", "telemetry"):
+            return await handle_telemetry_tick(request)
         
         elif action == "partial_close":
             # cTrader's Positions.Closed does not fire on a partial close, so the bot

@@ -270,6 +270,8 @@ namespace cAlgo.Robots
         private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
 
         private DateTime _lastTickAt = DateTime.MinValue;
+        private DateTime _lastTickTelemetryTime = DateTime.MinValue;
+        private DateTime _lastBarHandled = DateTime.MinValue;
         private volatile bool _isStopped;
 
         // uvicorn closes an idle keep-alive connection after 5 s; retire pooled ones before it does
@@ -296,11 +298,13 @@ namespace cAlgo.Robots
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
             SendAccountSync();
             Evaluate();
+            SendLiveTickTelemetry(force: true);
         }
         protected override void OnTick()
         {
             _lastTickAt = Server.Time;
             Evaluate();
+            SendLiveTickTelemetry();
         }
 
         protected override void OnBarClosed()
@@ -309,10 +313,12 @@ namespace cAlgo.Robots
             // logic runs here. OnTick only carries the end-of-day flatten, which must not wait for
             // another bar to close.
             var closed = Bars.Last(1);
+            _lastBarHandled = closed.OpenTime;
             _lastTickAt = Server.Time;      // a bar closed, so a quote did arrive
             RollOverSessionIfNeeded(closed.OpenTime);
             CollectOrBar(closed);
             EvaluateBreakout(closed);
+            SendLiveTickTelemetry(force: true);
         }
         protected override void OnStop()
         {
@@ -882,7 +888,15 @@ namespace cAlgo.Robots
             foreach (var pos in Positions.FindAll(BotId, SymbolName))
             {
                 if (_breakevenApplied.Contains(pos.Id)) continue;
-                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
+                {
+                    if (pos.StopLoss.HasValue)
+                    {
+                        initialSlPips = Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize;
+                        _initialSlPips[pos.Id] = initialSlPips;
+                    }
+                    else continue;
+                }
 
                 double profitPips = pos.Pips;
                 double triggerPips = initialSlPips * BreakevenTriggerR;
@@ -908,6 +922,7 @@ namespace cAlgo.Robots
                     _breakevenApplied.Add(pos.Id);
                     Print($"[ORB] Breakeven applied on #{pos.Id} {pos.TradeType} | SL moved to {beSlPrice:F5} (+{BreakevenOffsetPips:F1} pips past entry)");
 
+                    SendLiveTickTelemetry(force: true);
                     // Partial Close at Breakeven (chỉ khi vị thế đủ lớn, nếu đang ở minLot thì giữ nguyên toàn bộ)
                     if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
                     {
@@ -958,7 +973,15 @@ namespace cAlgo.Robots
 
             foreach (var pos in Positions.FindAll(BotId, SymbolName))
             {
-                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
+                {
+                    if (pos.StopLoss.HasValue)
+                    {
+                        initialSlPips = Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize;
+                        _initialSlPips[pos.Id] = initialSlPips;
+                    }
+                    else continue;
+                }
 
                 double profitPips = pos.Pips;
                 double triggerPips = initialSlPips * TrailTriggerR;
@@ -981,6 +1004,7 @@ namespace cAlgo.Robots
                     {
                         Print($"[ORB] Trailing Stop updated on #{pos.Id} {pos.TradeType} | SL moved to {newSlPrice:F5} (current price {currentPrice:F5}, trail {trailDistancePips:F1} pips)");
                     }
+                        SendLiveTickTelemetry(force: true);
                 }
             }
         }
@@ -1028,6 +1052,7 @@ namespace cAlgo.Robots
                     Print($"[ORB] Closed #{position.Id} {position.TradeType} {position.Comment}: {reason}, " +
                           $"net {position.NetProfit:F2}");
                     ReportPositionClosed(position, position.NetProfit, reason, exitPrice, position.Pips, initialSl);
+                    SendLiveTickTelemetry(force: true);
                 }
                 catch (Exception ex)
                 {
@@ -1135,6 +1160,7 @@ namespace cAlgo.Robots
                     string error = await PostReportAsync(url, json);
                     if (error != null) Print($"[ORB] Failed to report open #{position.Id}: {error}");
                 });
+                SendLiveTickTelemetry(force: true);
             }
             catch (Exception ex)
             {
@@ -1221,6 +1247,7 @@ namespace cAlgo.Robots
                     else if (ShowLogs)
                         Print($"[ORB] Reported partial close #{position.Id} {closedLots:F2} lots, pnl {realizedPnl:F2}");
                 });
+                    SendLiveTickTelemetry(force: true);
             }
             catch (Exception ex)
             {
@@ -1233,10 +1260,11 @@ namespace cAlgo.Robots
         private static readonly int[] ReportRetryDelaysSeconds = { 2, 4, 8, 16 };
 
         /// <summary>Posts a report, retrying on failure. Returns null once delivered, else the last error.</summary>
-        private async Task<string> PostReportAsync(string url, string json)
+        private async Task<string> PostReportAsync(string url, string json, bool retry = true)
         {
             string lastError = null;
-            for (int attempt = 0; attempt <= ReportRetryDelaysSeconds.Length; attempt++)
+            int maxAttempts = retry ? ReportRetryDelaysSeconds.Length : 0;
+            for (int attempt = 0; attempt <= maxAttempts; attempt++)
             {
                 if (attempt > 0)
                     await Task.Delay(TimeSpan.FromSeconds(ReportRetryDelaysSeconds[attempt - 1]));
@@ -1247,6 +1275,8 @@ namespace cAlgo.Robots
                     {
                         if (response.IsSuccessStatusCode) return null;
                         lastError = $"HTTP {(int)response.StatusCode}";
+                        if (!retry || ((int)response.StatusCode < 500 && (int)response.StatusCode != 408))
+                            return lastError;
                     }
                 }
                 catch (Exception ex)
@@ -1254,7 +1284,91 @@ namespace cAlgo.Robots
                     lastError = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
                 }
             }
-            return $"{lastError} (after {ReportRetryDelaysSeconds.Length + 1} attempts)";
+            return $"{lastError} (after {maxAttempts + 1} attempts)";
+        }
+
+        private double? PnlAtLevel(Position pos, double? level)
+        {
+            if (pos == null || !level.HasValue || level.Value <= 0 || Symbol.PipSize <= 0) return null;
+            double pips = (pos.TradeType == TradeType.Buy
+                ? level.Value - pos.EntryPrice
+                : pos.EntryPrice - level.Value) / Symbol.PipSize;
+            return Math.Round(pips * Symbol.PipValue * pos.VolumeInUnits - Math.Abs(pos.Commissions) * 2.0 + pos.Swap, 2);
+        }
+
+        private string TickUrl()
+        {
+            if (!string.IsNullOrWhiteSpace(ApiUrl))
+            {
+                var baseUri = ApiUrl.Trim().TrimEnd('/');
+                if (baseUri.EndsWith("/trade"))
+                    baseUri = baseUri.Substring(0, baseUri.Length - "/trade".Length);
+                return $"{baseUri}/api/tick";
+            }
+            return "http://127.0.0.1:8000/api/tick";
+        }
+
+        private void SendLiveTickTelemetry(bool force = false)
+        {
+            if (RunningMode != RunningMode.RealTime) return;
+            var positions = Positions.FindAll(BotId, SymbolName);
+            double interval = positions.Length > 0 ? 5.0 : 15.0;
+            if (!force && (DateTime.UtcNow - _lastTickTelemetryTime).TotalSeconds < interval) return;
+            _lastTickTelemetryTime = DateTime.UtcNow;
+
+            try
+            {
+                var posList = new List<object>();
+                Position firstPos = positions.Length > 0 ? positions[0] : null;
+                foreach (var p in positions)
+                {
+                    posList.Add(new
+                    {
+                        id = p.Id,
+                        symbol = p.SymbolName,
+                        side = p.TradeType.ToString(),
+                        volume = p.VolumeInUnits / Symbol.LotSize,
+                        entry_price = p.EntryPrice,
+                        current_price = p.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask,
+                        net_profit = Math.Round(p.NetProfit, 2),
+                        pips = Math.Round(p.Pips, 1),
+                        sl_price = p.StopLoss,
+                        tp_price = p.TakeProfit,
+                        sl_pnl = PnlAtLevel(p, p.StopLoss),
+                        tp_pnl = PnlAtLevel(p, p.TakeProfit),
+                        label = p.Label
+                    });
+                }
+
+                var telemetry = new
+                {
+                    bot_id = BotId,
+                    account_number = Account.Number.ToString(CultureInfo.InvariantCulture),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = AccountLabel,
+                    symbol = SymbolName,
+                    bid = Symbol.Bid,
+                    ask = Symbol.Ask,
+                    equity = Account.Equity,
+                    balance = Account.Balance,
+                    pnl = firstPos != null ? (double?)Math.Round(firstPos.NetProfit, 2) : null,
+                    pips = firstPos != null ? (double?)Math.Round(firstPos.Pips, 1) : null,
+                    sl_price = firstPos?.StopLoss,
+                    tp_price = firstPos?.TakeProfit,
+                    sl_pnl = firstPos != null ? PnlAtLevel(firstPos, firstPos.StopLoss) : null,
+                    tp_pnl = firstPos != null ? PnlAtLevel(firstPos, firstPos.TakeProfit) : null,
+                    positions = posList,
+                    last_bar = _lastBarHandled == DateTime.MinValue ? null : _lastBarHandled.ToString("yyyy-MM-ddTHH:mm:ss")
+                };
+
+                string json = JsonSerializer.Serialize(telemetry);
+                string url = TickUrl();
+                Task.Run(async () => await PostReportAsync(url, json, retry: false));
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[ORB] SendLiveTickTelemetry error: {ex.Message}");
+            }
         }
 
         #endregion
