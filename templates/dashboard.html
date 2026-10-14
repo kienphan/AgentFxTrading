@@ -234,7 +234,7 @@
                                 </thead>
                                 <tbody id="positions-table">
                                     {% for pos in positions %}
-                                    <tr data-bot="{{ pos.bot_id }}">
+                                    <tr data-bot="{{ pos.bot_id }}" data-id="{{ pos.id }}" data-ctrader-id="{{ pos.ctrader_id or '' }}">
                                         <td class="col-account account-cell">
                                             {% if pos.account_type == 'live' %}
                                             <span class="badge badge--live"><span class="badge-dot"></span>LIVE</span>
@@ -2097,6 +2097,8 @@
                     // symbol (cbot-xauusd and cbot-xauusd-judas), so match the bot as well.
                     const rowBot = tr.dataset.bot;
                     if (tick.bot_id && rowBot && rowBot !== tick.bot_id) return;
+                    if (tick.ctrader_id && tr.dataset.ctraderId && String(tr.dataset.ctraderId) !== String(tick.ctrader_id)) return;
+                    if (rowBot === 'manual' && tick.ctrader_id && (!tr.dataset.ctraderId || String(tr.dataset.ctraderId) !== String(tick.ctrader_id))) return;
                     // The bot sends its own broker P&L sample with the tick when a position is
                     // open, so the chip stays live without the server rebuilding positions.
                     if (tick.pnl !== undefined && tick.pnl !== null) {
@@ -2188,7 +2190,7 @@
                     const priceAge = (typeof p.price_age_seconds === 'number') ? `<span class="td-dim" title="price from the bot's last snapshot"> ·${Math.floor(p.price_age_seconds/60)}m</span>` : '';
                     const pnlCell = pnlCellHtml(p.unrealized_pnl, p.unrealized_pnl_pips);
                     
-                    return `<tr data-bot="${escapeHtml(p.bot_id||'')}">
+                    return `<tr data-bot="${escapeHtml(p.bot_id||'')}" data-id="${p.id}" data-ctrader-id="${p.ctrader_id||''}">
                         <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${escapeHtml(p.account_label||'')}</span></td>
                         <td>${botBadge(p.bot_id)}</td>
                         <td class="td-mono font-bold td-symbol-chartable" data-symbol="${escapeHtml(p.symbol)}" title="Xem chart TradingView realtime">${escapeHtml(p.symbol)} <i data-lucide="line-chart" class="symbol-chart-icon"></i></td>
