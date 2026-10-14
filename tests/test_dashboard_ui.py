@@ -302,3 +302,20 @@ def test_tradingview_chart_components_in_dashboard():
     main_close = html.find("</main>")
     charts_view = html.find('id="view-charts"')
     assert charts_view != -1 and charts_view < main_close
+
+
+def test_dashboard_js_syntax_clean():
+    """Rendered dashboard JavaScript must parse with 0 syntax errors."""
+    import shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        return
+    html = client.get("/demo/dashboard").text
+    script = html[html.rindex("<script>") + len("<script>"):html.rindex("</script>")]
+    res = subprocess.run([node, "-e", """
+const vm = require("vm");
+const fs = require("fs");
+const code = fs.readFileSync(0, "utf-8");
+new vm.Script(code, { filename: "dashboard.js" });
+"""], input=script, text=True, capture_output=True)
+    assert res.returncode == 0, f"Dashboard JS syntax error:\n{res.stderr}"
