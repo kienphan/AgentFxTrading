@@ -52,7 +52,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <button id="topbar-chart-btn" class="topbar-action-btn" title="TradingView Realtime Chart" onclick="openTradingViewModal()">
+            <button id="topbar-chart-btn" class="topbar-action-btn" title="TradingView Realtime Chart" data-target="view-charts">
                 <i data-lucide="line-chart"></i>
                 <span class="topbar-action-label">Charts</span>
             </button>
@@ -83,7 +83,7 @@
                 <span class="nav-icon"><i data-lucide="bar-chart-2"></i></span>
                 <span class="nav-label">Overview</span>
             </a>
-            <a href="#" class="nav-item" id="nav-item-charts" title="TradingView Charts" onclick="openTradingViewModal(); return false;">
+            <a href="#" class="nav-item" id="nav-item-charts" data-target="view-charts" title="TradingView Live Charts">
                 <span class="nav-icon"><i data-lucide="line-chart"></i></span>
                 <span class="nav-label">Live Charts</span>
             </a>
@@ -997,85 +997,88 @@
         </div>
     </div>
 
-    <!-- TradingView Realtime Chart Modal -->
-    <div id="tv-chart-modal" class="tv-chart-backdrop" aria-hidden="true">
-        <div class="tv-chart-dialog" role="dialog" aria-modal="true" aria-labelledby="tv-modal-symbol">
-            <!-- Modal Header -->
-            <div class="tv-chart-header">
-                <div class="tv-header-left">
-                    <div class="tv-symbol-title-group">
-                        <i data-lucide="line-chart" class="text-cyan" style="width:18px; height:18px;"></i>
-                        <span id="tv-modal-symbol" class="tv-symbol-title font-mono font-bold">XAUUSD</span>
-                        <span id="tv-modal-desc" class="tv-symbol-subtitle">Gold / US Dollar</span>
+            <!-- TradingView Realtime Chart View Section -->
+            <div id="view-charts" class="view-section">
+                <div class="tv-chart-view-panel" id="tv-chart-modal">
+                    <!-- Panel Header -->
+                    <div class="tv-chart-header">
+                        <div class="tv-header-left">
+                            <button type="button" class="log-btn tv-back-btn" onclick="switchView('view-dashboard')" title="Quay lại Overview">
+                                <i data-lucide="arrow-left" style="width:13px; height:13px;"></i>
+                                <span>Overview</span>
+                            </button>
+                            <div class="tv-symbol-title-group">
+                                <i data-lucide="line-chart" class="text-cyan" style="width:18px; height:18px;"></i>
+                                <span id="tv-modal-symbol" class="tv-symbol-title font-mono font-bold">XAUUSD</span>
+                                <span id="tv-modal-desc" class="tv-symbol-subtitle">Gold / US Dollar</span>
+                            </div>
+
+                            <!-- Live Broker Ticker Strip (cTrader Execution Price) -->
+                            <div class="tv-broker-ticker-bar" id="tv-broker-ticker-bar" title="Giá realtime stream trực tiếp từ cTrader broker">
+                                <div class="tv-live-indicator">
+                                    <span class="pulse-dot"></span>
+                                    <span class="tv-feed-name">cTrader Feed</span>
+                                </div>
+                                <div class="tv-tick-field">
+                                    <span class="tv-tick-label">Bid:</span>
+                                    <span id="tv-live-bid" class="tv-tick-val font-mono text-cyan">--</span>
+                                </div>
+                                <div class="tv-tick-field">
+                                    <span class="tv-tick-label">Ask:</span>
+                                    <span id="tv-live-ask" class="tv-tick-val font-mono text-yellow">--</span>
+                                </div>
+                                <div class="tv-tick-field">
+                                    <span class="tv-tick-label">Spread:</span>
+                                    <span id="tv-live-spread" class="tv-tick-val font-mono text-muted">--</span>
+                                </div>
+                            </div>
+
+                            <!-- Active Position Chip (if open trade exists for this symbol) -->
+                            <div id="tv-active-pos-chip" class="tv-pos-chip" style="display:none;"></div>
+                        </div>
+
+                        <div class="tv-header-right">
+                            <!-- Broker Feed Selector for TradingView -->
+                            <div class="tv-ctrl-group" title="Nguồn dữ liệu Broker trên TradingView">
+                                <label for="tv-broker-select" class="td-dim font-bold" style="font-size:0.7rem; margin-right:4px;">Broker:</label>
+                                <select id="tv-broker-select" class="tv-ctrl-select" onchange="onTradingViewBrokerChange(this.value)">
+                                    <option value="PEPPERSTONE" selected>Pepperstone (cTrader)</option>
+                                    <option value="OANDA">OANDA</option>
+                                    <option value="CAPITALCOM">Capital.com</option>
+                                    <option value="FX">FX / FXCM</option>
+                                    <option value="BINANCE">Binance (Crypto)</option>
+                                </select>
+                            </div>
+
+                            <!-- Timeframe Quick Switcher -->
+                            <div class="tv-tf-group" role="group" aria-label="Timeframe">
+                                <button type="button" class="tv-tf-btn" data-tf="1" onclick="setTradingViewInterval('1')">1m</button>
+                                <button type="button" class="tv-tf-btn" data-tf="5" onclick="setTradingViewInterval('5')">5m</button>
+                                <button type="button" class="tv-tf-btn active" data-tf="15" onclick="setTradingViewInterval('15')">15m</button>
+                                <button type="button" class="tv-tf-btn" data-tf="30" onclick="setTradingViewInterval('30')">30m</button>
+                                <button type="button" class="tv-tf-btn" data-tf="60" onclick="setTradingViewInterval('60')">1h</button>
+                                <button type="button" class="tv-tf-btn" data-tf="240" onclick="setTradingViewInterval('240')">4h</button>
+                                <button type="button" class="tv-tf-btn" data-tf="D" onclick="setTradingViewInterval('D')">1D</button>
+                            </div>
+
+                            <!-- Fullscreen Toggle -->
+                            <button type="button" id="tv-btn-fullscreen" class="log-btn" onclick="toggleTradingViewFullscreen()" title="Toàn màn hình / Thu nhỏ">
+                                <i data-lucide="maximize-2" style="width:14px; height:14px;"></i>
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Live Broker Ticker Strip (cTrader Execution Price) -->
-                    <div class="tv-broker-ticker-bar" id="tv-broker-ticker-bar" title="Giá realtime stream trực tiếp từ cTrader broker">
-                        <div class="tv-live-indicator">
-                            <span class="pulse-dot"></span>
-                            <span class="tv-feed-name">cTrader Feed</span>
-                        </div>
-                        <div class="tv-tick-field">
-                            <span class="tv-tick-label">Bid:</span>
-                            <span id="tv-live-bid" class="tv-tick-val font-mono text-cyan">--</span>
-                        </div>
-                        <div class="tv-tick-field">
-                            <span class="tv-tick-label">Ask:</span>
-                            <span id="tv-live-ask" class="tv-tick-val font-mono text-yellow">--</span>
-                        </div>
-                        <div class="tv-tick-field">
-                            <span class="tv-tick-label">Spread:</span>
-                            <span id="tv-live-spread" class="tv-tick-val font-mono text-muted">--</span>
-                        </div>
+                    <!-- Quick Symbol Ribbon -->
+                    <div class="tv-symbol-ribbon" id="tv-symbol-ribbon">
+                        <!-- Rendered dynamically with 15 preset symbols + position indicator dots -->
                     </div>
 
-                    <!-- Active Position Chip (if open trade exists for this symbol) -->
-                    <div id="tv-active-pos-chip" class="tv-pos-chip" style="display:none;"></div>
+                    <!-- Chart Body -->
+                    <div class="tv-chart-body">
+                        <div id="tradingview-widget-container" class="tradingview-widget-container" style="width:100%; height:100%;"></div>
+                    </div>
                 </div>
-
-                <div class="tv-header-right">
-                    <!-- Broker Feed Selector for TradingView -->
-                    <div class="tv-ctrl-group" title="Nguồn dữ liệu Broker trên TradingView">
-                        <label for="tv-broker-select" class="td-dim font-bold" style="font-size:0.7rem; margin-right:4px;">Broker:</label>
-                        <select id="tv-broker-select" class="tv-ctrl-select" onchange="onTradingViewBrokerChange(this.value)">
-                            <option value="PEPPERSTONE" selected>Pepperstone (cTrader)</option>
-                            <option value="OANDA">OANDA</option>
-                            <option value="CAPITALCOM">Capital.com</option>
-                            <option value="FX">FX / FXCM</option>
-                            <option value="BINANCE">Binance (Crypto)</option>
-                        </select>
-                    </div>
-
-                    <!-- Timeframe Quick Switcher -->
-                    <div class="tv-tf-group" role="group" aria-label="Timeframe">
-                        <button type="button" class="tv-tf-btn" data-tf="1" onclick="setTradingViewInterval('1')">1m</button>
-                        <button type="button" class="tv-tf-btn" data-tf="5" onclick="setTradingViewInterval('5')">5m</button>
-                        <button type="button" class="tv-tf-btn active" data-tf="15" onclick="setTradingViewInterval('15')">15m</button>
-                        <button type="button" class="tv-tf-btn" data-tf="30" onclick="setTradingViewInterval('30')">30m</button>
-                        <button type="button" class="tv-tf-btn" data-tf="60" onclick="setTradingViewInterval('60')">1h</button>
-                        <button type="button" class="tv-tf-btn" data-tf="240" onclick="setTradingViewInterval('240')">4h</button>
-                        <button type="button" class="tv-tf-btn" data-tf="D" onclick="setTradingViewInterval('D')">1D</button>
-                    </div>
-
-                    <!-- Fullscreen & Close -->
-                    <button type="button" id="tv-btn-fullscreen" class="log-btn" onclick="toggleTradingViewFullscreen()" title="Toàn màn hình / Thu nhỏ">
-                        <i data-lucide="maximize-2" style="width:14px; height:14px;"></i>
-                    </button>
-                    <button type="button" id="tv-btn-close" class="tv-modal-close" onclick="closeTradingViewModal()" title="Đóng (Esc)">&times;</button>
-                </div>
             </div>
-
-            <!-- Quick Symbol Ribbon -->
-            <div class="tv-symbol-ribbon" id="tv-symbol-ribbon">
-                <!-- Rendered dynamically with 15 preset symbols + position indicator dots -->
-            </div>
-
-            <!-- Chart Body -->
-            <div class="tv-chart-body">
-                <div id="tradingview-widget-container" class="tradingview-widget-container" style="width:100%; height:100%;"></div>
-            </div>
-        </div>
-    </div>
         </main>
     </div>
 
@@ -1126,7 +1129,8 @@
                     fetchRiskLimits();
                 } else if (targetId === 'view-backtest') {
                     btOnShow();
-                }
+                } else if (targetId === 'view-charts') {
+                    if (typeof onShowTradingViewChart === 'function') onShowTradingViewChart();
             }
         }
 
@@ -1142,6 +1146,13 @@
             topbarDockerBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 switchView('view-docker');
+            });
+        }
+        const topbarChartBtn = document.getElementById('topbar-chart-btn');
+        if (topbarChartBtn) {
+            topbarChartBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                switchView('view-charts');
             });
         }
         // --- Docker Bot Management ---
@@ -2123,7 +2134,7 @@
         }
         function updateDashboard(summary,positions){
             latestDashboardPositions = positions || [];
-            if (typeof isTvModalOpen !== 'undefined' && isTvModalOpen) {
+            if (typeof isTvViewActive === 'function' && isTvViewActive()) {
                 if (typeof renderTvSymbolRibbon === 'function') renderTvSymbolRibbon();
                 if (typeof updateTvModalPositionStrip === 'function') updateTvModalPositionStrip();
             }
@@ -3736,14 +3747,27 @@
             container.innerHTML = `<iframe src="${iframeUrl}" style="width:100%;height:100%;border:none;" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
         }
 
-        function openTradingViewModal(symbol) {
-            const sym = cleanTradingViewSymbol(symbol || currentTvSymbol || 'XAUUSD');
-            currentTvSymbol = sym;
-            tvLastBid = null;
-            tvLastAsk = null;
+        function isTvViewActive() {
+            const el = document.getElementById('view-charts');
+            return el && el.classList.contains('active');
+        }
 
-            const modal = document.getElementById('tv-chart-modal');
-            if (!modal) return;
+        function onLiveTickForTradingView(tick) {
+            if (!tick || !tick.symbol) return;
+            const symClean = cleanTradingViewSymbol(tick.symbol);
+            cachedMarketPrices[symClean] = {
+                bid: tick.bid,
+                ask: tick.ask,
+                time: new Date().toISOString()
+            };
+            if (isTvViewActive() && symClean === cleanTradingViewSymbol(currentTvSymbol)) {
+                updateTvModalLivePrices(tick.bid, tick.ask, tick.pnl, tick.pips, tick.levels);
+            }
+        }
+
+        function updateTvViewComponents() {
+            const sym = cleanTradingViewSymbol(currentTvSymbol);
+            currentTvSymbol = sym;
 
             // Sync Header elements
             const symEl = document.getElementById('tv-modal-symbol');
@@ -3786,29 +3810,34 @@
 
             updateTvModalPositionStrip();
             renderTvSymbolRibbon();
-            loadTradingViewChart(sym, currentTvInterval, currentTvBroker);
-
-            modal.classList.add('active');
-            modal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('tv-modal-open');
-            isTvModalOpen = true;
-
             if (window.lucide) { lucide.createIcons(); }
         }
 
-        function closeTradingViewModal() {
-            const modal = document.getElementById('tv-chart-modal');
-            if (modal) {
-                modal.classList.remove('active');
-                modal.setAttribute('aria-hidden', 'true');
+        function openTradingViewChart(symbol) {
+            if (symbol) {
+                currentTvSymbol = cleanTradingViewSymbol(symbol);
             }
-            document.body.classList.remove('tv-modal-open');
-            isTvModalOpen = false;
+            switchView('view-charts');
+            updateTvViewComponents();
+            loadTradingViewChart(currentTvSymbol, currentTvInterval, currentTvBroker);
+        }
+
+        function openTradingViewModal(symbol) {
+            openTradingViewChart(symbol);
+        }
+
+        function closeTradingViewModal() {
+            switchView('view-dashboard');
+        }
+
+        function onShowTradingViewChart() {
+            updateTvViewComponents();
+            loadTradingViewChart(currentTvSymbol, currentTvInterval, currentTvBroker);
         }
 
         function switchTradingViewSymbol(symbol) {
             currentTvSymbol = cleanTradingViewSymbol(symbol);
-            openTradingViewModal(currentTvSymbol);
+            openTradingViewChart(currentTvSymbol);
         }
 
         function setTradingViewInterval(interval) {
@@ -3826,10 +3855,10 @@
         }
 
         function toggleTradingViewFullscreen() {
-            const dialog = document.querySelector('.tv-chart-dialog');
+            const panel = document.querySelector('.tv-chart-view-panel');
             const btn = document.getElementById('tv-btn-fullscreen');
-            if (!dialog || !btn) return;
-            const isFull = dialog.classList.toggle('is-fullscreen');
+            if (!panel || !btn) return;
+            const isFull = panel.classList.toggle('is-fullscreen');
             btn.innerHTML = `<i data-lucide="${isFull ? 'minimize-2' : 'maximize-2'}" style="width:14px; height:14px;"></i>`;
             if (window.lucide) { lucide.createIcons(); }
         }
@@ -3840,21 +3869,17 @@
             if (trigger && !e.target.closest('button, select, input, a')) {
                 const sym = trigger.dataset.symbol || trigger.textContent.trim();
                 if (sym && sym !== '–' && sym !== 'ALL' && sym !== 'GLOBAL') {
-                    openTradingViewModal(sym);
+                    openTradingViewChart(sym);
                 }
             }
         });
 
-        // Close on backdrop click & ESC key
-        window.addEventListener('click', (e) => {
-            const tvModal = document.getElementById('tv-chart-modal');
-            if (tvModal && e.target === tvModal) {
-                closeTradingViewModal();
-            }
-        });
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && isTvModalOpen) {
-                closeTradingViewModal();
+            if (e.key === 'Escape') {
+                const panel = document.querySelector('.tv-chart-view-panel.is-fullscreen');
+                if (panel) {
+                    toggleTradingViewFullscreen();
+                }
             }
         });
         if (window.lucide) { lucide.createIcons(); }

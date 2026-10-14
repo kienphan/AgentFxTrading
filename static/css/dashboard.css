@@ -1944,48 +1944,50 @@ body.bt-modal-open{overflow:hidden}
     text-decoration: underline;
 }
 
-/* --- TradingView Realtime Chart Modal --- */
-.tv-chart-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 100000;
+/* --- TradingView Realtime Chart View Section --- */
+#view-charts.view-section {
     display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(0, 0, 0, 0.78);
-    backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%;
+    height: calc(100vh - 116px);
+    min-height: 580px;
+    padding-bottom: 8px;
 }
-.tv-chart-backdrop.active {
-    display: flex;
-    opacity: 1;
-}
-body.tv-modal-open {
-    overflow: hidden;
-}
-.tv-chart-dialog {
+#view-charts.view-section.active {
     display: flex;
     flex-direction: column;
+}
+.tv-chart-view-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
     width: 100%;
-    max-width: 1540px;
-    height: 92vh;
-    max-height: 960px;
+    height: 100%;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
     overflow: hidden;
+    box-shadow: var(--shadow);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.tv-chart-dialog.is-fullscreen {
-    max-width: 100vw;
-    width: 100vw;
-    height: 100vh;
-    max-height: 100vh;
+.tv-chart-view-panel.is-fullscreen {
+    position: fixed;
+    top: 50px;
+    left: 220px;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
     border-radius: 0;
     border: none;
+}
+body.sidebar-collapsed .tv-chart-view-panel.is-fullscreen {
+    left: 60px;
+}
+.tv-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    padding: 4px 9px;
 }
 .tv-chart-header {
     display: flex;
@@ -2205,16 +2207,17 @@ body.tv-modal-open {
     background: #131722;
     overflow: hidden;
 }
-@media (max-width: 768px) {
-    .tv-chart-backdrop {
-        padding: 0;
+@media (max-width: 1023px) {
+    #view-charts.view-section {
+        height: calc(100vh - 140px);
+        min-height: 480px;
+        padding-bottom: 56px;
     }
-    .tv-chart-dialog {
-        max-width: none;
-        height: 100%;
-        max-height: none;
-        border-radius: 0;
-        border: none;
+    .tv-chart-view-panel.is-fullscreen {
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 56px;
     }
     .tv-broker-ticker-bar {
         display: none;

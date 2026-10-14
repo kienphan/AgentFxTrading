@@ -297,3 +297,8 @@ def test_tradingview_chart_components_in_dashboard():
     assert 'resolveTradingViewTicker' in html
     assert 'td-symbol-chartable' in html
     assert 's3.tradingview.com/tv.js' in html
+    assert 'id="view-charts"' in html
+    assert 'data-target="view-charts"' in html
+    main_close = html.find("</main>")
+    charts_view = html.find('id="view-charts"')
+    assert charts_view != -1 and charts_view < main_close
