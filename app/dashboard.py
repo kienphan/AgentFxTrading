@@ -1271,12 +1271,22 @@ def api_close_position(position_id: int):
         return _error(404, "Position not found or already closed")
     if pos.get("ctrader_id") is None:
         return _error(409, "This position has no cTrader id recorded; close it in cTrader")
-    cfg = _config_for_bot(pm, pos["bot_id"])
-    if cfg:
-        status = docker_manager.get_container_status(cfg["name"]).get("status")
-        if status != "running":
-            return _error(409, f"Container {cfg['name']} is {status}; close the position in cTrader")
-    cmd = command_queue.enqueue(pos["bot_id"], "close_position", int(pos["ctrader_id"]))
+    target_bot = pos["bot_id"]
+    if target_bot == "manual":
+        configs = pm.get_cbot_configs()
+        running = [cfg for cfg in configs if docker_manager.get_container_status(cfg["name"]).get("status") == "running"]
+        matching = next((cfg for cfg in running if pos.get("symbol", "").lower() in cfg["name"].lower()), None)
+        chosen = matching or (running[0] if running else None)
+        if not chosen:
+            return _error(409, "No active cBot container running to execute close; close it in cTrader")
+        target_bot = bot_id_for_config(chosen)
+    else:
+        cfg = _config_for_bot(pm, pos["bot_id"])
+        if cfg:
+            status = docker_manager.get_container_status(cfg["name"]).get("status")
+            if status != "running":
+                return _error(409, f"Container {cfg['name']} is {status}; close the position in cTrader")
+    cmd = command_queue.enqueue(target_bot, "close_position", int(pos["ctrader_id"]))
     logger.warning(f"[MANUAL] Close requested from the dashboard: {pos['side']} {pos['symbol']} "
                    f"{pos['volume']}L #{pos['ctrader_id']} of {pos['bot_id']} (command {cmd.id[:8]})")
     return {"success": True, "command_id": cmd.id, "status": cmd.status}

@@ -2513,7 +2513,26 @@ async def handle_telemetry_tick(request: dict):
         # position the dashboard row shows (one per bot).
         levels = tick_levels(request)
         positions = request.get("positions")
-        if pnl is None and isinstance(positions, list) and positions and isinstance(positions[0], dict):
+        if isinstance(positions, list) and positions:
+            for pos_item in positions:
+                if isinstance(pos_item, dict):
+                    pos_bot = pos_item.get("bot_id", bot_id)
+                    pos_sym = pos_item.get("symbol", symbol)
+                    item_pnl = float(pos_item["net_profit"]) if pos_item.get("net_profit") is not None else None
+                    item_pips = float(pos_item["pips"]) if pos_item.get("pips") is not None else None
+                    item_levels = tick_levels(pos_item)
+                    if item_pnl is not None:
+                        portfolio_manager.update_position_metrics(
+                            pos_bot, item_pnl, item_pips or 0.0, account_id=account_id, levels=item_levels
+                        )
+                    if pos_bot == "manual":
+                        try:
+                            await broadcast_tick(
+                                symbol=pos_sym, bid=bid, ask=ask, account_id=account_id,
+                                bot_id="manual", pnl=item_pnl, pips=item_pips, levels=item_levels
+                            )
+                        except Exception:
+                            pass
             first = positions[0]
             try:
                 pnl = float(first["net_profit"]) if first.get("net_profit") is not None else None
