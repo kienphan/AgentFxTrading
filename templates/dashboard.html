@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/js/backtest.js?v=20260927_btpage" defer></script>
+    <script src="https://s3.tradingview.com/tv.js"></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body class="app-shell">
@@ -51,6 +52,10 @@
                     {% endfor %}
                 </select>
             </div>
+            <button id="topbar-chart-btn" class="topbar-action-btn" title="TradingView Realtime Chart" onclick="openTradingViewModal()">
+                <i data-lucide="line-chart"></i>
+                <span class="topbar-action-label">Charts</span>
+            </button>
             <button id="topbar-docker-btn" class="topbar-action-btn" title="Docker Bot Management" data-target="view-docker">
                 <i data-lucide="bot"></i>
                 <span class="topbar-action-label">Bots</span>
@@ -77,6 +82,10 @@
             <a href="#" class="nav-item active" data-target="view-dashboard" title="Overview">
                 <span class="nav-icon"><i data-lucide="bar-chart-2"></i></span>
                 <span class="nav-label">Overview</span>
+            </a>
+            <a href="#" class="nav-item" id="nav-item-charts" title="TradingView Charts" onclick="openTradingViewModal(); return false;">
+                <span class="nav-icon"><i data-lucide="line-chart"></i></span>
+                <span class="nav-label">Live Charts</span>
             </a>
             <a href="#" class="nav-item" data-target="view-leaderboard" title="Leaderboard">
                 <span class="nav-icon"><i data-lucide="trophy"></i></span>
@@ -270,7 +279,7 @@
                                                 <span class="bot-id-text" title="{{ pos.bot_id }}">{{ pos.bot_id }}</span>
                                             </div>
                                         </td>
-                                        <td class="td-mono font-bold">{{ pos.symbol }}</td>
+                                        <td class="td-mono font-bold td-symbol-chartable" data-symbol="{{ pos.symbol }}" title="Xem chart TradingView realtime">{{ pos.symbol }} <i data-lucide="line-chart" class="symbol-chart-icon"></i></td>
                                         <td>
                                             {% if pos.side == 'BUY' %}
                                             <span class="side-chip side-chip--buy">BUY</span>
@@ -387,7 +396,7 @@
                                                 <span class="bot-id-text" title="{{ trade.bot_id }}">{{ trade.bot_id }}</span>
                                             </div>
                                         </td>
-                                        <td class="td-mono font-bold">{{ trade.symbol }}</td>
+                                        <td class="td-mono font-bold td-symbol-chartable" data-symbol="{{ trade.symbol }}" title="Xem chart TradingView realtime">{{ trade.symbol }} <i data-lucide="line-chart" class="symbol-chart-icon"></i></td>
                                         <td>
                                             {% if trade.side == 'BUY' %}
                                             <span class="side-chip side-chip--buy">BUY</span>
@@ -984,6 +993,86 @@
                     <h4 style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Quantitative Order Flow Report</h4>
                     <div id="modal-markdown" class="analysis-markdown-content"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TradingView Realtime Chart Modal -->
+    <div id="tv-chart-modal" class="tv-chart-backdrop" aria-hidden="true">
+        <div class="tv-chart-dialog" role="dialog" aria-modal="true" aria-labelledby="tv-modal-symbol">
+            <!-- Modal Header -->
+            <div class="tv-chart-header">
+                <div class="tv-header-left">
+                    <div class="tv-symbol-title-group">
+                        <i data-lucide="line-chart" class="text-cyan" style="width:18px; height:18px;"></i>
+                        <span id="tv-modal-symbol" class="tv-symbol-title font-mono font-bold">XAUUSD</span>
+                        <span id="tv-modal-desc" class="tv-symbol-subtitle">Gold / US Dollar</span>
+                    </div>
+
+                    <!-- Live Broker Ticker Strip (cTrader Execution Price) -->
+                    <div class="tv-broker-ticker-bar" id="tv-broker-ticker-bar" title="Giá realtime stream trực tiếp từ cTrader broker">
+                        <div class="tv-live-indicator">
+                            <span class="pulse-dot"></span>
+                            <span class="tv-feed-name">cTrader Feed</span>
+                        </div>
+                        <div class="tv-tick-field">
+                            <span class="tv-tick-label">Bid:</span>
+                            <span id="tv-live-bid" class="tv-tick-val font-mono text-cyan">--</span>
+                        </div>
+                        <div class="tv-tick-field">
+                            <span class="tv-tick-label">Ask:</span>
+                            <span id="tv-live-ask" class="tv-tick-val font-mono text-yellow">--</span>
+                        </div>
+                        <div class="tv-tick-field">
+                            <span class="tv-tick-label">Spread:</span>
+                            <span id="tv-live-spread" class="tv-tick-val font-mono text-muted">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Active Position Chip (if open trade exists for this symbol) -->
+                    <div id="tv-active-pos-chip" class="tv-pos-chip" style="display:none;"></div>
+                </div>
+
+                <div class="tv-header-right">
+                    <!-- Broker Feed Selector for TradingView -->
+                    <div class="tv-ctrl-group" title="Nguồn dữ liệu Broker trên TradingView">
+                        <label for="tv-broker-select" class="td-dim font-bold" style="font-size:0.7rem; margin-right:4px;">Broker:</label>
+                        <select id="tv-broker-select" class="tv-ctrl-select" onchange="onTradingViewBrokerChange(this.value)">
+                            <option value="PEPPERSTONE" selected>Pepperstone (cTrader)</option>
+                            <option value="OANDA">OANDA</option>
+                            <option value="CAPITALCOM">Capital.com</option>
+                            <option value="FX">FX / FXCM</option>
+                            <option value="BINANCE">Binance (Crypto)</option>
+                        </select>
+                    </div>
+
+                    <!-- Timeframe Quick Switcher -->
+                    <div class="tv-tf-group" role="group" aria-label="Timeframe">
+                        <button type="button" class="tv-tf-btn" data-tf="1" onclick="setTradingViewInterval('1')">1m</button>
+                        <button type="button" class="tv-tf-btn" data-tf="5" onclick="setTradingViewInterval('5')">5m</button>
+                        <button type="button" class="tv-tf-btn active" data-tf="15" onclick="setTradingViewInterval('15')">15m</button>
+                        <button type="button" class="tv-tf-btn" data-tf="30" onclick="setTradingViewInterval('30')">30m</button>
+                        <button type="button" class="tv-tf-btn" data-tf="60" onclick="setTradingViewInterval('60')">1h</button>
+                        <button type="button" class="tv-tf-btn" data-tf="240" onclick="setTradingViewInterval('240')">4h</button>
+                        <button type="button" class="tv-tf-btn" data-tf="D" onclick="setTradingViewInterval('D')">1D</button>
+                    </div>
+
+                    <!-- Fullscreen & Close -->
+                    <button type="button" id="tv-btn-fullscreen" class="log-btn" onclick="toggleTradingViewFullscreen()" title="Toàn màn hình / Thu nhỏ">
+                        <i data-lucide="maximize-2" style="width:14px; height:14px;"></i>
+                    </button>
+                    <button type="button" id="tv-btn-close" class="tv-modal-close" onclick="closeTradingViewModal()" title="Đóng (Esc)">&times;</button>
+                </div>
+            </div>
+
+            <!-- Quick Symbol Ribbon -->
+            <div class="tv-symbol-ribbon" id="tv-symbol-ribbon">
+                <!-- Rendered dynamically with 15 preset symbols + position indicator dots -->
+            </div>
+
+            <!-- Chart Body -->
+            <div class="tv-chart-body">
+                <div id="tradingview-widget-container" class="tradingview-widget-container" style="width:100%; height:100%;"></div>
             </div>
         </div>
     </div>
@@ -1955,6 +2044,9 @@
 
         function handleLiveTick(tick) {
             if (!tick || !tick.symbol) return;
+            if (typeof onLiveTickForTradingView === 'function') {
+                onLiveTickForTradingView(tick);
+            }
             // Update matching row in positions table
             const rows = document.querySelectorAll('#positions-table tr');
             rows.forEach(tr => {
@@ -2030,6 +2122,11 @@
             }
         }
         function updateDashboard(summary,positions){
+            latestDashboardPositions = positions || [];
+            if (typeof isTvModalOpen !== 'undefined' && isTvModalOpen) {
+                if (typeof renderTvSymbolRibbon === 'function') renderTvSymbolRibbon();
+                if (typeof updateTvModalPositionStrip === 'function') updateTvModalPositionStrip();
+            }
             document.getElementById('open-positions').textContent=summary.open_positions;
             const dEl=document.getElementById('daily-pnl');dEl.textContent=formatMoney(summary.daily_pnl);dEl.className=`kpi-value ${pnlClass(summary.daily_pnl)}`;
             const tEl=document.getElementById('total-pnl');tEl.textContent=formatMoney(summary.total_pnl);tEl.className=`kpi-value ${pnlClass(summary.total_pnl)}`;
@@ -2068,7 +2165,7 @@
                     return `<tr data-bot="${escapeHtml(p.bot_id||'')}">
                         <td class="col-account account-cell ${ah}">${accountBadge(p.account_type)}<span class="account-name">${escapeHtml(p.account_label||'')}</span></td>
                         <td>${botBadge(p.bot_id)}</td>
-                        <td class="td-mono font-bold">${escapeHtml(p.symbol)}</td>
+                        <td class="td-mono font-bold td-symbol-chartable" data-symbol="${escapeHtml(p.symbol)}" title="Xem chart TradingView realtime">${escapeHtml(p.symbol)} <i data-lucide="line-chart" class="symbol-chart-icon"></i></td>
                         <td>${sideChip(p.side)}</td>
                         <td>${escapeHtml(p.volume)}L</td>
                         <td class="td-mono">${escapeHtml(p.entry_price)}</td>
@@ -2083,6 +2180,7 @@
             if (typeof updateExposureChart === 'function') {
                 updateExposureChart(positions);
             }
+            if (window.lucide) { lucide.createIcons(); }
         }
         // --- Manual close (Close button in Active Positions) ---
         // The dashboard queues the close; the position's bot picks it up within ~2 s, closes it at
@@ -2193,7 +2291,7 @@
                 tb.innerHTML=history.map(t=>`<tr>
                     <td class="col-account account-cell ${ah}">${accountBadge(t.account_type)}<span class="account-name">${escapeHtml(t.account_label||'')}</span></td>
                     <td>${botBadge(t.bot_id)}</td>
-                    <td class="td-mono font-bold">${escapeHtml(t.symbol)}</td>
+                    <td class="td-mono font-bold td-symbol-chartable" data-symbol="${escapeHtml(t.symbol)}" title="Xem chart TradingView realtime">${escapeHtml(t.symbol)} <i data-lucide="line-chart" class="symbol-chart-icon"></i></td>
                     <td>${sideChip(t.side)}</td>
                     <td>${escapeHtml(t.volume)}L</td>
                     <td class="td-mono">${escapeHtml(t.entry_price)}</td>
@@ -2204,6 +2302,7 @@
                     <td class="td-times">${tradeTimesHtml(t)}</td>
                 </tr>`).join('');
             }
+            if (window.lucide) { lucide.createIcons(); }
         }
         document.getElementById('history-prev')?.addEventListener('click', () => {
             if (historyPage > 1) { historyPage -= 1; fetchTradeHistory(); }
@@ -2566,7 +2665,7 @@
                             <span class="bot-id-text">${escapeHtml(bot.bot_id)}</span>
                         </div>
                     </td>
-                    <td><span class="symbols-chip">${escapeHtml(bot.symbol_display)}</span></td>
+                    <td><span class="symbols-chip td-symbol-chartable" data-symbol="${escapeHtml(bot.symbol_display)}" title="Xem chart TradingView realtime">${escapeHtml(bot.symbol_display)}</span></td>
                     <td><span class="tier-badge tier-badge--${bot.tier_badge}">${bot.tier_label}</span></td>`;
         }
 
@@ -2951,7 +3050,7 @@
                                 <span class="ai-action-badge ai-action--${escapeHtml(action)}" style="font-size: 0.85rem; padding: 3px 10px;">
                                     ${actionIcon} ${escapeHtml(action)}
                                 </span>
-                                <span class="ai-feed-symbol">${escapeHtml(sym)}</span>
+                                <span class="ai-feed-symbol td-symbol-chartable" data-symbol="${escapeHtml(sym)}" title="Xem chart TradingView realtime">${escapeHtml(sym)}</span>
                                 <span class="ai-pill-tag">${escapeHtml(tf)}</span>
                             </div>
                             <div class="ai-feed-meta">
@@ -3390,6 +3489,372 @@
             const modal = document.getElementById('news-assessment-modal');
             if (modal && e.target === modal) {
                 closeNewsModal();
+            }
+        });
+
+        // ── TradingView Realtime Chart System ──────────────────────────────────
+        const TV_PRESET_SYMBOLS = [
+            "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY",
+            "USDCAD", "AUDUSD", "AUDJPY", "US30", "USTEC", "DE40", "UK100", "US500", "BTCUSD", "ETHUSD"
+        ];
+        const TV_SYMBOL_DESCRIPTIONS = {
+            "XAUUSD": "Gold Spot / US Dollar",
+            "EURUSD": "Euro / US Dollar",
+            "GBPUSD": "British Pound / US Dollar",
+            "USDJPY": "US Dollar / Japanese Yen",
+            "GBPJPY": "British Pound / Japanese Yen",
+            "EURJPY": "Euro / Japanese Yen",
+            "USDCAD": "US Dollar / Canadian Dollar",
+            "AUDUSD": "Australian Dollar / US Dollar",
+            "AUDJPY": "Australian Dollar / Japanese Yen",
+            "US30": "Dow Jones Industrial Average (US30)",
+            "USTEC": "Nasdaq 100 Index (USTEC / NAS100)",
+            "DE40": "Germany 40 Index (DAX)",
+            "UK100": "FTSE 100 Index",
+            "US500": "S&P 500 Index (SPX500)",
+            "BTCUSD": "Bitcoin / US Dollar",
+            "ETHUSD": "Ethereum / US Dollar"
+        };
+        const TV_BROKER_MAP = {
+            "PEPPERSTONE": {
+                "XAUUSD": "PEPPERSTONE:XAUUSD", "EURUSD": "PEPPERSTONE:EURUSD", "GBPUSD": "PEPPERSTONE:GBPUSD",
+                "USDJPY": "PEPPERSTONE:USDJPY", "GBPJPY": "PEPPERSTONE:GBPJPY", "EURJPY": "PEPPERSTONE:EURJPY",
+                "USDCAD": "PEPPERSTONE:USDCAD", "AUDUSD": "PEPPERSTONE:AUDUSD", "AUDJPY": "PEPPERSTONE:AUDJPY",
+                "US30": "PEPPERSTONE:US30", "USTEC": "PEPPERSTONE:NAS100", "DE40": "PEPPERSTONE:GER40",
+                "UK100": "PEPPERSTONE:UK100", "US500": "PEPPERSTONE:US500",
+                "BTCUSD": "BINANCE:BTCUSDT", "ETHUSD": "BINANCE:ETHUSDT"
+            },
+            "OANDA": {
+                "XAUUSD": "OANDA:XAUUSD", "EURUSD": "OANDA:EURUSD", "GBPUSD": "OANDA:GBPUSD",
+                "USDJPY": "OANDA:USDJPY", "GBPJPY": "OANDA:GBPJPY", "EURJPY": "OANDA:EURJPY",
+                "USDCAD": "OANDA:USDCAD", "AUDUSD": "OANDA:AUDUSD", "AUDJPY": "OANDA:AUDJPY",
+                "US30": "OANDA:US30USD", "USTEC": "OANDA:NAS100USD", "DE40": "OANDA:DE40EUR",
+                "UK100": "OANDA:UK100GBP", "US500": "OANDA:SPX500USD",
+                "BTCUSD": "BITSTAMP:BTCUSD", "ETHUSD": "BITSTAMP:ETHUSD"
+            },
+            "CAPITALCOM": {
+                "XAUUSD": "CAPITALCOM:GOLD", "EURUSD": "CAPITALCOM:EURUSD", "GBPUSD": "CAPITALCOM:GBPUSD",
+                "USDJPY": "CAPITALCOM:USDJPY", "GBPJPY": "CAPITALCOM:GBPJPY", "EURJPY": "CAPITALCOM:EURJPY",
+                "USDCAD": "CAPITALCOM:USDCAD", "AUDUSD": "CAPITALCOM:AUDUSD", "AUDJPY": "CAPITALCOM:AUDJPY",
+                "US30": "CAPITALCOM:US30", "USTEC": "CAPITALCOM:US100", "DE40": "CAPITALCOM:DE40",
+                "UK100": "CAPITALCOM:UK100", "US500": "CAPITALCOM:US500",
+                "BTCUSD": "CAPITALCOM:BTCUSD", "ETHUSD": "CAPITALCOM:ETHUSD"
+            },
+            "FX": {
+                "XAUUSD": "FX:XAUUSD", "EURUSD": "FX:EURUSD", "GBPUSD": "FX:GBPUSD",
+                "USDJPY": "FX:USDJPY", "GBPJPY": "FX:GBPJPY", "EURJPY": "FX:EURJPY",
+                "USDCAD": "FX:USDCAD", "AUDUSD": "FX:AUDUSD", "AUDJPY": "FX:AUDJPY",
+                "US30": "TVC:DJI", "USTEC": "NASDAQ:NDX", "DE40": "TVC:DE40",
+                "UK100": "TVC:UK100", "US500": "TVC:SPX",
+                "BTCUSD": "COINBASE:BTCUSD", "ETHUSD": "COINBASE:ETHUSD"
+            },
+            "BINANCE": {
+                "BTCUSD": "BINANCE:BTCUSDT", "ETHUSD": "BINANCE:ETHUSDT",
+                "EURUSD": "BINANCE:EURUSDT", "GBPUSD": "BINANCE:GBPUSDT",
+                "XAUUSD": "BINANCE:PAXGUSDT", "USDJPY": "PEPPERSTONE:USDJPY",
+                "US30": "PEPPERSTONE:US30", "USTEC": "PEPPERSTONE:NAS100"
+            }
+        };
+
+        let currentTvSymbol = 'XAUUSD';
+        let currentTvInterval = '15';
+        let currentTvBroker = (function(){ try { return localStorage.getItem('preferred_tv_broker') || 'PEPPERSTONE'; } catch(e){ return 'PEPPERSTONE'; } })();
+        let isTvModalOpen = false;
+        let cachedMarketPrices = {};
+        let tvLastBid = null;
+        let tvLastAsk = null;
+
+        function cleanTradingViewSymbol(sym) {
+            if (!sym) return 'XAUUSD';
+            let s = String(sym).toUpperCase().trim();
+            s = s.replace(/[\._#].*$/, '');
+            if (s.endsWith('M') && s.length === 7) s = s.slice(0, 6);
+            if (s === 'GOLD') return 'XAUUSD';
+            if (s === 'NAS100' || s === 'US100') return 'USTEC';
+            if (s === 'GER40' || s === 'DAX' || s === 'DAX40') return 'DE40';
+            if (s === 'FTSE' || s === 'FTSE100') return 'UK100';
+            if (s === 'SPX' || s === 'SPX500' || s === 'SP500') return 'US500';
+            return s;
+        }
+
+        function getPipMultiplier(sym) {
+            const s = cleanTradingViewSymbol(sym);
+            if (s.includes('JPY')) return 100;
+            if (s.includes('XAU') || s.includes('GOLD')) return 10;
+            if (['US30', 'USTEC', 'DE40', 'UK100', 'US500', 'BTCUSD', 'ETHUSD'].includes(s)) return 1;
+            return 10000;
+        }
+
+        function resolveTradingViewTicker(symbol, broker) {
+            const sym = cleanTradingViewSymbol(symbol);
+            const brk = broker || currentTvBroker || 'PEPPERSTONE';
+            const brkTable = TV_BROKER_MAP[brk] || TV_BROKER_MAP['PEPPERSTONE'];
+            if (brkTable && brkTable[sym]) return brkTable[sym];
+            if (brk === 'OANDA') return `OANDA:${sym}`;
+            if (brk === 'CAPITALCOM') return `CAPITALCOM:${sym}`;
+            if (brk === 'FX') return `FX:${sym}`;
+            return `PEPPERSTONE:${sym}`;
+        }
+
+        function renderTvSymbolRibbon() {
+            const ribbon = document.getElementById('tv-symbol-ribbon');
+            if (!ribbon) return;
+            const openSymbols = new Set((latestDashboardPositions || []).map(p => cleanTradingViewSymbol(p.symbol)));
+            
+            ribbon.innerHTML = TV_PRESET_SYMBOLS.map(s => {
+                const isActive = s === currentTvSymbol;
+                const hasPos = openSymbols.has(s);
+                let dotClass = 'dot-pos';
+                if (hasPos) {
+                    const pos = (latestDashboardPositions || []).find(p => cleanTradingViewSymbol(p.symbol) === s);
+                    if (pos && (pos.side || '').toUpperCase() === 'SELL') dotClass += ' dot-pos--sell';
+                }
+                return `<button type="button" class="tv-ribbon-chip ${isActive ? 'active' : ''}" onclick="switchTradingViewSymbol('${s}')" title="${TV_SYMBOL_DESCRIPTIONS[s] || s}">
+                    ${hasPos ? `<span class="${dotClass}" title="Active position open"></span>` : ''}
+                    <span>${s}</span>
+                </button>`;
+            }).join('');
+        }
+
+        function updateTvModalPositionStrip() {
+            const chip = document.getElementById('tv-active-pos-chip');
+            if (!chip) return;
+            const sym = cleanTradingViewSymbol(currentTvSymbol);
+            const pos = (latestDashboardPositions || []).find(p => cleanTradingViewSymbol(p.symbol) === sym);
+            if (!pos) {
+                chip.style.display = 'none';
+                chip.innerHTML = '';
+                return;
+            }
+            const isBuy = (pos.side || '').toUpperCase() === 'BUY';
+            const pnlNum = typeof pos.unrealized_pnl === 'number' ? pos.unrealized_pnl : parseFloat(pos.unrealized_pnl);
+            const pnlPips = typeof pos.unrealized_pnl_pips === 'number' ? pos.unrealized_pnl_pips : parseFloat(pos.unrealized_pnl_pips);
+            const hasPnl = !isNaN(pnlNum);
+            const pnlSign = pnlNum > 0 ? '+' : '';
+            const pnlColor = pnlNum >= 0 ? 'var(--profit)' : 'var(--loss)';
+
+            chip.className = `tv-pos-chip ${isBuy ? 'tv-pos-chip--buy' : 'tv-pos-chip--sell'}`;
+            chip.style.display = 'inline-flex';
+            chip.innerHTML = `
+                <span>${isBuy ? 'BUY' : 'SELL'} ${escapeHtml(pos.volume)}L @ ${escapeHtml(pos.entry_price)}</span>
+                ${hasPnl ? `<span style="color:${pnlColor}; font-weight:700;">${pnlSign}$${pnlNum.toFixed(2)} (${pnlSign}${(pnlPips||0).toFixed(1)}p)</span>` : ''}
+                ${pos.sl_price ? `<span class="td-dim" style="font-size:0.68rem;">SL:${escapeHtml(pos.sl_price)}</span>` : ''}
+                ${pos.tp_price ? `<span class="td-dim" style="font-size:0.68rem;">TP:${escapeHtml(pos.tp_price)}</span>` : ''}
+            `;
+        }
+
+        function updateTvModalLivePrices(bid, ask, pnl, pips, levels) {
+            const bidEl = document.getElementById('tv-live-bid');
+            const askEl = document.getElementById('tv-live-ask');
+            const spreadEl = document.getElementById('tv-live-spread');
+            if (!bidEl || !askEl || !spreadEl) return;
+
+            const nBid = parseFloat(bid);
+            const nAsk = parseFloat(ask);
+            if (!isNaN(nBid)) {
+                const oldBid = tvLastBid || nBid;
+                bidEl.textContent = nBid;
+                bidEl.classList.remove('price-flash-up', 'price-flash-down');
+                void bidEl.offsetWidth;
+                bidEl.classList.add(nBid >= oldBid ? 'price-flash-up' : 'price-flash-down');
+                tvLastBid = nBid;
+            }
+            if (!isNaN(nAsk)) {
+                const oldAsk = tvLastAsk || nAsk;
+                askEl.textContent = nAsk;
+                askEl.classList.remove('price-flash-up', 'price-flash-down');
+                void askEl.offsetWidth;
+                askEl.classList.add(nAsk >= oldAsk ? 'price-flash-up' : 'price-flash-down');
+                tvLastAsk = nAsk;
+            }
+            if (!isNaN(nBid) && !isNaN(nAsk)) {
+                const diff = Math.max(0, nAsk - nBid);
+                const mult = getPipMultiplier(currentTvSymbol);
+                const spreadPips = (diff * mult).toFixed(1);
+                const digits = currentTvSymbol.includes('JPY') ? 3 : (currentTvSymbol.includes('XAU') ? 2 : 5);
+                spreadEl.textContent = `${diff.toFixed(digits)} (${spreadPips}p)`;
+            }
+
+            if (pnl !== undefined && pnl !== null) {
+                updateTvModalPositionStrip();
+            }
+        }
+
+        function onLiveTickForTradingView(tick) {
+            if (!tick || !tick.symbol) return;
+            const symClean = cleanTradingViewSymbol(tick.symbol);
+            cachedMarketPrices[symClean] = {
+                bid: tick.bid,
+                ask: tick.ask,
+                time: new Date().toISOString()
+            };
+            if (isTvModalOpen && symClean === cleanTradingViewSymbol(currentTvSymbol)) {
+                updateTvModalLivePrices(tick.bid, tick.ask, tick.pnl, tick.pips, tick.levels);
+            }
+        }
+
+        function loadTradingViewChart(symbol, interval, broker) {
+            const container = document.getElementById('tradingview-widget-container');
+            if (!container) return;
+            const sym = cleanTradingViewSymbol(symbol);
+            const ticker = resolveTradingViewTicker(sym, broker);
+            const tf = interval || currentTvInterval || '15';
+
+            container.innerHTML = `<div id="tv_chart_inner" style="width:100%; height:100%;"></div>`;
+
+            if (window.TradingView && typeof window.TradingView.widget === 'function') {
+                try {
+                    new window.TradingView.widget({
+                        "autosize": true,
+                        "symbol": ticker,
+                        "interval": tf,
+                        "timezone": "Asia/Ho_Chi_Minh",
+                        "theme": "dark",
+                        "style": "1",
+                        "locale": "vi_VN",
+                        "toolbar_bg": "#131722",
+                        "enable_publishing": false,
+                        "allow_symbol_change": true,
+                        "container_id": "tv_chart_inner",
+                        "hide_side_toolbar": false,
+                        "withdateranges": true,
+                        "save_image": false,
+                        "details": true,
+                        "studies": [
+                            "RSI@tv-basicstudies",
+                            "MASimple@tv-basicstudies"
+                        ]
+                    });
+                    return;
+                } catch(err) {
+                    console.warn("TradingView widget init fallback to iframe:", err);
+                }
+            }
+
+            // Fallback iframe embed
+            const iframeUrl = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(ticker)}&interval=${encodeURIComponent(tf)}&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&locale=vi_VN&toolbar_bg=131722&hide_side_toolbar=0&withdateranges=1`;
+            container.innerHTML = `<iframe src="${iframeUrl}" style="width:100%;height:100%;border:none;" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
+        }
+
+        function openTradingViewModal(symbol) {
+            const sym = cleanTradingViewSymbol(symbol || currentTvSymbol || 'XAUUSD');
+            currentTvSymbol = sym;
+            tvLastBid = null;
+            tvLastAsk = null;
+
+            const modal = document.getElementById('tv-chart-modal');
+            if (!modal) return;
+
+            // Sync Header elements
+            const symEl = document.getElementById('tv-modal-symbol');
+            const descEl = document.getElementById('tv-modal-desc');
+            const brokerSelect = document.getElementById('tv-broker-select');
+            if (symEl) symEl.textContent = sym;
+            if (descEl) descEl.textContent = TV_SYMBOL_DESCRIPTIONS[sym] || `${sym} / Realtime cTrader Stream`;
+            if (brokerSelect) brokerSelect.value = currentTvBroker;
+
+            // Sync Timeframe buttons
+            document.querySelectorAll('.tv-tf-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.tf === currentTvInterval);
+            });
+
+            // Reset or populate live price strip from cache
+            const cached = cachedMarketPrices[sym];
+            if (cached && cached.bid && cached.ask) {
+                updateTvModalLivePrices(cached.bid, cached.ask);
+            } else {
+                const bidEl = document.getElementById('tv-live-bid');
+                const askEl = document.getElementById('tv-live-ask');
+                const spreadEl = document.getElementById('tv-live-spread');
+                if (bidEl) bidEl.textContent = '--';
+                if (askEl) askEl.textContent = '--';
+                if (spreadEl) spreadEl.textContent = '--';
+            }
+
+            // Fetch latest market prices via API
+            fetch(`/api/market-prices?symbol=${encodeURIComponent(sym)}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d && d.prices) {
+                        const match = d.prices[sym] || d.prices[sym.toLowerCase()] || Object.values(d.prices)[0];
+                        if (match && match.bid && match.ask) {
+                            cachedMarketPrices[sym] = match;
+                            updateTvModalLivePrices(match.bid, match.ask);
+                        }
+                    }
+                }).catch(() => {});
+
+            updateTvModalPositionStrip();
+            renderTvSymbolRibbon();
+            loadTradingViewChart(sym, currentTvInterval, currentTvBroker);
+
+            modal.classList.add('active');
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('tv-modal-open');
+            isTvModalOpen = true;
+
+            if (window.lucide) { lucide.createIcons(); }
+        }
+
+        function closeTradingViewModal() {
+            const modal = document.getElementById('tv-chart-modal');
+            if (modal) {
+                modal.classList.remove('active');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+            document.body.classList.remove('tv-modal-open');
+            isTvModalOpen = false;
+        }
+
+        function switchTradingViewSymbol(symbol) {
+            currentTvSymbol = cleanTradingViewSymbol(symbol);
+            openTradingViewModal(currentTvSymbol);
+        }
+
+        function setTradingViewInterval(interval) {
+            currentTvInterval = interval;
+            document.querySelectorAll('.tv-tf-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.tf === interval);
+            });
+            loadTradingViewChart(currentTvSymbol, currentTvInterval, currentTvBroker);
+        }
+
+        function onTradingViewBrokerChange(broker) {
+            currentTvBroker = broker;
+            try { localStorage.setItem('preferred_tv_broker', broker); } catch(e){}
+            loadTradingViewChart(currentTvSymbol, currentTvInterval, currentTvBroker);
+        }
+
+        function toggleTradingViewFullscreen() {
+            const dialog = document.querySelector('.tv-chart-dialog');
+            const btn = document.getElementById('tv-btn-fullscreen');
+            if (!dialog || !btn) return;
+            const isFull = dialog.classList.toggle('is-fullscreen');
+            btn.innerHTML = `<i data-lucide="${isFull ? 'minimize-2' : 'maximize-2'}" style="width:14px; height:14px;"></i>`;
+            if (window.lucide) { lucide.createIcons(); }
+        }
+
+        // Delegated click listener for all clickable symbol elements across views
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('.td-symbol-chartable');
+            if (trigger && !e.target.closest('button, select, input, a')) {
+                const sym = trigger.dataset.symbol || trigger.textContent.trim();
+                if (sym && sym !== '–' && sym !== 'ALL' && sym !== 'GLOBAL') {
+                    openTradingViewModal(sym);
+                }
+            }
+        });
+
+        // Close on backdrop click & ESC key
+        window.addEventListener('click', (e) => {
+            const tvModal = document.getElementById('tv-chart-modal');
+            if (tvModal && e.target === tvModal) {
+                closeTradingViewModal();
+            }
+        });
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isTvModalOpen) {
+                closeTradingViewModal();
             }
         });
         if (window.lucide) { lucide.createIcons(); }

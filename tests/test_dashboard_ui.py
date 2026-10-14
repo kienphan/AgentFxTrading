@@ -269,3 +269,31 @@ def test_bots_tab_flags_running_containers_that_do_not_poll():
     assert "(isRunning && !b.polling)" in html
     assert ">NOT POLLING</span>" in html
     assert "${statusHtml}${pausedHtml}${notPollingHtml}" in html
+
+
+def test_api_market_prices():
+    """API endpoint returns cached market prices for all or specific symbols."""
+    resp = client.get("/api/market-prices")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "prices" in data
+
+    resp_sym = client.get("/api/market-prices?symbol=XAUUSD")
+    assert resp_sym.status_code == 200
+    assert "prices" in resp_sym.json()
+
+
+def test_tradingview_chart_components_in_dashboard():
+    """TradingView modal, topbar launcher, sidebar nav, and handlers exist in HTML."""
+    html = client.get("/demo/dashboard").text
+    assert 'id="tv-chart-modal"' in html
+    assert 'id="topbar-chart-btn"' in html
+    assert 'id="nav-item-charts"' in html
+    assert 'id="tradingview-widget-container"' in html
+    assert 'id="tv-broker-select"' in html
+    assert 'id="tv-symbol-ribbon"' in html
+    assert 'openTradingViewModal' in html
+    assert 'closeTradingViewModal' in html
+    assert 'resolveTradingViewTicker' in html
+    assert 'td-symbol-chartable' in html
+    assert 's3.tradingview.com/tv.js' in html

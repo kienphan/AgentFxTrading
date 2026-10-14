@@ -1901,3 +1901,323 @@ body.bt-modal-open{overflow:hidden}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .btn-icon--spin{animation:spin 1s linear infinite;display:inline-block}
 
+/* --- Clickable Symbol Links across Dashboard --- */
+.td-symbol-chartable {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.td-symbol-chartable:hover {
+    background: var(--bg-hover);
+    color: var(--accent-bright) !important;
+    text-decoration: underline;
+}
+.symbol-chart-icon {
+    width: 12px;
+    height: 12px;
+    opacity: 0.55;
+    vertical-align: middle;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.td-symbol-chartable:hover .symbol-chart-icon {
+    opacity: 1;
+    transform: scale(1.15);
+    stroke: var(--accent-bright);
+}
+.symbols-chip.td-symbol-chartable,
+.ai-feed-symbol.td-symbol-chartable {
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.symbols-chip.td-symbol-chartable:hover {
+    background: var(--accent-soft);
+    color: var(--accent-bright);
+    border-color: var(--accent);
+}
+.ai-feed-symbol.td-symbol-chartable:hover {
+    color: var(--accent-bright);
+    text-decoration: underline;
+}
+
+/* --- TradingView Realtime Chart Modal --- */
+.tv-chart-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tv-chart-backdrop.active {
+    display: flex;
+    opacity: 1;
+}
+body.tv-modal-open {
+    overflow: hidden;
+}
+.tv-chart-dialog {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1540px;
+    height: 92vh;
+    max-height: 960px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tv-chart-dialog.is-fullscreen {
+    max-width: 100vw;
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+}
+.tv-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 16px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+}
+.tv-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.tv-symbol-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.tv-symbol-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--accent-bright);
+    letter-spacing: 0.02em;
+}
+.tv-symbol-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.tv-broker-ticker-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.32);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.75rem;
+}
+.tv-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.7rem;
+    color: var(--accent-bright);
+    font-weight: 600;
+}
+.tv-live-indicator .pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+.tv-tick-field {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+}
+.tv-tick-label {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+}
+.tv-tick-val {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    transition: color 0.15s ease;
+}
+.tv-pos-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+.tv-pos-chip--buy {
+    background: rgba(125, 189, 30, 0.15);
+    color: var(--profit);
+    border: 1px solid rgba(125, 189, 30, 0.35);
+}
+.tv-pos-chip--sell {
+    background: rgba(229, 57, 53, 0.15);
+    color: var(--loss);
+    border: 1px solid rgba(229, 57, 53, 0.35);
+}
+.tv-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.tv-ctrl-group {
+    display: flex;
+    align-items: center;
+}
+.tv-ctrl-select {
+    appearance: none;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 22px 4px 8px;
+    font-size: 0.75rem;
+    font-family: var(--font-ui);
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23a0a0a0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+}
+.tv-ctrl-select:hover, .tv-ctrl-select:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+.tv-tf-group {
+    display: inline-flex;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+}
+.tv-tf-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+}
+.tv-tf-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+.tv-tf-btn.active {
+    background: var(--accent);
+    color: #121722;
+    font-weight: 700;
+}
+.tv-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.tv-modal-close:hover {
+    color: var(--text-primary);
+}
+/* Quick Symbol Ribbon */
+.tv-symbol-ribbon {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+}
+.tv-ribbon-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.tv-ribbon-chip:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border);
+}
+.tv-ribbon-chip.active {
+    background: var(--accent-soft);
+    color: var(--accent-bright);
+    border-color: var(--accent);
+}
+.tv-ribbon-chip .dot-pos {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-bright);
+    box-shadow: 0 0 5px var(--accent-glow);
+}
+.tv-ribbon-chip .dot-pos--sell {
+    background: var(--loss);
+    box-shadow: 0 0 5px rgba(229,57,53,0.5);
+}
+/* Chart Body */
+.tv-chart-body {
+    flex: 1;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 380px;
+    background: #131722;
+    overflow: hidden;
+}
+@media (max-width: 768px) {
+    .tv-chart-backdrop {
+        padding: 0;
+    }
+    .tv-chart-dialog {
+        max-width: none;
+        height: 100%;
+        max-height: none;
+        border-radius: 0;
+        border: none;
+    }
+    .tv-broker-ticker-bar {
+        display: none;
+    }
+}
+

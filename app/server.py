@@ -2794,6 +2794,24 @@ async def api_tms_cross_locks():
         "timestamp": time.time(),
     }
 
+@app.get("/api/market-prices")
+async def api_market_prices(symbol: Optional[str] = None):
+    """Return latest cached live prices from cTrader bots."""
+    if portfolio_manager is None:
+        return {"prices": {}}
+    latest = getattr(portfolio_manager, "_latest_prices", {})
+    if symbol:
+        sym = symbol.upper().strip()
+        match = latest.get(sym)
+        if match is None:
+            for k, v in latest.items():
+                if k.upper().startswith(sym) or sym.startswith(k.upper()):
+                    match = v
+                    sym = k
+                    break
+        return {"prices": {sym: match} if match else {}}
+    return {"prices": latest}
+
 
 def build_user_prompt(snapshot: MarketSnapshot) -> str:
     """Build structured prompt from pre-computed signals."""
