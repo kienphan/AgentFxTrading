@@ -11,7 +11,7 @@
     <script src="https://s3.tradingview.com/tv.js"></script>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
-<body class="app-shell">
+<body class="app-shell sidebar-collapsed">
     <header class="topbar">
         <div class="topbar-brand">
             <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="Toggle Sidebar" aria-label="Toggle Sidebar">
@@ -78,30 +78,30 @@
         </span>
     </div>
     <div class="app-body">
-        <nav class="sidebar" id="app-sidebar">
+        <nav class="sidebar collapsed" id="app-sidebar">
             <a href="#" class="nav-item active" data-target="view-dashboard" title="Overview">
                 <span class="nav-icon"><i data-lucide="bar-chart-2"></i></span>
                 <span class="nav-label">Overview</span>
             </a>
-            <a href="#" class="nav-item" id="nav-item-charts" data-target="view-charts" title="TradingView Live Charts">
+            <a href="#" class="nav-item" id="nav-item-charts" data-target="view-charts" title="Live Charts">
                 <span class="nav-icon"><i data-lucide="line-chart"></i></span>
-                <span class="nav-label">Live Charts</span>
+                <span class="nav-label"><span class="label-full">Live Charts</span><span class="label-short">Charts</span></span>
             </a>
             <a href="#" class="nav-item" data-target="view-leaderboard" title="Leaderboard">
                 <span class="nav-icon"><i data-lucide="trophy"></i></span>
-                <span class="nav-label">Leaderboard</span>
+                <span class="nav-label"><span class="label-full">Leaderboard</span><span class="label-short">Rank</span></span>
             </a>
             <a href="#" class="nav-item" data-target="view-backtest" title="Backtest">
                 <span class="nav-icon"><i data-lucide="flask-conical"></i></span>
                 <span class="nav-label">Backtest</span>
             </a>
-            <a href="#" class="nav-item" data-target="view-risk" title="Daily Loss Limits">
+            <a href="#" class="nav-item" data-target="view-risk" title="Risk Limits">
                 <span class="nav-icon"><i data-lucide="shield-alert"></i></span>
-                <span class="nav-label">Risk Limits</span>
+                <span class="nav-label"><span class="label-full">Risk Limits</span><span class="label-short">Risk</span></span>
             </a>
             <a href="#" class="nav-item" data-target="view-decisions" title="AI Thinking Feed">
                 <span class="nav-icon"><i data-lucide="sparkles"></i></span>
-                <span class="nav-label">AI Thinking</span>
+                <span class="nav-label"><span class="label-full">AI Thinking</span><span class="label-short">AI Feed</span></span>
             </a>
             <a href="#" class="nav-item" data-target="view-news" title="News Assessment">
                 <span class="nav-icon"><i data-lucide="newspaper"></i></span>
@@ -109,7 +109,7 @@
             </a>
             <a href="#" class="nav-item" data-target="view-logs" title="Agent Logs">
                 <span class="nav-icon"><i data-lucide="terminal"></i></span>
-                <span class="nav-label">Agent Logs</span>
+                <span class="nav-label"><span class="label-full">Agent Logs</span><span class="label-short">Logs</span></span>
             </a>
         </nav>
         <main class="main-content">
@@ -1087,15 +1087,29 @@
         const sidebar = document.getElementById('app-sidebar');
         const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
         if (sidebar && sidebarToggleBtn) {
-            // Only restore collapsed state on desktop screens (>= 1024px)
-            if (window.innerWidth >= 1024 && localStorage.getItem('sidebar_collapsed') === 'true') {
-                sidebar.classList.add('collapsed');
-                document.body.classList.add('sidebar-collapsed');
+            // Default to icon-only (collapsed) on desktop screens (>= 1024px)
+            // Expand only if explicitly saved as 'true' in localStorage
+            if (window.innerWidth >= 1024) {
+                const isExpanded = localStorage.getItem('sidebar_expanded') === 'true';
+                if (isExpanded) {
+                    sidebar.classList.remove('collapsed');
+                    document.body.classList.remove('sidebar-collapsed');
+                } else {
+                    sidebar.classList.add('collapsed');
+                    document.body.classList.add('sidebar-collapsed');
+                }
             }
             sidebarToggleBtn.addEventListener('click', () => {
-                sidebar.classList.toggle('collapsed');
-                document.body.classList.toggle('sidebar-collapsed');
-                localStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed'));
+                const isCollapsed = sidebar.classList.contains('collapsed');
+                if (isCollapsed) {
+                    sidebar.classList.remove('collapsed');
+                    document.body.classList.remove('sidebar-collapsed');
+                    localStorage.setItem('sidebar_expanded', 'true');
+                } else {
+                    sidebar.classList.add('collapsed');
+                    document.body.classList.add('sidebar-collapsed');
+                    localStorage.setItem('sidebar_expanded', 'false');
+                }
             });
         }
 

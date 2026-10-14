@@ -295,53 +295,82 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         bottom: auto;
         left: auto;
         right: auto;
-        width: 220px;
+        width: 60px; /* Default to icon-only */
         height: 100%;
         border-top: none;
         border-right: 1px solid var(--border-subtle);
         flex-direction: column;
         justify-content: flex-start;
-        padding: 20px 8px;
+        padding: 16px 6px;
         box-shadow: none;
         gap: 6px;
         flex-shrink: 0;
         z-index: 10;
         transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
-    .sidebar.collapsed {
-        width: 60px;
-        padding: 20px 6px;
-    }
-    .sidebar.collapsed .nav-label {
+    .sidebar .nav-label {
         display: none;
     }
-    .sidebar.collapsed .nav-item {
+    .sidebar .nav-item {
+        flex-direction: row;
         justify-content: center;
         padding: 10px 0;
+        position: relative;
+        border-radius: var(--radius-sm);
     }
-    .sidebar.collapsed .nav-icon {
-        font-size: 1.25rem;
+    .sidebar .nav-icon {
+        font-size: 1.2rem;
+    }
+    .sidebar.collapsed .nav-item:hover::after,
+    body.sidebar-collapsed .sidebar .nav-item:hover::after {
+        content: attr(title);
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-left: 10px;
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 99999;
+        animation: fadeIn 0.15s ease;
+    }
+    body:not(.sidebar-collapsed) .sidebar:not(.collapsed) {
+        width: 220px;
+        padding: 16px 8px;
+    }
+    body:not(.sidebar-collapsed) .sidebar:not(.collapsed) .nav-label {
+        display: block;
+        font-size: 0.825rem;
+    }
+    body:not(.sidebar-collapsed) .sidebar:not(.collapsed) .nav-item {
+        justify-content: flex-start;
+        padding: 10px 14px;
+        gap: 10px;
+    }
+    body:not(.sidebar-collapsed) .sidebar:not(.collapsed) .nav-item:hover::after {
+        display: none;
+    }
+    .sidebar .label-full {
+        display: inline;
+    }
+    .sidebar .label-short {
+        display: none;
     }
     .main-content {
         padding: 16px 20px 24px 20px;
         height: 100%;
     }
-    
-    .nav-item {
-        flex-direction: row;
-        gap: 10px;
-        padding: 10px 14px;
-    }
     .nav-item.active {
         background: var(--bg-elevated);
         border-left: 3px solid var(--accent-bright);
-    }
-    .nav-icon {
-        font-size: 1.05rem;
-    }
-    .nav-label {
-        font-size: 0.825rem;
     }
     
     /* Logs view fills height cleanly on desktop */
@@ -1224,7 +1253,7 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         flex-direction: column;
     }
     .main-content {
-        padding: 12px 12px calc(72px + env(safe-area-inset-bottom, 16px)) 12px !important;
+        padding: 12px 12px calc(90px + env(safe-area-inset-bottom, 16px)) 12px !important;
     }
     .sidebar,
     .sidebar.collapsed {
@@ -1235,45 +1264,60 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         right: 0 !important;
         width: 100vw !important;
         height: auto !important;
-        min-height: 52px !important;
-        flex-direction: row !important;
-        justify-content: space-around !important;
-        align-items: center !important;
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        grid-template-rows: auto auto !important;
+        gap: 2px !important;
         background: var(--bg-surface) !important;
         border-right: none !important;
         border-top: 1px solid var(--border) !important;
         border-bottom: none !important;
-        padding: 6px 4px max(8px, env(safe-area-inset-bottom, 8px)) 4px !important;
+        padding: 5px 4px max(6px, env(safe-area-inset-bottom, 6px)) 4px !important;
         box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5) !important;
         z-index: 99999 !important;
-        display: flex !important;
-    }
-    .sidebar.collapsed .nav-label {
-        display: block !important;
     }
     .sidebar .nav-item,
     .sidebar.collapsed .nav-item {
+        display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        padding: 6px 4px !important;
-        flex: 1 1 0 !important;
-        max-width: 80px !important;
-        gap: 3px !important;
-        border-radius: 6px !important;
+        padding: 4px 2px !important;
+        min-height: 36px !important;
+        max-width: none !important;
+        flex: auto !important;
+        border-radius: var(--radius-sm) !important;
+        gap: 2px !important;
+    }
+    .sidebar .nav-item.active {
+        background: var(--bg-elevated) !important;
+        border-left: none !important;
+        border-bottom: 2px solid var(--accent-bright) !important;
+        color: var(--accent-bright) !important;
     }
     .sidebar .nav-label,
     .sidebar.collapsed .nav-label {
-        font-size: 0.65rem !important;
+        font-size: 0.62rem !important;
         font-weight: 600 !important;
         display: block !important;
         white-space: nowrap !important;
-        letter-spacing: 0.01em !important;
+        letter-spacing: -0.01em !important;
+        line-height: 1 !important;
     }
     .sidebar .nav-icon svg,
     .sidebar.collapsed .nav-icon svg {
-        width: 20px !important;
-        height: 20px !important;
+        width: 16px !important;
+        height: 16px !important;
+    }
+    .sidebar .label-full {
+        display: none !important;
+    }
+    .sidebar .label-short {
+        display: inline !important;
+    }
+    .sidebar.collapsed .nav-item:hover::after,
+    body.sidebar-collapsed .sidebar .nav-item:hover::after {
+        display: none !important;
     }
     .kpi-grid {
         grid-template-columns: repeat(2, 1fr) !important;
