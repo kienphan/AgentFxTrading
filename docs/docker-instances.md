@@ -11,6 +11,9 @@ drift apart.
 > packages first: [Quick Start → Setup & Run cBot](../README.md#4-setup--run-cbot). Come back here once
 > `cBot/AiAgentBot.algo`, `cBot/AsianRangeJudasSweepBot.algo` and `cBot/FlowRsiBot.algo` exist.
 
+> **Outside the grid:** the demo-only MTF forward test (`MtfChartBot`, D1/H4/H1/M15 AI analyst, journal-based)
+> is installed by hand — see [MTF forward test](mtf-forward-test.md). It has no cell in the grid below, by design.
+
 ---
 
 ## 📋 Contents
