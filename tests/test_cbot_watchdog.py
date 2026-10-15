@@ -104,6 +104,68 @@ def test_check_cbot_health_not_running():
     assert health["healthy"] is False
     assert health["stuck"] is False
 
+def test_check_cbot_health_stopped_by_user_is_stuck():
+    dm = DockerManager()
+    dm.is_available = True
+    dm.get_container_status = MagicMock(return_value={"status": "running", "id": "12345"})
+
+    stopped_log = """
+08/10/2026 17:30:49.871 | The connection has been established.
+Login to 6094347...
+Logged in.
+Starting cBot...
+Info | CBot instance [OrbBot, US30, m15] started.
+08/10/2026 17:31:01.526 | Info | [ORB] Starting 'us30_orb' on US30 (Minute15)
+08/10/2026 18:10:19.074 | Info | [ORB] Stopped on US30.
+Info | CBot instance [OrbBot, US30, m15] stopped by user.
+"""
+    dm.get_container_logs = MagicMock(return_value=stopped_log)
+    health = dm.check_cbot_health("cbot-us30")
+    assert health["healthy"] is False
+    assert health["stuck"] is True
+    assert "stopped" in health["reason"].lower()
+
+def test_check_cbot_health_stopped_then_restarted_is_healthy():
+    dm = DockerManager()
+    dm.is_available = True
+    dm.get_container_status = MagicMock(return_value={"status": "running", "id": "12345"})
+
+    restarted_log = """
+08/10/2026 18:10:19.074 | Info | [ORB] Stopped on US30.
+Info | CBot instance [OrbBot, US30, m15] stopped by user.
+08/10/2026 18:11:00.000 | Establishing connection using senior1206@gmail.com...
+08/10/2026 18:11:02.000 | The connection has been established.
+Login to 6094347...
+Logged in.
+Starting cBot...
+Info | CBot instance [OrbBot, US30, m15] started.
+08/10/2026 18:11:15.000 | Info | [ORB] Starting 'us30_orb' on US30 (Minute15)
+"""
+    dm.get_container_logs = MagicMock(return_value=restarted_log)
+    health = dm.check_cbot_health("cbot-us30")
+    assert health["healthy"] is True
+    assert health["stuck"] is False
+
+def test_parse_session_params_orbbot():
+    cmd = (
+        'docker run -d --name cbot-us30 --restart unless-stopped --network host '
+        '-v /root/AgentFxTrading:/workspace -v /root:/root ghcr.io/spotware/ctrader-console:latest '
+        'run /workspace/cBot/OrbBot.algo --ctid=senior1206@gmail.com '
+        '--pwd-file=/root/ctrader_data/ctid_pwd --account=6094347 --symbol=US30 --period=m15 '
+        '--full-access --BotId="us30_orb" --AccountLabel="live" --SessionOpenHourWinterUtc=14 '
+        '--SessionOpenMinute=30 --SessionDstRule=US --OpeningRangeMinutes=15 '
+        '--EodFlattenHourWinterUtc=21 --EodFlattenMinute=0'
+    )
+    params = wd.parse_session_params(cmd)
+    assert params is not None
+    assert params["bot_id"] == "us30_orb"
+    assert params["start_hour"] == 14
+    assert params["start_minute"] == 30
+    assert params["end_hour"] == 21
+    assert params["end_minute"] == 0
+    assert params["dst_rule"] == "US"
+    assert params["session_name"] == "ORB"
+
 @patch("app.cbot_watchdog.docker_manager")
 @patch("app.cbot_watchdog.get_portfolio_manager")
 def test_check_and_heal_caches_health_for_the_dashboard(mock_get_pm, mock_dm):

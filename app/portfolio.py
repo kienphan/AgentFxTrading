@@ -906,42 +906,42 @@ class PortfolioManager:
 
     def update_position_metrics(self, bot_id: str, unrealized_pnl: float, unrealized_pnl_pips: float,
                                 account_id: Optional[str] = None,
-                                levels: Optional[Dict] = None) -> None:
+                                levels: Optional[Dict] = None,
+                                ctrader_id: Optional[int] = None) -> None:
         """Merge a live P&L sample from a bot tick into the cached position report.
 
-        The bot owns these numbers (net profit in the account currency, pips from cTrader's own
-        pip size), so a tick refreshes them between bar snapshots without the server recomputing
-        anything. Creates the entry when a tick arrives before the next snapshot, e.g. right
-        after a restart while the position row already exists.
+        When ctrader_id is provided, caches metrics under 'ctrader:<id>' for individual
+        per-position tracking (essential for manual trades and multi-position bots).
         """
         if not hasattr(self, "_bot_positions_cache"):
             self._bot_positions_cache = {}
 
         reported_at = datetime.now(timezone.utc).timestamp()
 
-        # Refresh every key that belongs to this bot. A /trade snapshot writes
-        # "<account_id>:<bot_id>" and the dashboard resolves that key before the bare bot_id
-        # one, so a tick that only touched the bare key would stay hidden behind the older
-        # snapshot value. The tick itself carries no account id (the bot cannot derive it), so
-        # the keys are taken from whatever the snapshots already registered.
-        keys = {bot_id}
-        if account_id:
-            keys.add(f"{account_id}:{bot_id}")
-        keys.update(key for key in self._bot_positions_cache if key.endswith(f":{bot_id}"))
-
-        for key in keys:
-            entry = dict(self._bot_positions_cache.get(key) or {})
-            entry["unrealized_pnl"] = unrealized_pnl
-            entry["unrealized_pnl_pips"] = unrealized_pnl_pips
-            # SL/TP prices and the bot's P&L estimate at each (sl_price, tp_price, sl_pnl,
-            # tp_pnl). None means "no stop / no target", so it replaces the old value; a tick
-            # from a bot that does not send levels at all passes levels=None and keeps whatever
-            # its last snapshot reported.
+        if ctrader_id is not None:
+            c_key = f"ctrader:{ctrader_id}"
+            c_entry = dict(self._bot_positions_cache.get(c_key) or {})
+            c_entry["unrealized_pnl"] = unrealized_pnl
+            c_entry["unrealized_pnl_pips"] = unrealized_pnl_pips
             if levels is not None:
-                entry.update(levels)
-            entry["_reported_at"] = reported_at
-            self._bot_positions_cache[key] = entry
+                c_entry.update(levels)
+            c_entry["_reported_at"] = reported_at
+            self._bot_positions_cache[c_key] = c_entry
 
+        if bot_id != "manual":
+            keys = {bot_id}
+            if account_id:
+                keys.add(f"{account_id}:{bot_id}")
+            keys.update(key for key in self._bot_positions_cache if key.endswith(f":{bot_id}"))
+
+            for key in keys:
+                entry = dict(self._bot_positions_cache.get(key) or {})
+                entry["unrealized_pnl"] = unrealized_pnl
+                entry["unrealized_pnl_pips"] = unrealized_pnl_pips
+                if levels is not None:
+                    entry.update(levels)
+                entry["_reported_at"] = reported_at
+                self._bot_positions_cache[key] = entry
     def get_latest_price(self, symbol: str) -> Optional[Dict]:
         """Get cached latest price for symbol."""
         if not hasattr(self, "_latest_prices"):

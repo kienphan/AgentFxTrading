@@ -23,6 +23,15 @@ logger = logging.getLogger("AgentFxTrading.Watchdog")
 # ---------------------------------------------------------------------------
 
 DEFAULT_STALE_FEED_SECONDS = 2400  # 40 min: > one M15 bar + LLM latency, < two bars
+PERIOD_STALE_FEED_SECONDS: Dict[str, int] = {
+    "m1": 300,      # 5 min
+    "m5": 900,      # 15 min
+    "m15": 2400,    # 40 min (> 1 M15 bar, < 2 bars)
+    "m30": 4200,    # 70 min
+    "h1": 7200,     # 120 min (> 1 H1 bar, < 2 bars)
+    "h4": 21600,    # 360 min
+}
+
 
 _snapshot_seen_at: Dict[str, float] = {}
 
@@ -83,14 +92,22 @@ def parse_bot_id(run_command: Optional[str]) -> str:
     m = re.search(r'--BotId=("?)([^"\s\\]+)\1', run_command or "")
     return m.group(2) if m else ""
 
+def parse_period(run_command: Optional[str]) -> str:
+    """The --period a bot's docker run command passes, or 'm15' when absent."""
+    m = re.search(r'--period=("?)([^"\s\\]+)\1', run_command or "")
+    return m.group(2).lower() if m else "m15"
+
+
 
 def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]:
     """Extract the per-bar session window from a bot's docker run command.
 
     Returns None for bots that run no bar cycle (the Judas sweep bots carry no
     --OrbStartHour/--SessionEndHour) or when the command cannot be parsed.
+    Supports both AiAgentBot (--OrbStartHour/--SessionEndHour) and
+    OrbBot (--SessionOpenHourWinterUtc/--EodFlattenHourWinterUtc).
     """
-    if not run_command or "--OrbStartHour" not in run_command or "--SessionEndHour" not in run_command:
+    if not run_command:
         return None
 
     def number(key: str) -> Optional[int]:
@@ -101,20 +118,34 @@ def parse_session_params(run_command: Optional[str]) -> Optional[Dict[str, Any]]
         m = re.search(rf'--{key}=("?)([^"\s\\]+)\1', run_command)
         return m.group(2) if m else ""
 
-    start_hour, end_hour = number("OrbStartHour"), number("SessionEndHour")
+    start_hour = number("OrbStartHour")
+    end_hour = number("SessionEndHour")
+    start_minute = number("OrbStartMinute") or 0
+    end_minute = number("SessionEndMinute") or 0
+    session_name = text("SessionName")
+    dst_rule = text("SessionDstRule") or "None"
+
+    if start_hour is None or end_hour is None:
+        # Check OrbBot parameter format
+        start_hour = number("SessionOpenHourWinterUtc")
+        end_hour = number("EodFlattenHourWinterUtc")
+        start_minute = number("SessionOpenMinute") or 0
+        end_minute = number("EodFlattenMinute") or 0
+        if not session_name:
+            session_name = "ORB"
+
     if start_hour is None or end_hour is None:
         return None
 
     return {
         "bot_id": parse_bot_id(run_command),
-        "session_name": text("SessionName") or "unknown",
+        "session_name": session_name or "unknown",
         "start_hour": start_hour,
-        "start_minute": number("OrbStartMinute") or 0,
+        "start_minute": start_minute,
         "end_hour": end_hour,
-        "end_minute": number("SessionEndMinute") or 0,
-        "dst_rule": text("SessionDstRule") or "None",
+        "end_minute": end_minute,
+        "dst_rule": dst_rule,
     }
-
 
 def _nth_sunday(year: int, month: int, n: int) -> datetime.date:
     first = datetime.date(year, month, 1)
@@ -407,8 +438,10 @@ class CbotWatchdog:
         if now - _tick_seen_at[bot_id] > TICK_GAP_SECONDS:
             return None
 
+        period = parse_period(run_command)
+        stale_limit = PERIOD_STALE_FEED_SECONDS.get(period, self.stale_feed_seconds)
         silence = now - max(_bar_advanced_at[bot_id], _tick_run_since[bot_id])
-        if silence <= self.stale_feed_seconds:
+        if silence <= stale_limit:
             return None
 
         stuck_on = _bar_seen[bot_id]
@@ -418,7 +451,7 @@ class CbotWatchdog:
 
         return (
             f"Ticks streaming for {silence / 60:.0f} min but no bar handled since {stuck_on} "
-            f"(bar cycle is M15)"
+            f"(bar cycle is {period.upper()})"
         )
 
     async def run_loop(self):

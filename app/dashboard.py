@@ -118,6 +118,26 @@ def _attach_live_metrics(pos: Dict, bot_report: Optional[Dict], price_info: Opti
         pos["unrealized_pnl"] = round(bot_report["unrealized_pnl"], 2)
         pos["unrealized_pnl_pips"] = round(bot_report.get("unrealized_pnl_pips", 0.0), 1)
         pos["pnl_age_seconds"] = _age_seconds(bot_report.get("_reported_at"))
+    elif pos.get("bot_id") == "manual" and current_price and entry_price and pos.get("volume"):
+        vol = float(pos.get("volume") or 0.0)
+        sym = (pos.get("symbol") or "").upper()
+        diff = (current_price - entry_price) if side == "BUY" else (entry_price - current_price)
+        if "XAU" in sym or "GOLD" in sym:
+            calc_pnl = round(diff * 100.0 * vol, 2)
+            calc_pips = round(diff * 10.0, 1)
+        elif any(j in sym for j in ["JPY"]):
+            calc_pips = round(diff * 100.0, 1)
+            usd_rate = (price_info.get("bid") or 158.0) if (price_info and "USD" in sym) else 158.0
+            calc_pnl = round((diff / usd_rate) * 100000.0 * vol, 2)
+        elif any(idx in sym for idx in ["US30", "USTEC", "DE40", "UK100", "US500"]):
+            calc_pnl = round(diff * vol, 2)
+            calc_pips = round(diff, 1)
+        else:
+            calc_pips = round(diff * 10000.0, 1)
+            calc_pnl = round(diff * 100000.0 * vol, 2)
+        pos["unrealized_pnl"] = calc_pnl
+        pos["unrealized_pnl_pips"] = calc_pips
+        pos["pnl_age_seconds"] = pos.get("price_age_seconds")
     else:
         pos["unrealized_pnl"] = None
         pos["unrealized_pnl_pips"] = None
@@ -322,7 +342,12 @@ def get_active_positions(account_id: str = "all") -> List[Dict]:
     cache = getattr(pm, "_bot_positions_cache", {}) if hasattr(pm, "_bot_positions_cache") else {}
     for pos in positions:
         price_info = pm.get_latest_price(pos.get("symbol", "")) if hasattr(pm, "get_latest_price") else None
-        bot_report = cache.get(f"{pos.get('account_id')}:{pos.get('bot_id')}") or cache.get(pos.get("bot_id"))
+        ctrader_id = pos.get("ctrader_id")
+        bot_report = None
+        if ctrader_id:
+            bot_report = cache.get(f"ctrader:{ctrader_id}")
+        if not bot_report and pos.get("bot_id") != "manual":
+            bot_report = cache.get(f"{pos.get('account_id')}:{pos.get('bot_id')}") or cache.get(pos.get("bot_id"))
         _attach_live_metrics(pos, bot_report, price_info)
 
     return positions
@@ -663,6 +688,27 @@ async def api_dashboard_history(account_id: str = "all", page: int = 1, page_siz
     """API endpoint for paginated trade history."""
     return get_trade_history(account_id, page, page_size)
 
+
+@router.post("/api/trades/sync-manual")
+async def api_sync_manual_trades():
+    """Trigger manual trade sync from cTrader."""
+    try:
+        def _do_sync():
+            from scripts.sync_manual_trades import run_probe_and_collect_trades, sync_trades_to_db
+            trades = run_probe_and_collect_trades()
+            count, inserted = sync_trades_to_db(trades)
+            return count, inserted
+
+        count, inserted = await asyncio.to_thread(_do_sync)
+        if count > 0:
+            try:
+                await broadcast_update(account_id="live-6094347")
+            except Exception:
+                pass
+        return {"success": True, "synced_count": count, "message": f"Successfully synced {count} manual trades"}
+    except Exception as e:
+        logger.error(f"Manual trades sync error: {e}", exc_info=True)
+        return {"success": False, "synced_count": 0, "message": str(e)}
 
 @router.get("/api/dashboard/pnl-history")
 async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
@@ -1013,7 +1059,8 @@ async def broadcast_update(account_id: Optional[str] = None):
 
 async def broadcast_tick(symbol: str, bid: float, ask: float, account_id: Optional[str] = None,
                          bot_id: Optional[str] = None, pnl: Optional[float] = None,
-                         pips: Optional[float] = None, levels: Optional[Dict] = None):
+                         pips: Optional[float] = None, levels: Optional[Dict] = None,
+                         ctrader_id: Optional[int] = None):
     """Broadcast a live tick price update.
 
     When a bot has a position open it also reports its own P&L sample (broker net profit and
@@ -1031,6 +1078,7 @@ async def broadcast_tick(symbol: str, bid: float, ask: float, account_id: Option
         "pips": pips,
         # SL/TP prices and P&L at each (tick_levels); None when this bot sends no levels
         "levels": levels,
+        "ctrader_id": ctrader_id,
         "timestamp": datetime.now().isoformat()
     })
 
@@ -1250,12 +1298,22 @@ def api_close_position(position_id: int):
         return _error(404, "Position not found or already closed")
     if pos.get("ctrader_id") is None:
         return _error(409, "This position has no cTrader id recorded; close it in cTrader")
-    cfg = _config_for_bot(pm, pos["bot_id"])
-    if cfg:
-        status = docker_manager.get_container_status(cfg["name"]).get("status")
-        if status != "running":
-            return _error(409, f"Container {cfg['name']} is {status}; close the position in cTrader")
-    cmd = command_queue.enqueue(pos["bot_id"], "close_position", int(pos["ctrader_id"]))
+    target_bot = pos["bot_id"]
+    if target_bot == "manual":
+        configs = pm.get_cbot_configs()
+        running = [cfg for cfg in configs if docker_manager.get_container_status(cfg["name"]).get("status") == "running"]
+        matching = next((cfg for cfg in running if pos.get("symbol", "").lower() in cfg["name"].lower()), None)
+        chosen = matching or (running[0] if running else None)
+        if not chosen:
+            return _error(409, "No active cBot container running to execute close; close it in cTrader")
+        target_bot = bot_id_for_config(chosen)
+    else:
+        cfg = _config_for_bot(pm, pos["bot_id"])
+        if cfg:
+            status = docker_manager.get_container_status(cfg["name"]).get("status")
+            if status != "running":
+                return _error(409, f"Container {cfg['name']} is {status}; close the position in cTrader")
+    cmd = command_queue.enqueue(target_bot, "close_position", int(pos["ctrader_id"]))
     logger.warning(f"[MANUAL] Close requested from the dashboard: {pos['side']} {pos['symbol']} "
                    f"{pos['volume']}L #{pos['ctrader_id']} of {pos['bot_id']} (command {cmd.id[:8]})")
     return {"success": True, "command_id": cmd.id, "status": cmd.status}

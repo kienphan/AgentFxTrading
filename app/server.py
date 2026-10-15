@@ -2007,8 +2007,7 @@ async def trade_decision(snapshot: MarketSnapshot):
             "2. CUT LOSS EARLY (CLOSE_ALL): Only execute CLOSE_ALL when an open position suffers MEANINGFUL adverse movement "
             "(loss >= 0.5R or >= 10 pips FX / >= 100 pips Gold) AND clear market structure decisively breaks against it "
             "(e.g. sustained opposing RSI crossover with structural swing breakdown). Never exit early on minor noise.\n"
-            "3. PROTECT PROFITS (ADJUST or CLOSE_ALL): When an open position has captured significant profit (>= 1.0 R:R or >= 15 pips FX / >= 150 pips Gold) "
-            "and displays clear momentum exhaustion or structural reversal, lock in gains by adjusting SL or closing. Do not exit prematurely for petty cents.\n"
+            "3. LET RUNNERS RUN / HOLD TO SL & TP: Avoid micromanaging, tightening SL to Breakeven (BE) prematurely, or early exits. Moving SL to BE frequently kills positions on normal market pullbacks. Allow positions full breathing room to reach technical TP or initial SL.\n"
             "4. NEW ENTRIES: If candidate_action is BUY/SELL, confirm with confidence >= 75% only when Nested RSI cross and SMC zone align."
         )
         # SMC Swing Structure & Multi-timeframe / Indicator context
@@ -2517,7 +2516,29 @@ async def handle_telemetry_tick(request: dict):
         # position the dashboard row shows (one per bot).
         levels = tick_levels(request)
         positions = request.get("positions")
-        if pnl is None and isinstance(positions, list) and positions and isinstance(positions[0], dict):
+        if isinstance(positions, list) and positions:
+            for pos_item in positions:
+                if isinstance(pos_item, dict):
+                    pos_bot = pos_item.get("bot_id", bot_id)
+                    pos_sym = pos_item.get("symbol", symbol)
+                    item_id = pos_item.get("id")
+                    item_pnl = float(pos_item["net_profit"]) if pos_item.get("net_profit") is not None else None
+                    item_pips = float(pos_item["pips"]) if pos_item.get("pips") is not None else None
+                    item_levels = tick_levels(pos_item)
+                    if item_pnl is not None:
+                        portfolio_manager.update_position_metrics(
+                            pos_bot, item_pnl, item_pips or 0.0, account_id=account_id, levels=item_levels,
+                            ctrader_id=item_id
+                        )
+                    if pos_bot == "manual":
+                        try:
+                            await broadcast_tick(
+                                symbol=pos_sym, bid=bid, ask=ask, account_id=account_id,
+                                bot_id="manual", pnl=item_pnl, pips=item_pips, levels=item_levels,
+                                ctrader_id=item_id
+                            )
+                        except Exception:
+                            pass
             first = positions[0]
             try:
                 pnl = float(first["net_profit"]) if first.get("net_profit") is not None else None
@@ -2653,6 +2674,8 @@ async def report_position(request: dict):
             except Exception:
                 pass
             return {"status": "success", "message": f"Account {account_id} synced", "account_id": account_id}
+        elif action in ("tick", "telemetry"):
+            return await handle_telemetry_tick(request)
         
         elif action == "partial_close":
             # cTrader's Positions.Closed does not fire on a partial close, so the bot
@@ -2795,6 +2818,24 @@ async def api_tms_cross_locks():
         "cross_locks": _TMS_CROSS_LOCK_REGISTRY,
         "timestamp": time.time(),
     }
+
+@app.get("/api/market-prices")
+async def api_market_prices(symbol: Optional[str] = None):
+    """Return latest cached live prices from cTrader bots."""
+    if portfolio_manager is None:
+        return {"prices": {}}
+    latest = getattr(portfolio_manager, "_latest_prices", {})
+    if symbol:
+        sym = symbol.upper().strip()
+        match = latest.get(sym)
+        if match is None:
+            for k, v in latest.items():
+                if k.upper().startswith(sym) or sym.startswith(k.upper()):
+                    match = v
+                    sym = k
+                    break
+        return {"prices": {sym: match} if match else {}}
+    return {"prices": latest}
 
 
 def build_user_prompt(snapshot: MarketSnapshot) -> str:

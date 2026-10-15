@@ -155,6 +155,12 @@ namespace cAlgo.Robots
         // dollar cap: US30 0.1 lot at 1387.6p risked 0.84% of equity against 0.5% (2026-09-24).
         [Parameter("Max Min-Lot Risk (x target, 0=off)", Group = "Risk Management", DefaultValue = 1.5, MinValue = 0, Step = 0.1)]
         public double MaxMinLotRiskMultiple { get; set; }
+        [Parameter("Fixed Lots (0=dynamic)", Group = "Risk Management", DefaultValue = 0.0, MinValue = 0.0, Step = 0.01)]
+        public double FixedLots { get; set; }
+
+        [Parameter("Max Allowed Lots (0=unlimited)", Group = "Risk Management", DefaultValue = 0.0, MinValue = 0.0, Step = 0.01)]
+        public double MaxAllowedLots { get; set; }
+
 
         [Parameter("Stop Loss Mode", Group = "Risk Management", DefaultValue = StopLossType.Technical_Swing)]
         public StopLossType SlMode { get; set; }
@@ -196,7 +202,7 @@ namespace cAlgo.Robots
         #endregion
 
         #region Position Protection (Anti-Drawdown & True Zero-Loss BE)
-        [Parameter("Enable True Break-Even", Group = "Position Protection", DefaultValue = true)]
+        [Parameter("Enable True Break-Even", Group = "Position Protection", DefaultValue = false)]
         public bool EnableBreakEven { get; set; }
 
         [Parameter("Break-Even Trigger Mode", Group = "Position Protection", DefaultValue = BreakEvenTriggerMode.Risk_Reward_Ratio)]
@@ -259,7 +265,7 @@ namespace cAlgo.Robots
         // 0 turns them off.
         [Parameter("Command Poll (ms, 0=off)", Group = "AI Agent Integration", DefaultValue = 2000, MinValue = 0)]
         public int CommandPollMs { get; set; }
-        [Parameter("AI Minimum Confidence (%)", Group = "AI Agent Integration", DefaultValue = 65.0, MinValue = 50.0, MaxValue = 100.0)]
+        [Parameter("AI Minimum Confidence (%)", Group = "AI Agent Integration", DefaultValue = 75.0, MinValue = 50.0, MaxValue = 100.0)]
         public double AiConfidenceThreshold { get; set; }
         #endregion
 
@@ -549,7 +555,11 @@ namespace cAlgo.Robots
 
                 // 4. Register Position Events for Centralized Telegram & Portfolio Tracking
                 Positions.Closed += OnPositionClosed;
+                Positions.Opened += OnPositionOpened;
                 StartCommandPoll();
+
+                // Sync manual positions already open on the account at startup
+                SyncManualPositionsOnStart();
 
                 // 5. Test Notification
                 if (EnableTelegramAlerts && RunningMode == RunningMode.RealTime)
@@ -699,6 +709,7 @@ namespace cAlgo.Robots
             _isStopped = true;
             StopCommandPoll();
             Positions.Closed -= OnPositionClosed;
+            Positions.Opened -= OnPositionOpened;
             Print($"[FlowRSI] cBot stopped on {SymbolName}.");
             _httpClient?.Dispose();
         }
@@ -1811,6 +1822,21 @@ namespace cAlgo.Robots
 
         private double CalculateDynamicVolumeInUnits(double slPips)
         {
+            if (FixedLots > 0)
+            {
+                double fixedUnits = Symbol.NormalizeVolumeInUnits(FixedLots * Symbol.LotSize);
+                if (fixedUnits < Symbol.VolumeInUnitsMin) fixedUnits = Symbol.VolumeInUnitsMin;
+                if (fixedUnits > Symbol.VolumeInUnitsMax) fixedUnits = Symbol.VolumeInUnitsMax;
+
+                double finalFixedRisk = fixedUnits * slPips * (Symbol.PipValue > 0 ? Symbol.PipValue : 1.0);
+                if (finalFixedRisk > MaxRiskPerTradeMoney)
+                {
+                    Print($"[Guardrail] Entry REFUSED: Fixed {fixedUnits / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalFixedRisk:F2}, over MaxRiskPerTradeMoney (${MaxRiskPerTradeMoney:F2}).");
+                    return 0;
+                }
+                return fixedUnits;
+            }
+
             double equityRiskAmount = Account.Equity * (RiskPercentage / 100.0);
             double effectiveRiskAmount = Math.Min(equityRiskAmount, MaxRiskPerTradeMoney);
 
@@ -1818,10 +1844,13 @@ namespace cAlgo.Robots
             double targetUnits = effectiveRiskAmount / (slPips * pipValue);
 
             double normalizedUnits = Symbol.NormalizeVolumeInUnits(targetUnits);
+            if (MaxAllowedLots > 0)
+            {
+                double maxUnits = Symbol.NormalizeVolumeInUnits(MaxAllowedLots * Symbol.LotSize);
+                if (normalizedUnits > maxUnits) normalizedUnits = maxUnits;
+            }
             if (normalizedUnits < Symbol.VolumeInUnitsMin) normalizedUnits = Symbol.VolumeInUnitsMin;
             if (normalizedUnits > Symbol.VolumeInUnitsMax) normalizedUnits = Symbol.VolumeInUnitsMax;
-
-            // Clamping up to the broker minimum can blow straight past the configured cap on a
             // small account trading a large-minimum instrument (US30, BTC, indices) with a wide
             // technical stop. Refuse rather than place an order that breaks MaxRiskPerTradeMoney.
             double finalRisk = normalizedUnits * slPips * pipValue;
@@ -2726,7 +2755,14 @@ namespace cAlgo.Robots
             if (cmd.action == "close_all")
                 targets = own.ToList();
             else if (cmd.action == "close_position")
+            {
                 targets = own.Where(p => p.Id == cmd.position_id).ToList();
+                if (targets.Count == 0 && cmd.position_id.HasValue)
+                {
+                    var manualPos = Positions.FirstOrDefault(p => p.Id == cmd.position_id.Value);
+                    if (manualPos != null) targets.Add(manualPos);
+                }
+            }
             else
             {
                 PostCommandResult(baseUrl, cmd.id, "failed", $"unknown action '{cmd.action}'", 0, 0);
@@ -2735,8 +2771,8 @@ namespace cAlgo.Robots
 
             if (cmd.action == "close_position" && targets.Count == 0)
             {
-                Print($"[Dashboard] Close #{cmd.position_id}: not among this bot's open positions");
-                PostCommandResult(baseUrl, cmd.id, "failed", $"position {cmd.position_id} not found among this bot's open positions", 0, 0);
+                Print($"[Dashboard] Close #{cmd.position_id}: not among open positions on this account");
+                PostCommandResult(baseUrl, cmd.id, "failed", $"position {cmd.position_id} not found among open positions", 0, 0);
                 return;
             }
 
@@ -2800,6 +2836,7 @@ namespace cAlgo.Robots
                     posList.Add(new
                     {
                         id = p.Id,
+                        bot_id = BotId,
                         symbol = p.SymbolName,
                         side = p.TradeType.ToString(),
                         volume = p.VolumeInUnits / Symbol.LotSize,
@@ -2813,6 +2850,29 @@ namespace cAlgo.Robots
                         tp_pnl = p.TakeProfit.HasValue ? (double?)Math.Round(CalculateEstimatedNetProfitAtSL(p, p.TakeProfit.Value), 2) : null,
                         label = p.Label
                     });
+                }
+                foreach (var p in Positions)
+                {
+                    if ((string.IsNullOrEmpty(p.Label) || p.Label == "manual") && p.SymbolName == SymbolName)
+                    {
+                        posList.Add(new
+                        {
+                            id = p.Id,
+                            bot_id = "manual",
+                            symbol = p.SymbolName,
+                            side = p.TradeType.ToString(),
+                            volume = Symbol.LotSize > 0 ? p.VolumeInUnits / Symbol.LotSize : p.VolumeInUnits / 100.0,
+                            entry_price = p.EntryPrice,
+                            current_price = p.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask,
+                            net_profit = p.NetProfit,
+                            pips = p.Pips,
+                            sl_price = p.StopLoss,
+                            tp_price = p.TakeProfit,
+                            sl_pnl = p.StopLoss.HasValue ? (double?)Math.Round(CalculateEstimatedNetProfitAtSL(p, p.StopLoss.Value), 2) : null,
+                            tp_pnl = p.TakeProfit.HasValue ? (double?)Math.Round(CalculateEstimatedNetProfitAtSL(p, p.TakeProfit.Value), 2) : null,
+                            label = "manual"
+                        });
+                    }
                 }
 
                 var telemetry = new
@@ -2878,8 +2938,10 @@ namespace cAlgo.Robots
                 {
                     var pos = args.Position;
                     if (pos == null) return;
-                    if (pos.Label != BotId && pos.Comment != BotId) return;
-                    if (pos.SymbolName != SymbolName) return;
+                    bool isOwn = (pos.Label == BotId || pos.Comment == BotId) && pos.SymbolName == SymbolName;
+                    bool isManual = string.IsNullOrEmpty(pos.Label) || pos.Label == "manual";
+
+                    if (!isOwn && !isManual) return;
 
                     // The live spread when this handler happens to run is not the price the
                     // position closed at: a stop swept by a spike that snaps back would be
@@ -2899,6 +2961,14 @@ namespace cAlgo.Robots
                     string botReason;
                     bool hasBotReason = _closeReasons.TryGetValue(pos.Id, out botReason);
                     _closeReasons.Remove(pos.Id);
+
+                    if (isManual)
+                    {
+                        reason = hasBotReason ? botReason : "Manual close on cTrader";
+                        ReportManualPositionClosed(pos, pnl, reason, exitPrice);
+                        SendLiveTickTelemetry(force: true);
+                        return;
+                    }
 
                     if (args.Reason == PositionCloseReason.StopLoss)
                     {
@@ -2939,6 +3009,157 @@ namespace cAlgo.Robots
                     if (ShowLogs) Print($"[OnPositionClosed Error] {ex.Message}");
                 }
             });
+        }
+
+        private void OnPositionOpened(PositionOpenedEventArgs args)
+        {
+            BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    var pos = args.Position;
+                    if (pos == null) return;
+                    bool isManual = string.IsNullOrEmpty(pos.Label) || pos.Label == "manual";
+                    if (isManual)
+                    {
+                        ReportManualPositionOpen(pos);
+                        SendLiveTickTelemetry(force: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (ShowLogs) Print($"[OnPositionOpened Error] {ex.Message}");
+                }
+            });
+        }
+
+        private void SyncManualPositionsOnStart()
+        {
+            if (RunningMode != RunningMode.RealTime) return;
+            try
+            {
+                foreach (var pos in Positions)
+                {
+                    if (string.IsNullOrEmpty(pos.Label) || pos.Label == "manual")
+                    {
+                        ReportManualPositionOpen(pos);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[SyncManualPositionsOnStart Error] {ex.Message}");
+            }
+        }
+
+        private void ReportManualPositionOpen(Position pos)
+        {
+            if (RunningMode != RunningMode.RealTime || _httpClient == null || pos == null) return;
+            try
+            {
+                int posId = pos.Id;
+                string posSymbol = pos.SymbolName;
+                string posSide = pos.TradeType.ToString();
+                var sym = Symbols.GetSymbol(posSymbol) ?? Symbol;
+                double posLots = sym.LotSize > 0 ? pos.VolumeInUnits / sym.LotSize : pos.VolumeInUnits / 100.0;
+                double entryPrice = pos.EntryPrice;
+                double? slPrice = pos.StopLoss;
+                double? tpPrice = pos.TakeProfit;
+                string entryTimeStr = pos.EntryTime.ToUniversalTime().ToString("o");
+
+                var report = new
+                {
+                    ctrader_id = posId,
+                    bot_id = "manual",
+                    action = "open",
+                    symbol = posSymbol,
+                    side = posSide,
+                    volume = posLots,
+                    entry_price = entryPrice,
+                    sl_price = slPrice,
+                    tp_price = tpPrice,
+                    sl_pips = (double?)null,
+                    tp_pips = (double?)null,
+                    reason = "Manual open on cTrader",
+                    entry_indicators = "{}",
+                    entry_time = entryTimeStr,
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = Account.BrokerName,
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
+                };
+
+                var json = JsonSerializer.Serialize(report);
+                var reportUrl = !string.IsNullOrWhiteSpace(AiReportUrl)
+                    ? AiReportUrl.Trim()
+                    : ApiUrl.Replace("/trade", "/portfolio/report");
+
+                Task.Run(async () =>
+                {
+                    string error = await PostReportAsync(reportUrl, json);
+                    if (error == null && ShowLogs)
+                        Print($"[Portfolio Hub] Reported manual position open: #{posId} {posSide} {posSymbol} {posLots:F2}L");
+                });
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[ReportManualPositionOpen Error] {ex.Message}");
+            }
+        }
+
+        private void ReportManualPositionClosed(Position pos, double pnl, string reason, double exitPrice)
+        {
+            if (RunningMode != RunningMode.RealTime || _httpClient == null || pos == null) return;
+            try
+            {
+                int posId = pos.Id;
+                string posSymbol = pos.SymbolName;
+                string posSide = pos.TradeType.ToString();
+                var sym = Symbols.GetSymbol(posSymbol) ?? Symbol;
+                double posLots = sym.LotSize > 0 ? pos.VolumeInUnits / sym.LotSize : pos.VolumeInUnits / 100.0;
+                double entryPrice = pos.EntryPrice;
+
+                var report = new
+                {
+                    ctrader_id = posId,
+                    bot_id = "manual",
+                    action = "close",
+                    symbol = posSymbol,
+                    side = posSide,
+                    volume = posLots,
+                    entry_price = entryPrice,
+                    exit_price = exitPrice,
+                    sl_price = pos.StopLoss,
+                    tp_price = pos.TakeProfit,
+                    net_pnl = pnl,
+                    gross_pnl = pos.GrossProfit,
+                    pips = pos.Pips,
+                    exit_reason = reason,
+                    exit_time = DateTime.UtcNow.ToString("o"),
+                    account_number = Account.Number.ToString(),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = Account.BrokerName,
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
+                };
+
+                var json = JsonSerializer.Serialize(report);
+                var reportUrl = !string.IsNullOrWhiteSpace(AiReportUrl)
+                    ? AiReportUrl.Trim()
+                    : ApiUrl.Replace("/trade", "/portfolio/report");
+
+                Task.Run(async () =>
+                {
+                    string error = await PostReportAsync(reportUrl, json);
+                    if (error == null && ShowLogs)
+                        Print($"[Portfolio Hub] Reported manual position closed: #{posId} {posSide} {posSymbol} PnL: ${pnl:F2}");
+                });
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[ReportManualPositionClosed Error] {ex.Message}");
+            }
         }
 
         private void ReportPositionOpen(Position position, double slPips, double tpPips, string reason = "")

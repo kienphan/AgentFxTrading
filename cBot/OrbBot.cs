@@ -12,11 +12,6 @@
 //
 // The "previous session's OR" regime (the bias this bot exists to test):
 //
-//   PrevOrFilterEnabled  The previous session's OR sits ENTIRELY on the wrong side of today's:
-//                          LONG : prevOR_low  > todayOR_high  (today opened below yesterday) -> skip
-//                          SHORT: prevOR_high < todayOR_low   (today opened above yesterday) -> skip
-//                        Only the SIGNAL is rejected, not the session: the opposite direction can
-//                        still trade, because both ORs are already fixed for the day.
 //   PrevOrSlEnabled      Anchor the stop at the opposite boundary of the previous session's OR
 //                        (LONG -> prevOR_low, SHORT -> prevOR_high). Falls back to StopMode when
 //                        that level is missing or on the wrong side of the entry.
@@ -27,12 +22,9 @@
 //                        reference in place, because the market was simply shut.
 //
 // What the rules cost was measured on XAUUSD M15 (2023-01 -> 2026-08, 927 sessions, spread $0.20,
-// NY-open OR): the previous-OR FILTER has no edge — breakout direction does not persist from one
-// session to the next (50.5% agreement against a 50.0% coin flip, z = +0.33), and the filter alone
-// left total R unchanged. The previous-OR STOP does cut drawdown roughly in half (-46R -> -17R) but
-// also cuts return, and the comparison flips sign with the stop floor. Both switches therefore
-// default to OFF, exactly as in the Python reference; see research/orb_prevday/SUMMARY.md.
-//
+// NY-open OR): the previous-OR STOP does cut drawdown roughly in half (-46R -> -17R) but
+// also cuts return, and the comparison flips sign with the stop floor. The switch therefore
+// defaults to OFF, exactly as in the Python reference; see research/orb_prevday/SUMMARY.md.
 // Two guardrails that analysis showed are not optional:
 //
 //   MinSlPips   The previous-OR stop can land a few cents from the entry when the ranges barely
@@ -136,18 +128,8 @@ namespace cAlgo.Robots
         public double BufferPips { get; set; }
 
         // ---- Previous session's opening range (regime / bias) ---------------------------------
-        [Parameter("Prev-Day OR Gap Filter", Group = "Prev-Day OR", DefaultValue = false)]
-        public bool PrevDayOrFilterEnabled { get; set; }
-
         [Parameter("Prev-Day OR Stop", Group = "Prev-Day OR", DefaultValue = false)]
         public bool PrevDayOrSlEnabled { get; set; }
-
-        // Bias from previous day's close vs previous day's OR:
-        // Long only if prev close > prev OR high, Short only if prev close < prev OR low.
-        // Otherwise neutral -> no trade today.
-        [Parameter("Prev-Day Close vs OR Bias", Group = "Prev-Day OR", DefaultValue = false)]
-        public bool PrevDayCloseBiasEnabled { get; set; }
-
         // Daily ATR multiplier for DailyAtr stop mode (e.g. 1.0 = 1x yesterday's Daily ATR)
         [Parameter("Daily ATR Multiplier", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Step = 0.05)]
         public double DailyAtrMultiplier { get; set; }
@@ -280,9 +262,6 @@ namespace cAlgo.Robots
         private double _prevOrLow = double.MaxValue;
         private bool _prevOrFresh;
         private DateTime _prevOrDate = DateTime.MinValue;
-        private readonly HashSet<string> _prevOrBlockLogged = new HashSet<string>();
-        private double _prevDayClose = double.NaN;
-        private Bar _lastClosedBar;
         private Bars _dailyBars;
 
         // ---- Execution -----------------------------------------------------------------------
@@ -291,6 +270,8 @@ namespace cAlgo.Robots
         private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
 
         private DateTime _lastTickAt = DateTime.MinValue;
+        private DateTime _lastTickTelemetryTime = DateTime.MinValue;
+        private DateTime _lastBarHandled = DateTime.MinValue;
         private volatile bool _isStopped;
 
         // uvicorn closes an idle keep-alive connection after 5 s; retire pooled ones before it does
@@ -309,21 +290,21 @@ namespace cAlgo.Robots
             Print($"[ORB] Starting '{BotId}' on {SymbolName} ({TimeFrame}) | OR {OpeningRangeMinutes}m from " +
                   $"{SessionOpenHourWinterUtc:00}:{SessionOpenMinute:00} UTC (winter), EOD flatten " +
                   $"{EodFlattenHourWinterUtc:00}:{EodFlattenMinute:00} UTC | dir {Direction} | " +
-                  $"stop {StopMode} (min {MinSlPips:F0} pips) | PrevOR[filter=" +
-                  $"{(PrevDayOrFilterEnabled ? "on" : "off")} sl={(PrevDayOrSlEnabled ? "on" : "off")}] | " +
-                  $"risk {RiskPerTradePercent:F2}%/trade");
+                  $"stop {StopMode} (min {MinSlPips:F0} pips) | BE {BreakevenTriggerR:F1}R (partial {PartialCloseRatio:F2}) | " +
+                  $"TP {(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : (TakeProfitPips > 0 ? $"{TakeProfitPips:F0}p" : "none"))} | " +
+                  $"PrevOR[sl={(PrevDayOrSlEnabled ? "on" : "off")}] | risk {RiskPerTradePercent:F2}%/trade");
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
-            if (_dailyBars != null && _dailyBars.Count >= 2)
-                _prevDayClose = _dailyBars.ClosePrices.Last(1);
             SendAccountSync();
             Evaluate();
+            SendLiveTickTelemetry(force: true);
         }
         protected override void OnTick()
         {
             _lastTickAt = Server.Time;
             Evaluate();
+            SendLiveTickTelemetry();
         }
 
         protected override void OnBarClosed()
@@ -332,11 +313,12 @@ namespace cAlgo.Robots
             // logic runs here. OnTick only carries the end-of-day flatten, which must not wait for
             // another bar to close.
             var closed = Bars.Last(1);
+            _lastBarHandled = closed.OpenTime;
             _lastTickAt = Server.Time;      // a bar closed, so a quote did arrive
             RollOverSessionIfNeeded(closed.OpenTime);
-            _lastClosedBar = closed;
             CollectOrBar(closed);
             EvaluateBreakout(closed);
+            SendLiveTickTelemetry(force: true);
         }
         protected override void OnStop()
         {
@@ -430,7 +412,6 @@ namespace cAlgo.Robots
             _tradesFired = 0;
             _blockedAfterStop = false;
             _eodFlattened = false;
-            _prevOrBlockLogged.Clear();
 
             if (ShowLogs) Print($"[ORB] New session {date:yyyy-MM-dd} | " + PrevOrDescription());
         }
@@ -456,7 +437,7 @@ namespace cAlgo.Robots
             {
                 if (_prevOrFresh)
                     Print($"[ORB] Prev-OR dropped | session {_sessionDate:yyyy-MM-dd} opening range under " +
-                          $"{MinOrWidthPips:F0} pips -> the D-1 gate and stop are off for the new session");
+                          $"{MinOrWidthPips:F0} pips -> the D-1 stop is off for the new session");
                 _prevOrFresh = false;
                 return;
             }
@@ -465,20 +446,13 @@ namespace cAlgo.Robots
             _prevOrLow = _orLow;
             _prevOrDate = _sessionDate;
             _prevOrFresh = true;
-            var dBars = _dailyBars ?? MarketData.GetBars(TimeFrame.Daily);
-            if (dBars != null && dBars.Count >= 2)
-                _prevDayClose = dBars.ClosePrices.Last(1);
-            else if (_lastClosedBar != null)
-                _prevDayClose = _lastClosedBar.Close;
-            else if (Bars.Count >= 2)
-                _prevDayClose = Bars.ClosePrices.Last(1);
             if (ShowLogs)
                 Print($"[ORB] Prev-OR captured | session {_prevOrDate:yyyy-MM-dd} " +
-                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}], prevClose={_prevDayClose:F5}");
+                      $"[{_prevOrLow:F5} - {_prevOrHigh:F5}]");
         }
 
         private string PrevOrDescription() => _prevOrFresh
-            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}] (prevClose {(!double.IsNaN(_prevDayClose) ? _prevDayClose.ToString("F5") : "none")})"
+            ? $"prevOR {_prevOrDate:yyyy-MM-dd} [{_prevOrLow:F5} - {_prevOrHigh:F5}]"
             : "prevOR none";
 
         /// <summary>Extends today's range with a closed bar inside the window, then judges the
@@ -554,21 +528,6 @@ namespace cAlgo.Robots
         private bool PrevOrReady => _prevOrFresh && _prevOrHigh > double.MinValue && _prevOrLow < double.MaxValue;
 
         /// <summary>
-        /// True when the previous session's range sits entirely on the wrong side of today's in the
-        /// direction of the breakout — the market opened away from the trade:
-        ///   LONG : prevOR_low  > todayOR_high  (today is below yesterday)
-        ///   SHORT: prevOR_high &lt; todayOR_low   (today is above yesterday)
-        /// Missing D-1 data never blocks; that keeps the first session of a window and a cold start
-        /// behaving like the plain ORB instead of silently refusing to trade.
-        /// </summary>
-        private bool PrevDayOrBlocks(TradeType side)
-        {
-            if (!PrevDayOrFilterEnabled) return false;
-            if (!PrevOrReady || !_orValid) return false;
-            return side == TradeType.Buy ? _prevOrLow > _orHigh : _prevOrHigh < _orLow;
-        }
-
-        /// <summary>
         /// The stop anchored at the opposite boundary of the previous session's range, or null when
         /// the switch is off, the levels are missing, or the level is on the wrong side of the
         /// entry — in which case the caller falls back to StopMode.
@@ -582,34 +541,6 @@ namespace cAlgo.Robots
             return reference;
         }
 
-        /// <summary>
-        /// Checks whether the trade direction is allowed under PrevDayCloseBias:
-        /// If prevDayClose > prevOrHigh -> LongOnly
-        /// If prevDayClose < prevOrLow -> ShortOnly
-        /// Otherwise (closed inside prevOR) -> Neutral (neither side allowed).
-        /// </summary>
-        private bool PassesPrevDayCloseBias(TradeType side)
-        {
-            if (!PrevDayCloseBiasEnabled) return true;
-            if (!PrevOrReady || double.IsNaN(_prevDayClose)) return true; // cold start / no data -> pass through
-
-            bool isLong = side == TradeType.Buy;
-            if (isLong && _prevDayClose <= _prevOrHigh)
-            {
-                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
-                if (ShowLogs && _prevOrBlockLogged.Add(key))
-                    Print($"[ORB] Prev-Day Close Bias blocked Buy: prevClose {_prevDayClose:F5} <= prevOR high {_prevOrHigh:F5}");
-                return false;
-            }
-            if (!isLong && _prevDayClose >= _prevOrLow)
-            {
-                string key = $"CloseBias-{side}-{_prevOrDate:yyyy-MM-dd}";
-                if (ShowLogs && _prevOrBlockLogged.Add(key))
-                    Print($"[ORB] Prev-Day Close Bias blocked Sell: prevClose {_prevDayClose:F5} >= prevOR low {_prevOrLow:F5}");
-                return false;
-            }
-            return true;
-        }
 
         private double GetYesterdayDailyAtrPips()
         {
@@ -667,21 +598,6 @@ namespace cAlgo.Robots
             bool allowShort = Direction != OrbDirection.LongOnly;
 
             if (!((longConfirm && allowLong) || (shortConfirm && allowShort))) return;
-            if (longConfirm && allowLong && !PassesPrevDayCloseBias(TradeType.Buy)) return;
-            if (shortConfirm && allowShort && !PassesPrevDayCloseBias(TradeType.Sell)) return;
-
-            // Structural gate first: it depends only on levels already fixed for the day, so a
-            // rejected direction costs nothing and the other direction stays available.
-            if (longConfirm && allowLong && PrevDayOrBlocks(TradeType.Buy))
-            {
-                RejectPrevDayOrGap(TradeType.Buy, closed.Close);
-                return;
-            }
-            if (shortConfirm && allowShort && PrevDayOrBlocks(TradeType.Sell))
-            {
-                RejectPrevDayOrGap(TradeType.Sell, closed.Close);
-                return;
-            }
 
             if (!PassesAtrFilter(closed, longConfirm && allowLong, shortConfirm && allowShort)) return;
             if (!PassesBreakoutDistance(closed, longConfirm && allowLong, shortConfirm && allowShort)) return;
@@ -698,19 +614,6 @@ namespace cAlgo.Robots
             if (longConfirm && allowLong) TryOpen(TradeType.Buy, closed.Close);
             else if (shortConfirm && allowShort) TryOpen(TradeType.Sell, closed.Close);
         }
-
-        private void RejectPrevDayOrGap(TradeType side, double close)
-        {
-            bool isLong = side == TradeType.Buy;
-            double reference = isLong ? _prevOrLow : _prevOrHigh;
-            double todayBound = isLong ? _orHigh : _orLow;
-            string key = $"{side}-{_prevOrDate:yyyy-MM-dd}";
-            if (ShowLogs && _prevOrBlockLogged.Add(key))
-                Print($"[ORB] Prev-OR gap filter rejected {side} | prevOR {(isLong ? "low" : "high")} " +
-                      $"{reference:F5} {(isLong ? ">" : "<")} today OR {(isLong ? "high" : "low")} " +
-                      $"{todayBound:F5} | close {close:F5} — still armed");
-        }
-
         #endregion
 
         #region Breakout quality filters
@@ -882,6 +785,7 @@ namespace cAlgo.Robots
                 Print($"[ORB] Opened #{result.Position.Id} {side} {volume / Symbol.LotSize:F2} lots " +
                       $"{SymbolName} @ {result.Position.EntryPrice} | stop {slPips:F1} pips " +
                       (rawSlPips < slPips ? $"(clamped up from {rawSlPips:F1}) " : "") +
+                      (tpPips.HasValue ? $"| tp {tpPips.Value:F1} pips ({(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : "")}) " : "") +
                       $"| risk ${dollarRisk:F2} | OR [{_orLow:F5} - {_orHigh:F5}]" +
                       (prevOrStop.HasValue ? $" | stop at prevOR {prevOrStop.Value:F5}" : ""));
 
@@ -984,7 +888,15 @@ namespace cAlgo.Robots
             foreach (var pos in Positions.FindAll(BotId, SymbolName))
             {
                 if (_breakevenApplied.Contains(pos.Id)) continue;
-                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
+                {
+                    if (pos.StopLoss.HasValue)
+                    {
+                        initialSlPips = Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize;
+                        _initialSlPips[pos.Id] = initialSlPips;
+                    }
+                    else continue;
+                }
 
                 double profitPips = pos.Pips;
                 double triggerPips = initialSlPips * BreakevenTriggerR;
@@ -1010,31 +922,44 @@ namespace cAlgo.Robots
                     _breakevenApplied.Add(pos.Id);
                     Print($"[ORB] Breakeven applied on #{pos.Id} {pos.TradeType} | SL moved to {beSlPrice:F5} (+{BreakevenOffsetPips:F1} pips past entry)");
 
-                    // Partial Close at Breakeven
+                    SendLiveTickTelemetry(force: true);
+                    // Partial Close at Breakeven (chỉ khi vị thế đủ lớn, nếu đang ở minLot thì giữ nguyên toàn bộ)
                     if (PartialCloseRatio > 0 && PartialCloseRatio < 1.0)
                     {
-                        double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio);
-                        double remainingVolume = pos.VolumeInUnits - volumeToClose;
-                        if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
+                        if (pos.VolumeInUnits <= Symbol.VolumeInUnitsMin)
                         {
-                            double pnlBeforePartial = pos.NetProfit;
-                            var partialRes = pos.ModifyVolume(remainingVolume);
-                            if (partialRes != null && partialRes.IsSuccessful)
+                            if (ShowLogs)
+                                Print($"[ORB] Partial close skipped on #{pos.Id}: volume ({pos.VolumeInUnits / Symbol.LotSize:F2} lots) is at minimum lot ({Symbol.VolumeInUnitsMin / Symbol.LotSize:F2}). Holding full position at BE.");
+                        }
+                        else
+                        {
+                            double volumeToClose = Symbol.NormalizeVolumeInUnits(pos.VolumeInUnits * PartialCloseRatio, RoundingMode.Down);
+                            double remainingVolume = pos.VolumeInUnits - volumeToClose;
+                            if (volumeToClose >= Symbol.VolumeInUnitsMin && remainingVolume >= Symbol.VolumeInUnitsMin)
                             {
-                                double realizedPnl = pnlBeforePartial - pos.NetProfit;
-                                try
+                                double pnlBeforePartial = pos.NetProfit;
+                                var partialRes = pos.ModifyVolume(remainingVolume);
+                                if (partialRes != null && partialRes.IsSuccessful)
                                 {
-                                    var partialHist = History.LastOrDefault(h => h.PositionId == pos.Id);
-                                    if (partialHist != null) realizedPnl = partialHist.NetProfit;
-                                }
-                                catch { }
+                                    double realizedPnl = pnlBeforePartial - pos.NetProfit;
+                                    try
+                                    {
+                                        var partialHist = History.LastOrDefault(h => h.PositionId == pos.Id);
+                                        if (partialHist != null) realizedPnl = partialHist.NetProfit;
+                                    }
+                                    catch { }
 
-                                Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
-                                ReportPartialClose(pos, volumeToClose / Symbol.LotSize, remainingVolume / Symbol.LotSize, realizedPnl, "Partial close at Breakeven");
+                                    Print($"[ORB] Partial Close on #{pos.Id}: closed {volumeToClose / Symbol.LotSize:F2} lots ({(PartialCloseRatio * 100):F0}%), remaining {remainingVolume / Symbol.LotSize:F2} lots");
+                                    ReportPartialClose(pos, volumeToClose / Symbol.LotSize, remainingVolume / Symbol.LotSize, realizedPnl, "Partial close at Breakeven");
+                                }
+                                else
+                                {
+                                    Print($"[ORB] Partial Close failed on #{pos.Id}: {partialRes?.Error}");
+                                }
                             }
-                            else
+                            else if (ShowLogs)
                             {
-                                Print($"[ORB] Partial Close failed on #{pos.Id}: {partialRes?.Error}");
+                                Print($"[ORB] Partial close skipped on #{pos.Id}: volume ({pos.VolumeInUnits / Symbol.LotSize:F2} lots) cannot be split into valid sub-lots (close={volumeToClose / Symbol.LotSize:F2}, rem={remainingVolume / Symbol.LotSize:F2}, min={Symbol.VolumeInUnitsMin / Symbol.LotSize:F2}). Holding full position at BE.");
                             }
                         }
                     }
@@ -1048,7 +973,15 @@ namespace cAlgo.Robots
 
             foreach (var pos in Positions.FindAll(BotId, SymbolName))
             {
-                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0) continue;
+                if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
+                {
+                    if (pos.StopLoss.HasValue)
+                    {
+                        initialSlPips = Math.Abs(pos.EntryPrice - pos.StopLoss.Value) / Symbol.PipSize;
+                        _initialSlPips[pos.Id] = initialSlPips;
+                    }
+                    else continue;
+                }
 
                 double profitPips = pos.Pips;
                 double triggerPips = initialSlPips * TrailTriggerR;
@@ -1071,6 +1004,7 @@ namespace cAlgo.Robots
                     {
                         Print($"[ORB] Trailing Stop updated on #{pos.Id} {pos.TradeType} | SL moved to {newSlPrice:F5} (current price {currentPrice:F5}, trail {trailDistancePips:F1} pips)");
                     }
+                        SendLiveTickTelemetry(force: true);
                 }
             }
         }
@@ -1118,6 +1052,7 @@ namespace cAlgo.Robots
                     Print($"[ORB] Closed #{position.Id} {position.TradeType} {position.Comment}: {reason}, " +
                           $"net {position.NetProfit:F2}");
                     ReportPositionClosed(position, position.NetProfit, reason, exitPrice, position.Pips, initialSl);
+                    SendLiveTickTelemetry(force: true);
                 }
                 catch (Exception ex)
                 {
@@ -1207,7 +1142,6 @@ namespace cAlgo.Robots
                         prev_or_high = PrevOrReady ? Math.Round(_prevOrHigh, Symbol.Digits) : (double?)null,
                         prev_or_low = PrevOrReady ? Math.Round(_prevOrLow, Symbol.Digits) : (double?)null,
                         prev_or_date = PrevOrReady ? _prevOrDate.ToString("yyyy-MM-dd") : null,
-                        prev_or_filter = PrevDayOrFilterEnabled,
                         prev_or_stop = PrevDayOrSlEnabled,
                         spread = Math.Round((Symbol.Ask - Symbol.Bid) / Symbol.PipSize, 1)
                     }),
@@ -1226,6 +1160,7 @@ namespace cAlgo.Robots
                     string error = await PostReportAsync(url, json);
                     if (error != null) Print($"[ORB] Failed to report open #{position.Id}: {error}");
                 });
+                SendLiveTickTelemetry(force: true);
             }
             catch (Exception ex)
             {
@@ -1312,6 +1247,7 @@ namespace cAlgo.Robots
                     else if (ShowLogs)
                         Print($"[ORB] Reported partial close #{position.Id} {closedLots:F2} lots, pnl {realizedPnl:F2}");
                 });
+                    SendLiveTickTelemetry(force: true);
             }
             catch (Exception ex)
             {
@@ -1324,10 +1260,11 @@ namespace cAlgo.Robots
         private static readonly int[] ReportRetryDelaysSeconds = { 2, 4, 8, 16 };
 
         /// <summary>Posts a report, retrying on failure. Returns null once delivered, else the last error.</summary>
-        private async Task<string> PostReportAsync(string url, string json)
+        private async Task<string> PostReportAsync(string url, string json, bool retry = true)
         {
             string lastError = null;
-            for (int attempt = 0; attempt <= ReportRetryDelaysSeconds.Length; attempt++)
+            int maxAttempts = retry ? ReportRetryDelaysSeconds.Length : 0;
+            for (int attempt = 0; attempt <= maxAttempts; attempt++)
             {
                 if (attempt > 0)
                     await Task.Delay(TimeSpan.FromSeconds(ReportRetryDelaysSeconds[attempt - 1]));
@@ -1338,6 +1275,8 @@ namespace cAlgo.Robots
                     {
                         if (response.IsSuccessStatusCode) return null;
                         lastError = $"HTTP {(int)response.StatusCode}";
+                        if (!retry || ((int)response.StatusCode < 500 && (int)response.StatusCode != 408))
+                            return lastError;
                     }
                 }
                 catch (Exception ex)
@@ -1345,7 +1284,91 @@ namespace cAlgo.Robots
                     lastError = ex.InnerException != null ? $"{ex.Message} ({ex.InnerException.Message})" : ex.Message;
                 }
             }
-            return $"{lastError} (after {ReportRetryDelaysSeconds.Length + 1} attempts)";
+            return $"{lastError} (after {maxAttempts + 1} attempts)";
+        }
+
+        private double? PnlAtLevel(Position pos, double? level)
+        {
+            if (pos == null || !level.HasValue || level.Value <= 0 || Symbol.PipSize <= 0) return null;
+            double pips = (pos.TradeType == TradeType.Buy
+                ? level.Value - pos.EntryPrice
+                : pos.EntryPrice - level.Value) / Symbol.PipSize;
+            return Math.Round(pips * Symbol.PipValue * pos.VolumeInUnits - Math.Abs(pos.Commissions) * 2.0 + pos.Swap, 2);
+        }
+
+        private string TickUrl()
+        {
+            if (!string.IsNullOrWhiteSpace(ApiUrl))
+            {
+                var baseUri = ApiUrl.Trim().TrimEnd('/');
+                if (baseUri.EndsWith("/trade"))
+                    baseUri = baseUri.Substring(0, baseUri.Length - "/trade".Length);
+                return $"{baseUri}/api/tick";
+            }
+            return "http://127.0.0.1:8000/api/tick";
+        }
+
+        private void SendLiveTickTelemetry(bool force = false)
+        {
+            if (RunningMode != RunningMode.RealTime) return;
+            var positions = Positions.FindAll(BotId, SymbolName);
+            double interval = positions.Length > 0 ? 5.0 : 15.0;
+            if (!force && (DateTime.UtcNow - _lastTickTelemetryTime).TotalSeconds < interval) return;
+            _lastTickTelemetryTime = DateTime.UtcNow;
+
+            try
+            {
+                var posList = new List<object>();
+                Position firstPos = positions.Length > 0 ? positions[0] : null;
+                foreach (var p in positions)
+                {
+                    posList.Add(new
+                    {
+                        id = p.Id,
+                        symbol = p.SymbolName,
+                        side = p.TradeType.ToString(),
+                        volume = p.VolumeInUnits / Symbol.LotSize,
+                        entry_price = p.EntryPrice,
+                        current_price = p.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask,
+                        net_profit = Math.Round(p.NetProfit, 2),
+                        pips = Math.Round(p.Pips, 1),
+                        sl_price = p.StopLoss,
+                        tp_price = p.TakeProfit,
+                        sl_pnl = PnlAtLevel(p, p.StopLoss),
+                        tp_pnl = PnlAtLevel(p, p.TakeProfit),
+                        label = p.Label
+                    });
+                }
+
+                var telemetry = new
+                {
+                    bot_id = BotId,
+                    account_number = Account.Number.ToString(CultureInfo.InvariantCulture),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = AccountLabel,
+                    symbol = SymbolName,
+                    bid = Symbol.Bid,
+                    ask = Symbol.Ask,
+                    equity = Account.Equity,
+                    balance = Account.Balance,
+                    pnl = firstPos != null ? (double?)Math.Round(firstPos.NetProfit, 2) : null,
+                    pips = firstPos != null ? (double?)Math.Round(firstPos.Pips, 1) : null,
+                    sl_price = firstPos?.StopLoss,
+                    tp_price = firstPos?.TakeProfit,
+                    sl_pnl = firstPos != null ? PnlAtLevel(firstPos, firstPos.StopLoss) : null,
+                    tp_pnl = firstPos != null ? PnlAtLevel(firstPos, firstPos.TakeProfit) : null,
+                    positions = posList,
+                    last_bar = _lastBarHandled == DateTime.MinValue ? null : _lastBarHandled.ToString("yyyy-MM-ddTHH:mm:ss")
+                };
+
+                string json = JsonSerializer.Serialize(telemetry);
+                string url = TickUrl();
+                Task.Run(async () => await PostReportAsync(url, json, retry: false));
+            }
+            catch (Exception ex)
+            {
+                if (ShowLogs) Print($"[ORB] SendLiveTickTelemetry error: {ex.Message}");
+            }
         }
 
         #endregion

@@ -151,27 +151,12 @@ def test_a_range_missed_while_the_bot_was_down_is_rebuilt_from_history():
 
 # --- the previous session's opening range (regime / bias) ---------------------------------
 
-def test_the_previous_or_gate_blocks_only_the_wrong_side_of_a_gap():
-    # LONG : prevOR_low  > todayOR_high  (today opened below yesterday)
-    # SHORT: prevOR_high < todayOR_low   (today opened above yesterday)
-    assert "return side == TradeType.Buy ? _prevOrLow > _orHigh : _prevOrHigh < _orLow;" in SOURCE
-    assert "if (!PrevDayOrFilterEnabled) return false;" in SOURCE
-
-
 def test_the_previous_or_stop_anchors_on_the_opposite_boundary_of_yesterday():
     assert "double reference = side == TradeType.Buy ? _prevOrLow : _prevOrHigh;" in SOURCE
     # A level on the wrong side of the entry is not a stop; the caller falls back to StopMode.
     assert "if (side == TradeType.Buy && reference >= entry) return null;" in SOURCE
     assert "if (side == TradeType.Sell && reference <= entry) return null;" in SOURCE
     assert "double? prevOrStop = PrevDayOrStopPrice(side, entry);" in SOURCE
-
-
-def test_a_rejected_gap_costs_the_signal_not_the_session():
-    # Both ranges are already fixed for the day, so the opposite direction may still trade.
-    assert "RejectPrevDayOrGap(TradeType.Buy, closed.Close);" in SOURCE
-    assert "still armed" in SOURCE
-    # ...but the rejection is logged once per side per day, not once per bar.
-    assert "if (ShowLogs && _prevOrBlockLogged.Add(key))" in SOURCE
 
 
 def test_only_the_immediately_previous_session_qualifies():
@@ -183,14 +168,12 @@ def test_only_the_immediately_previous_session_qualifies():
     assert "if (!_orHadWindow)" in SOURCE
 
 
-def test_both_previous_or_switches_default_to_off():
-    assert ('[Parameter("Prev-Day OR Gap Filter", Group = "Prev-Day OR", DefaultValue = false)]'
-            in SOURCE)
+def test_previous_or_stop_switch_defaults_to_off():
     assert ('[Parameter("Prev-Day OR Stop", Group = "Prev-Day OR", DefaultValue = false)]'
             in SOURCE)
-    assert "public bool PrevDayOrFilterEnabled { get; set; }" in SOURCE
     assert "public bool PrevDayOrSlEnabled { get; set; }" in SOURCE
-
+    assert "PrevDayOrFilterEnabled" not in SOURCE
+    assert "PrevDayCloseBiasEnabled" not in SOURCE
 
 # --- the two guardrails the backtest showed are not optional -------------------------------
 
@@ -245,14 +228,6 @@ def test_the_bot_is_pure_rules_with_no_ai_or_news_layer():
 def test_reporting_is_live_only_so_a_backtest_never_books_trades():
     assert SOURCE.count("if (RunningMode != RunningMode.RealTime) return;") >= 3
     assert SOURCE.count("_httpClient.") == 1
-
-
-def test_prev_day_close_bias_uses_daily_bars_or_prior_session_close():
-    assert "_dailyBars = MarketData.GetBars(TimeFrame.Daily);" in SOURCE
-    assert "_prevDayClose = dBars.ClosePrices.Last(1);" in SOURCE
-    # Rollover must run before updating _lastClosedBar with today's bar
-    assert "RollOverSessionIfNeeded(closed.OpenTime);" in SOURCE
-    assert SOURCE.index("RollOverSessionIfNeeded(closed.OpenTime);") < SOURCE.index("_lastClosedBar = closed;")
 
 
 def test_partial_close_at_breakeven_reports_to_portfolio_hub():
