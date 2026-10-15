@@ -122,3 +122,50 @@ def test_flowrsi_evaluates_the_closed_bar():
     body = _method(FLOWRSI, "private void EvaluateStrategySignals(")
     assert "int index = ClosedBarIndex();" in body
     assert "Count - 1" not in body
+
+
+# --- MtfChartBot --------------------------------------------------------------------------
+# Same bug class, one layer down: the MTF bot feeds D1/H4/H1/M15 candles to the analyst, and
+# `series.Count - 2` on each series dropped the bar that had just closed (2026-09-29 review).
+
+MTF = (ROOT / "cBot" / "MtfChartBot.cs").read_text(encoding="utf-8")
+
+
+def _mtf_forming_condition(src: str) -> str:
+    body = _method(src, "private int ClosedIndexFor(Bars series)")
+    m = re.search(r"if \((.+?)\)\s*\n\s*return last - 1;", body, re.S)
+    assert m, "ClosedIndexFor() has no guard that steps back to the forming bar"
+    return m.group(1)
+
+
+def _is_forming_mtf(cond: str, *, last_open: datetime, now: datetime, span: timedelta,
+                    last: int = 499) -> bool:
+    py = cond.replace("series[last].OpenTime", "LAST_OPEN").replace("SpanOf(series)", "SPAN")
+    py = py.replace("Server.Time", "NOW").replace("&&", " and ")
+    py = re.sub(r"\blast\b", "LAST", py)
+    return bool(eval(  # noqa: S307 - our own translated source under an empty builtins
+        " ".join(py.split()), {"__builtins__": {}},
+        {"LAST_OPEN": last_open, "NOW": now, "SPAN": span, "LAST": last},
+    ))
+
+
+@pytest.mark.parametrize("last_open,span,now,forming", [
+    (datetime(2026, 9, 29, 17, 30), timedelta(minutes=15), datetime(2026, 9, 29, 17, 45, 3), False),
+    (datetime(2026, 9, 29, 17, 45), timedelta(minutes=15), datetime(2026, 9, 29, 17, 45, 3), True),
+    (datetime(2026, 9, 29, 12, 0), timedelta(hours=4), datetime(2026, 9, 29, 17, 45, 3), False),
+    (datetime(2026, 9, 29, 16, 0), timedelta(hours=4), datetime(2026, 9, 29, 17, 45, 3), True),
+    (datetime(2026, 9, 28, 0, 0), timedelta(days=1), datetime(2026, 9, 29, 17, 45, 3), False),
+], ids=["m15-closed", "m15-new", "h4-closed", "h4-forming", "d1-closed"])
+def test_mtf_resolves_each_series_by_time(last_open, span, now, forming):
+    cond = _mtf_forming_condition(MTF)
+    assert _is_forming_mtf(cond, last_open=last_open, now=now, span=span) is forming
+
+
+def test_mtf_feeds_the_index_it_resolved_for_every_timeframe():
+    # Server.Time is an instance property, so the helper that reads it must not be static.
+    assert "private static int ClosedIndexFor" not in MTF
+    body = _method(MTF, "private List<Dictionary<string, object>> ClosedBars(Bars series, int count)")
+    assert "int lastClosed = ClosedIndexFor(series);" in body
+    assert "series.Count - 2" not in MTF
+    for key, series in (("d1", "_d1"), ("h4", "_h4"), ("h1", "_h1"), ("m15", "Bars")):
+        assert f'["{key}"] = ClosedBars({series},' in MTF
