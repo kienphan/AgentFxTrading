@@ -148,6 +148,13 @@ FLOWRSI_HELP: Dict[str, str] = {
         "Hệ số làm chậm: %K là trung bình của %K thô qua số nến này, trước khi tính %D.\n"
         "Lớn hơn → Stochastic mượt hơn, ít nhiễu nhưng phản ứng chậm hơn."),
 
+    "FixedLots": (
+        "Số lot cố định cho mỗi lệnh (0 = tính lot động theo RiskPercentage).\n"
+        "Khi > 0, bot sẽ luôn vào đúng số lot này (ví dụ 0.01 lot), không phụ thuộc vào balance tài khoản.\n"
+        "Vẫn bị giới hạn bởi trần Max Dollar Risk Per Trade để bảo vệ tài khoản."),
+    "MaxAllowedLots": (
+        "Trần số lot tối đa cho phép của bot (0 = không giới hạn trần lot).\n"
+        "Nếu số lot tính theo % rủi ro vượt qua trần này, bot sẽ tự động giới hạn về đúng số lot này."),
     # --- Risk Management -------------------------------------------------------------------------
     "RiskPercentage": (
         "Rủi ro mỗi lệnh tính bằng % equity hiện tại. Lot được tính để nếu chạm SL thì lỗ đúng số tiền này: "

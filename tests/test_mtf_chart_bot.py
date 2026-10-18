@@ -45,7 +45,7 @@ def test_a_market_order_is_measured_from_the_price_it_fills_at():
 def test_a_pending_order_is_re_priced_instead_of_being_left_behind():
     src = _src()
     assert 'if (action == "MODIFY_PENDING_ORDER")' in src
-    assert "ModifyPendingOrder(order, target, slPips, tpPips, null)" in src
+    assert "ModifyPendingOrder(order, target, slPips, tpPips, (DateTime?)null)" in src
     assert 'JournalEvent("modify"' in src
 
 
@@ -85,6 +85,27 @@ def test_forward_test_events_are_journaled():
     assert 'JournalEvent("error"' in src
     assert 'JournalEvent("expiry"' in src
     assert "ClientOrderId" in src
+
+
+def test_fixed_lots_is_the_default_size_and_is_sent_to_the_gate():
+    src = _src()
+    assert ('[Parameter("Fixed lots (0 = risk %)", Group = "Risk", DefaultValue = 0.01'
+            in src)
+    assert '["fixed_lots"] = FixedLots' in src
+    assert "if (FixedLots > 0)" in src
+    assert "fixed_lots_below_minimum" in src
+    # The percentage budget is only consulted when FixedLots is 0.
+    assert "double riskAmount = Account.Equity * (RiskPercent / 100.0);" in src
+
+
+def test_exact_min_rr_is_accepted_and_cbot_refusals_are_journaled():
+    src = _src()
+    # 1.3355/1.3385/1.3295 is exactly 2.0R but arrives as 1.9999999999999996.
+    assert "tpPips / slPips + 1e-9 < MinRr" in src
+    assert '["error"] = "rr_below_min"' in src
+    assert '["error"] = "sizing_refused"' in src
+    assert '["error"] = "entry_distance_exceeded"' in src
+    assert "VolumeForRisk(slPips, out string sizingRefusal)" in src
 
 
 def test_ai_timeout_is_a_parameter_long_enough_for_a_thinking_reply():

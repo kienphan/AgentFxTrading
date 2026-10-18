@@ -1133,7 +1133,7 @@ BREAKOUT_DISTANCE_LIMITS = (
     # (symbol tokens, prompt label, direct ATR x, direct cap, absolute ATR x, absolute cap)
     (("USTEC", "NAS100"), "USTEC/NAS100", 1.3, 700.0, 3.2, 2100.0),
     (("US30", "DJ30"), "US30/DJ30", 1.5, 950.0, 3.4, 2800.0),
-    (("US500", "SPX500"), "US500/SPX500", 1.4, 150.0, 3.4, 450.0),
+    (("US500", "SPX500"), "US500/SPX500", 2.2, 450.0, 3.8, 1200.0),
     (("DE40", "GER40"), "DE40/GER40", 1.5, 700.0, 3.4, 1900.0),
     (("UK100", "GB100"), "UK100/GB100", 1.5, 550.0, 3.4, 1600.0),
     (("JP225", "NIKKEI", "JPN225"), "JP225/Nikkei", 1.8, 3000.0, 3.8, 7000.0),
@@ -1405,6 +1405,7 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot, account_id: Optional[str] = No
     sym_upper = snapshot.symbol.upper()
 
     max_direct_breakout_dist, max_breakout_dist = resolve_breakout_limits(snapshot.symbol, atr_ref)
+    atr_text = f", ATR {atr_ref:.1f}p" if atr_ref else ", ATR n/a"
 
     # 1. Absolute overextension check (applies to both Model 1 and Model 2)
     if orb.breakout_distance_pips > max_breakout_dist:
@@ -1413,7 +1414,10 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot, account_id: Optional[str] = No
             volume_lots=0.01,
             sl_pips=0.0,
             tp_pips=0.0,
-            reason=f"Cycle gate: Breakout overextended ({orb.breakout_distance_pips:.1f}p > max {max_breakout_dist:.1f}p threshold). Avoid chasing at extremes."
+            reason=(
+                f"Cycle gate: Breakout overextended ({orb.breakout_distance_pips:.1f}p > "
+                f"absolute max {max_breakout_dist:.1f}p{atr_text}). Avoid chasing at extremes."
+            )
         )
 
     # 2. Exhaustion Breakout check for Model 1 Direct Entry:
@@ -1426,7 +1430,8 @@ def evaluate_cycle_gate(snapshot: MarketSnapshot, account_id: Optional[str] = No
             sl_pips=0.0,
             tp_pips=0.0,
             reason=(
-                f"Cycle gate: Breakout candle exhausted ({orb.breakout_distance_pips:.1f}p > direct max {max_direct_breakout_dist:.1f}p threshold). "
+                f"Cycle gate: Breakout candle exhausted ({orb.breakout_distance_pips:.1f}p > "
+                f"direct max {max_direct_breakout_dist:.1f}p{atr_text}). "
                 f"Model 1 direct entry prohibited; wait for Retest + TDI Bounce (Model 2)."
             )
         )
@@ -2718,15 +2723,31 @@ async def report_position(request: dict):
 
         elif action == "close":
             exit_price = request.get("exit_price")
-            pnl = request.get("pnl", 0)
+            raw_pnl = request.get("pnl")
+            if raw_pnl is None:
+                raw_pnl = request.get("net_pnl")
+            if raw_pnl is None:
+                raw_pnl = request.get("net_profit")
+            if raw_pnl is None:
+                raw_pnl = 0
+            try:
+                pnl = float(raw_pnl)
+            except (TypeError, ValueError):
+                pnl = 0.0
             if not exit_price or exit_price == 0:
                 latest = portfolio_manager.get_latest_price(symbol)
                 if latest:
                     exit_price = latest.get("bid") or latest.get("ask")
             
-            # FlowRsiBot sends `reason`; the other bots send `close_reason`. Both are free text
-            # composed by the bot (cTrader's close reason plus the bot's own exit rule).
-            close_reason = (request.get("close_reason") or request.get("reason") or "").strip() or None
+            # FlowRsiBot sends `reason` or `exit_reason`; the other bots send `close_reason`. Both are free text
+            # composed by the bot (cTrader's close reason plus the bot's own exit rule). A whitespace-only
+            # first key must not hide a useful fallback.
+            close_reason = None
+            for key in ("close_reason", "reason", "exit_reason"):
+                value = request.get(key)
+                if value is not None and str(value).strip():
+                    close_reason = str(value).strip()
+                    break
             success = portfolio_manager.close_position(
                 bot_id=bot_id,
                 symbol=symbol,

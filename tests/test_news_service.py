@@ -214,3 +214,27 @@ def test_api_news_endpoints():
     data = resp.json()
     assert data["success"] is True
     assert "assessments" in data
+
+
+@pytest.mark.anyio
+async def test_get_upcoming_symbol_events(monkeypatch):
+    now = datetime.now(timezone.utc)
+    t1 = (now + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    t2 = (now + timedelta(hours=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    fake_events = [
+        {"title": "Fed Speech", "country": "USD", "impact": "High", "date": t1},
+        {"title": "Retail Sales", "country": "USD", "impact": "Medium", "date": t1},
+        {"title": "Low Impact Survey", "country": "USD", "impact": "Low", "date": t1},
+        {"title": "Distant NFP", "country": "USD", "impact": "High", "date": t2},
+        {"title": "ECB Speech", "country": "EUR", "impact": "High", "date": t1},
+    ]
+    monkeypatch.setattr(news_service, "fetch_forexfactory_raw_events",
+                        AsyncMock(return_value=fake_events))
+
+    events = await news_service.get_upcoming_symbol_events("XAUUSD", hours_ahead=12)
+    assert len(events) == 2
+    assert any("Fed Speech (High)" in e for e in events)
+    assert any("Retail Sales (Medium)" in e for e in events)
+    assert not any("Low Impact" in e for e in events)
+    assert not any("Distant NFP" in e for e in events)
+    assert not any("ECB Speech" in e for e in events)

@@ -59,3 +59,22 @@ def test_market_order_sl_tp_are_derived_from_final_levels_in_pips():
         assert decl.start() > boundary_check, (
             f"{name} must be computed from the final SL/TP levels, after the boundary checks"
         )
+
+
+def test_fixed_lots_and_max_allowed_lots_parameters_declared():
+    """FlowRsiBot must declare FixedLots and MaxAllowedLots to support fixed sizing caps."""
+    src = CS_PATH.read_text(encoding="utf-8")
+    assert 'public double FixedLots { get; set; }' in src
+    assert 'public double MaxAllowedLots { get; set; }' in src
+
+
+def test_calculate_dynamic_volume_handles_fixed_lots_and_max_allowed_lots():
+    """CalculateDynamicVolumeInUnits must check FixedLots and cap at MaxAllowedLots."""
+    src = CS_PATH.read_text(encoding="utf-8")
+    start = src.index("private double CalculateDynamicVolumeInUnits(")
+    end = src.index("private void ManageExits()", start)
+    body = src[start:end]
+    assert "if (FixedLots > 0)" in body
+    assert "if (MaxAllowedLots > 0)" in body
+    assert "Symbol.NormalizeVolumeInUnits(FixedLots * Symbol.LotSize)" in body
+    assert "Symbol.NormalizeVolumeInUnits(MaxAllowedLots * Symbol.LotSize)" in body

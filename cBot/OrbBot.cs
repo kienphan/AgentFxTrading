@@ -120,6 +120,10 @@ namespace cAlgo.Robots
         [Parameter("Allow Re-entry After Stop", Group = "Session", DefaultValue = false)]
         public bool AllowReentryAfterSl { get; set; }
 
+        // Maximum minutes after session open to accept a breakout entry (0 = off / any time before flatten)
+        [Parameter("Max Entry Window (minutes, 0=off)", Group = "Session", DefaultValue = 180, MinValue = 0, MaxValue = 1440)]
+        public int MaxEntryWindowMinutes { get; set; } = 180;
+
         // ---- Opening range -------------------------------------------------------------------
         [Parameter("Min OR Width (pips)", Group = "Opening Range", DefaultValue = 20.0, MinValue = 0.0)]
         public double MinOrWidthPips { get; set; }
@@ -587,6 +591,10 @@ namespace cAlgo.Robots
             if (_sessionInvalidated || _eodFlattened) return;
             // The session ends at the flatten: a breakout after it has nothing to hold it.
             if (closed.OpenTime >= EodFlattenUtc(closed.OpenTime)) return;
+            DateTime flattenTime = EodFlattenUtc(closed.OpenTime);
+            if ((flattenTime - closed.OpenTime).TotalMinutes < 60) return;
+            DateTime sessionOpen = SessionOpenUtc(closed.OpenTime);
+            if (MaxEntryWindowMinutes > 0 && (closed.OpenTime - sessionOpen).TotalMinutes > MaxEntryWindowMinutes) return;
             if (_tradesFired >= MaxTradesPerSession) return;
             if (_blockedAfterStop && !AllowReentryAfterSl) return;
             if (Positions.FindAll(BotId, SymbolName).Length > 0) return;
@@ -824,7 +832,7 @@ namespace cAlgo.Robots
             if (units < Symbol.VolumeInUnitsMin)
             {
                 double minLotRisk = Symbol.VolumeInUnitsMin * perUnitRisk;
-                if (minLotRisk > MaxDollarRiskPerTrade)
+                if (MaxDollarRiskPerTrade > 0 && minLotRisk > MaxDollarRiskPerTrade)
                 {
                     refusal = $"minimum lot ({Symbol.VolumeInUnitsMin / Symbol.LotSize:F2}) at a {slPips:F1}-pip " +
                               $"stop risks ${minLotRisk:F2} > Max Dollar Risk ${MaxDollarRiskPerTrade:F2}";
@@ -834,6 +842,11 @@ namespace cAlgo.Robots
             }
 
             dollarRisk = units * perUnitRisk;
+            if (MaxDollarRiskPerTrade > 0 && dollarRisk > MaxDollarRiskPerTrade * 1.05)
+            {
+                refusal = $"order dollar risk ${dollarRisk:F2} exceeds MaxDollarRisk ${MaxDollarRiskPerTrade:F2}";
+                return 0.0;
+            }
             return units;
         }
 
@@ -989,9 +1002,14 @@ namespace cAlgo.Robots
 
                 double trailDistancePips = initialSlPips * TrailDistanceR;
                 double currentPrice = pos.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
+                // Ask the broker for the minimum stop distance instead of guessing: a trail that
+                // lands inside it is rejected with InvalidStopLossTakeProfit and only succeeds on
+                // the next tick, after the market has moved further (USTEC 2026-10-16 19:06 UTC).
+                double minStopDistance = MinStopDistancePrice(currentPrice);
                 double newSlPrice = pos.TradeType == TradeType.Buy
-                    ? currentPrice - trailDistancePips * Symbol.PipSize
-                    : currentPrice + trailDistancePips * Symbol.PipSize;
+                    ? currentPrice - Math.Max(trailDistancePips * Symbol.PipSize, minStopDistance)
+                    : currentPrice + Math.Max(trailDistancePips * Symbol.PipSize, minStopDistance);
+                newSlPrice = Math.Round(newSlPrice, Symbol.Digits);
 
                 bool shouldMove = pos.TradeType == TradeType.Buy
                     ? (pos.StopLoss == null || newSlPrice > pos.StopLoss.Value + Symbol.PipSize)
@@ -1000,13 +1018,42 @@ namespace cAlgo.Robots
                 if (shouldMove)
                 {
                     var res = pos.ModifyStopLossPrice(newSlPrice);
+                    if (res == null || !res.IsSuccessful)
+                    {
+                        // One retry with a tick of extra room covers a feed that moved between the
+                        // bid/ask read and the server-side validation.
+                        double retryPrice = Math.Round(
+                            pos.TradeType == TradeType.Buy
+                                ? newSlPrice - Symbol.TickSize
+                                : newSlPrice + Symbol.TickSize,
+                            Symbol.Digits);
+                        res = pos.ModifyStopLossPrice(retryPrice);
+                        if (res != null && res.IsSuccessful)
+                            newSlPrice = retryPrice;
+                    }
                     if (res != null && res.IsSuccessful)
                     {
+                        _initialSlPips[pos.Id] = initialSlPips;
                         Print($"[ORB] Trailing Stop updated on #{pos.Id} {pos.TradeType} | SL moved to {newSlPrice:F5} (current price {currentPrice:F5}, trail {trailDistancePips:F1} pips)");
-                    }
                         SendLiveTickTelemetry(force: true);
+                    }
+                    else
+                    {
+                        Print($"[ORB] Trailing Stop rejected on #{pos.Id}: {res?.Error}");
+                    }
                 }
             }
+        }
+
+        /// <summary>Broker's minimum stop distance as a price, in the symbol's own units.</summary>
+        private double MinStopDistancePrice(double referencePrice)
+        {
+            double raw = Symbol.MinStopLossDistance;
+            if (raw <= 0) return Symbol.TickSize;
+            double price = Symbol.MinDistanceType == SymbolMinDistanceType.Percentage
+                ? referencePrice * raw / 100.0
+                : raw * Symbol.PipSize;
+            return Math.Max(Symbol.TickSize, price);
         }
 
         private void OnPositionClosed(PositionClosedEventArgs args)

@@ -1,4 +1,5 @@
 import docker
+import datetime
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -37,7 +38,8 @@ class DockerManager:
             return {
                 "status": container.status, # running, exited, etc.
                 "id": container.short_id,
-                "created": container.attrs.get("Created")
+                "created": container.attrs.get("Created"),
+                "started_at": container.attrs.get("State", {}).get("StartedAt"),
             }
         except docker.errors.NotFound:
             return {"status": "not_found"}
@@ -154,6 +156,24 @@ class DockerManager:
                 "stuck": False,
                 "reason": f"Container is {status}"
             }
+
+        # The tail still contains the previous process's "stopped" line for a few seconds after
+        # a restart. Treating that as a fresh failure restarted USTEC twice on 2026-10-18.
+        started_at = status_info.get("started_at")
+        if started_at:
+            try:
+                started = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                age = (datetime.datetime.now(datetime.timezone.utc) - started).total_seconds()
+                if age < 60:
+                    return {
+                        "name": name,
+                        "status": status,
+                        "healthy": True,
+                        "stuck": False,
+                        "reason": "Container recently started (warming up)",
+                    }
+            except (TypeError, ValueError):
+                pass
 
         logs = self.get_container_logs(name, tail=40)
         if not logs:

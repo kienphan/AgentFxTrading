@@ -588,7 +588,7 @@ docker run -d \
   --SessionEndHour=21 \
   --SessionDstRule="US" \
   --MinDecisiveBreakoutPips=30.0 \
-  --MinOrWidthPips=80.0 \
+  --MinOrWidthPips=110.0 \
   --OrbBufferPips=15.0 \
   --BreakevenTriggerAtr=1.6 \
   --BreakevenOffsetAtr=0.2 \

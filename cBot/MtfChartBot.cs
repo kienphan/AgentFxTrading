@@ -43,6 +43,11 @@ namespace cAlgo.Robots
         [Parameter("Risk %", Group = "Risk", DefaultValue = 0.5, MinValue = 0.01, MaxValue = 0.5)]
         public double RiskPercent { get; set; }
 
+        // Fixed sizing for small demo accounts where the broker minimum lot risks more than
+        // RiskPercent allows. 0 = size from RiskPercent; > 0 always uses this many lots.
+        [Parameter("Fixed lots (0 = risk %)", Group = "Risk", DefaultValue = 0.01, MinValue = 0.0, MaxValue = 100.0)]
+        public double FixedLots { get; set; }
+
         [Parameter("Min RR", Group = "Risk", DefaultValue = 2.0, MinValue = 2.0)]
         public double MinRr { get; set; }
 
@@ -159,6 +164,13 @@ namespace cAlgo.Robots
                 ["is_live"] = Account.IsLive,
                 ["daily_pnl"] = DailyClosedPnl(),
                 ["max_daily_loss"] = MaxDailyLoss,
+                // The server's gate uses these to refuse an order the cBot cannot size without
+                // rounding up past RiskPercent (the broker's minimum lot can exceed the budget).
+                ["equity"] = Account.Equity,
+                ["risk_percent"] = RiskPercent,
+                ["fixed_lots"] = FixedLots,
+                ["min_volume_units"] = Symbol.VolumeInUnitsMin,
+                ["pip_value"] = Symbol.PipValue,
                 ["running_mode"] = RunningMode.ToString(),
                 ["d1"] = ClosedBars(_d1, D1Bars),
                 ["h4"] = ClosedBars(_h4, H4Bars),
@@ -247,10 +259,18 @@ namespace cAlgo.Robots
                 Print($"AI HTTP {(int)response.StatusCode}, no trade: {body}");
                 return null;
             }
-            return JsonSerializer.Deserialize<MtfDecision>(body, new JsonSerializerOptions
+            try
             {
-                PropertyNameCaseInsensitive = true,
-            });
+                return JsonSerializer.Deserialize<MtfDecision>(body, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Print($"AI response parse error: {ex.Message}");
+                return null;
+            }
         }
 
         private Position[] OwnPositions()
@@ -365,6 +385,7 @@ namespace cAlgo.Robots
             bool buy = action.StartsWith("BUY");
             var side = buy ? TradeType.Buy : TradeType.Sell;
             double entry = decision.Decision.Entry;
+            string clientId = decision.ClientOrderId ?? "";
             bool market = action.EndsWith("MARKET");
             // A market order is filled at the live price, which can be up to AiTimeoutSeconds away
             // from the bid/ask the gate approved. Measure the stop and the target from the price this
@@ -392,24 +413,54 @@ namespace cAlgo.Robots
                     && Math.Abs(fillPrice - entry) > MaxEntryDistancePips * Symbol.PipSize)
                 {
                     Print($"Market price is more than {MaxEntryDistancePips} pips from the planned entry. No trade.");
+                    JournalEvent("error", clientId, new Dictionary<string, object>
+                    {
+                        ["error"] = "entry_distance_exceeded",
+                        ["action"] = action,
+                        ["price"] = fillPrice,
+                        ["entry"] = entry,
+                        ["max_pips"] = MaxEntryDistancePips,
+                    });
                     return;
                 }
             }
             double slPips = Math.Abs(fillPrice - decision.Decision.StopLoss) / Symbol.PipSize;
             double tpPips = Math.Abs(decision.Decision.TakeProfit - fillPrice) / Symbol.PipSize;
-            if (slPips <= 0 || tpPips <= 0 || tpPips / slPips < MinRr)
+            // +1e-9: an exact 2.0R arrives as 1.9999999999999996 in doubles and must not be refused.
+            if (slPips <= 0 || tpPips <= 0 || tpPips / slPips + 1e-9 < MinRr)
             {
                 Print("Stop, target or reward is not acceptable. No trade.");
+                JournalEvent("error", clientId, new Dictionary<string, object>
+                {
+                    ["error"] = "rr_below_min",
+                    ["action"] = action,
+                    ["stop_pips"] = Math.Round(slPips, 2),
+                    ["target_pips"] = Math.Round(tpPips, 2),
+                    ["min_rr"] = MinRr,
+                });
                 return;
             }
 
-            double volume = VolumeForRisk(slPips);
+            double volume = VolumeForRisk(slPips, out string sizingRefusal);
             if (volume <= 0)
+            {
+                if (!string.IsNullOrEmpty(sizingRefusal))
+                {
+                    JournalEvent("error", clientId, new Dictionary<string, object>
+                    {
+                        ["error"] = "sizing_refused",
+                        ["action"] = action,
+                        ["detail"] = sizingRefusal,
+                        ["stop_pips"] = Math.Round(slPips, 2),
+                        ["equity"] = Account.Equity,
+                        ["risk_percent"] = RiskPercent,
+                    });
+                }
                 return;
+            }
 
             // The server journaled the thesis under this id before answering; the order comment
             // carries it so the fill and the close land on the same journal record.
-            string clientId = decision.ClientOrderId ?? "";
             TradeResult result;
             if (action.EndsWith("LIMIT"))
                 result = PlaceLimitOrder(side, SymbolName, volume, entry, BotId, slPips, tpPips, null, clientId);
@@ -459,16 +510,33 @@ namespace cAlgo.Robots
                 if (!inside)
                 {
                     Print("New stop and target do not bracket the new entry. Pending left alone.");
+                    JournalEvent("error", clientId, new Dictionary<string, object>
+                    {
+                        ["error"] = "invalid_bracket",
+                        ["action"] = "MODIFY_PENDING_ORDER",
+                        ["entry"] = target,
+                        ["stop"] = decision.Decision.StopLoss,
+                        ["take_profit"] = decision.Decision.TakeProfit,
+                    });
                     return;
                 }
                 double slPips = Math.Abs(target - decision.Decision.StopLoss) / Symbol.PipSize;
                 double tpPips = Math.Abs(decision.Decision.TakeProfit - target) / Symbol.PipSize;
-                if (slPips <= 0 || tpPips <= 0 || tpPips / slPips < MinRr)
+                // Same epsilon as the new-order path: an exact 2.0R is not below 2.0.
+                if (slPips <= 0 || tpPips <= 0 || tpPips / slPips + 1e-9 < MinRr)
                 {
                     Print("New stop, target or reward is not acceptable. Pending left alone.");
+                    JournalEvent("error", clientId, new Dictionary<string, object>
+                    {
+                        ["error"] = "rr_below_min",
+                        ["action"] = "MODIFY_PENDING_ORDER",
+                        ["stop_pips"] = Math.Round(slPips, 2),
+                        ["target_pips"] = Math.Round(tpPips, 2),
+                        ["min_rr"] = MinRr,
+                    });
                     return;
                 }
-                var result = ModifyPendingOrder(order, target, slPips, tpPips, null);
+                var result = ModifyPendingOrder(order, target, slPips, tpPips, (DateTime?)null);
                 if (!result.IsSuccessful)
                 {
                     Print($"Modify rejected: {result.Error}");
@@ -492,19 +560,40 @@ namespace cAlgo.Robots
             }
         }
 
-        private double VolumeForRisk(double slPips)
+        private double VolumeForRisk(double slPips, out string refusal)
         {
+            refusal = null;
             double pipValue = Symbol.PipValue > 0 ? Symbol.PipValue : 0;
+            double volume;
+            if (FixedLots > 0)
+            {
+                // Explicit sizing for a small demo account: 0.01 lot is accepted even when its
+                // dollar risk is above RiskPercent, because that percentage cannot buy any lot.
+                volume = Symbol.NormalizeVolumeInUnits(FixedLots * Symbol.LotSize, RoundingMode.Down);
+                if (volume < Symbol.VolumeInUnitsMin)
+                {
+                    refusal = $"fixed_lots_below_minimum: {FixedLots:0.####} lots < {Symbol.VolumeInUnitsMin / Symbol.LotSize:0.####}";
+                    Print($"Fixed lots {FixedLots:0.####} is below the broker minimum. No trade.");
+                    return 0;
+                }
+                if (volume > Symbol.VolumeInUnitsMax)
+                    volume = Symbol.NormalizeVolumeInUnits(Symbol.VolumeInUnitsMax, RoundingMode.Down);
+                Print($"Fixed sizing: {FixedLots:0.####} lots ({volume:0.####} units).");
+                return volume;
+            }
+
             if (pipValue <= 0)
             {
+                refusal = "pip_value_missing";
                 Print("PipValue is missing. No trade.");
                 return 0;
             }
             double riskAmount = Account.Equity * (RiskPercent / 100.0);
             double rawUnits = riskAmount / (slPips * pipValue);
-            double volume = Symbol.NormalizeVolumeInUnits(rawUnits, RoundingMode.Down);
+            volume = Symbol.NormalizeVolumeInUnits(rawUnits, RoundingMode.Down);
             if (volume < Symbol.VolumeInUnitsMin)
             {
+                refusal = $"volume_below_minimum: {volume:0.####} units < {Symbol.VolumeInUnitsMin:0.####}";
                 Print($"Volume {volume} is below the broker minimum. Not rounding up.");
                 return 0;
             }
@@ -514,6 +603,7 @@ namespace cAlgo.Robots
             double actualRisk = volume * slPips * pipValue;
             if (actualRisk > riskAmount + 0.01)
             {
+                refusal = $"risk_budget_exceeded: {actualRisk:F2} > {riskAmount:F2}";
                 Print($"Sized risk {actualRisk:F2} exceeds {riskAmount:F2}. No trade.");
                 return 0;
             }
@@ -673,6 +763,31 @@ namespace cAlgo.Robots
             return root + path;
         }
 
+        private class NullableDoubleConverter : JsonConverter<double>
+        {
+            public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType == JsonTokenType.Null)
+                    return 0.0;
+                if (reader.TokenType == JsonTokenType.Number)
+                    return reader.GetDouble();
+                if (reader.TokenType == JsonTokenType.String)
+                {
+                    string str = reader.GetString();
+                    if (string.IsNullOrWhiteSpace(str))
+                        return 0.0;
+                    if (double.TryParse(str, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                        return val;
+                }
+                return 0.0;
+            }
+
+            public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+            {
+                writer.WriteNumberValue(value);
+            }
+        }
+
         private class MtfDecision
         {
             [JsonPropertyName("approved")]
@@ -694,12 +809,15 @@ namespace cAlgo.Robots
             public string Action { get; set; }
 
             [JsonPropertyName("entry")]
+            [JsonConverter(typeof(NullableDoubleConverter))]
             public double Entry { get; set; }
 
             [JsonPropertyName("stop_loss")]
+            [JsonConverter(typeof(NullableDoubleConverter))]
             public double StopLoss { get; set; }
 
             [JsonPropertyName("take_profit")]
+            [JsonConverter(typeof(NullableDoubleConverter))]
             public double TakeProfit { get; set; }
         }
     }

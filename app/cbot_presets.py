@@ -145,7 +145,7 @@ PRESETS: Dict[Tuple[str, str], Dict] = {
     ("tms_orb", "USDCAD"): _cell("m15", "New York", _tms(_NEWYORK, 4.0, 10.0, 1.5, 4)),
     ("tms_orb", "AUDUSD"): _cell("m15", "Tokyo",    _tms(_TOKYO, 3.0, 8.0, 1.0, 3)),
     ("tms_orb", "AUDJPY"): _cell("m15", "Tokyo",    _tms(_TOKYO, 4.0, 10.0, 1.5, 4)),
-    ("tms_orb", "US30"):   _cell("m15", "New York", _tms(_NEWYORK_INDEX, 30.0, 80.0, 15.0, 30, atr=_index_atr(_INDEX_ATR, 1200.0, 1000.0))),
+    ("tms_orb", "US30"):   _cell("m15", "New York", _tms(_NEWYORK_INDEX, 30.0, 110.0, 15.0, 30, atr=_index_atr(_INDEX_ATR, 1200.0, 1000.0))),
     ("tms_orb", "USTEC"):  _cell("m5",  "New York", _tms(_NEWYORK_INDEX, 25.0, 70.0, 12.0, 25, atr=_index_atr(_INDEX_ATR, 600.0, 600.0))),
     ("tms_orb", "DE40"):   _cell("m15", "London",   _tms(_LONDON_INDEX, 20.0, 60.0, 10.0, 25, atr=_index_atr(_INDEX_ATR, 400.0, 500.0))),
     ("tms_orb", "UK100"):  _cell("m15", "London",   _tms(_LONDON_INDEX, 25.0, 120.0, 15.0, 1.5, atr=_index_atr(_UK100_ATR, 400.0, 400.0))),

@@ -3748,9 +3748,13 @@
                         "withdateranges": true,
                         "save_image": false,
                         "details": true,
+                        "hide_volume": true,
+                        "disabled_features": [
+                            "create_volume_indicator_by_default"
+                        ],
                         "studies": [
-                            "RSI@tv-basicstudies",
-                            "MASimple@tv-basicstudies"
+                            "MACD@tv-basicstudies",
+                            "RSI@tv-basicstudies"
                         ]
                     });
                     return;
@@ -3760,7 +3764,7 @@
             }
 
             // Fallback iframe embed
-            const iframeUrl = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(ticker)}&interval=${encodeURIComponent(tf)}&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&locale=vi_VN&toolbar_bg=131722&hide_side_toolbar=0&withdateranges=1`;
+            const iframeUrl = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(ticker)}&interval=${encodeURIComponent(tf)}&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&locale=vi_VN&toolbar_bg=131722&hide_side_toolbar=0&withdateranges=1&hidevolume=1`;
             container.innerHTML = `<iframe src="${iframeUrl}" style="width:100%;height:100%;border:none;" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
         }
 

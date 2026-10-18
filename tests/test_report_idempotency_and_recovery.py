@@ -155,3 +155,32 @@ def test_report_endpoint_forwards_entry_fields_on_close(tmp_path, monkeypatch):
     assert row["status"] == "closed"
     assert row["side"] == "Sell"
     assert row["sl_pips"] == 28.6
+
+
+def test_report_endpoint_accepts_net_pnl_and_exit_reason(tmp_path, monkeypatch):
+    import app.server as server_mod
+
+    pm = _pm(tmp_path)
+    monkeypatch.setattr(server_mod, "portfolio_manager", pm)
+    pm.register_position(bot_id="manual", symbol="XAUUSD", side="Buy", volume=0.01,
+                         entry_price=4100.0, sl_pips=None, tp_pips=None,
+                         account_id="live-6094347", ctrader_id=375802833)
+    resp = TestClient(server_mod.app).post("/portfolio/report", json={
+        "ctrader_id": 375802833,
+        "bot_id": "manual",
+        "action": "close",
+        "symbol": "XAUUSD",
+        "side": "Buy",
+        "volume": 0.01,
+        "entry_price": 4100.0,
+        "exit_price": 4150.0,
+        "net_pnl": 50.0,
+        "exit_reason": "Manual close on cTrader",
+        "account_number": "6094347",
+        "account_type": "live",
+    })
+    assert resp.json()["status"] == "success"
+    row = _rows(pm, 375802833)[0]
+    assert row["status"] == "closed"
+    assert row["pnl"] == 50.0
+    assert row["close_reason"] == "Manual close on cTrader"

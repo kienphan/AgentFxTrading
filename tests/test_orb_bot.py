@@ -242,3 +242,15 @@ def test_tp_rmultiple_reported_accurately_on_open_and_close():
     assert "ReportPositionOpen(result.Position, slPips, tpPips, reason);" in SOURCE
     assert "tp_pips = tpPips.HasValue ? Math.Round(tpPips.Value, 1) :" in SOURCE
     assert "Math.Abs(position.TakeProfit.Value - position.EntryPrice) / Symbol.PipSize" in SOURCE
+
+
+def test_trailing_stop_respects_the_broker_minimum_stop_distance():
+    assert "Symbol.MinStopLossDistance" in SOURCE
+    assert "MinStopDistancePrice(currentPrice)" in SOURCE
+    # One retry with a tick of extra room before giving up on the bar.
+    assert "res = pos.ModifyStopLossPrice(retryPrice);" in SOURCE
+    assert "Trailing Stop rejected" in SOURCE
+
+
+def test_a_zero_dollar_cap_does_not_refuse_every_minimum_lot():
+    assert "MaxDollarRiskPerTrade > 0 && minLotRisk > MaxDollarRiskPerTrade" in SOURCE

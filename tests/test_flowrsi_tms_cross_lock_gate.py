@@ -37,8 +37,12 @@ def _clear_cross_lock_registry():
 
 def _mock_llm(monkeypatch, payload: dict):
     import app.server as server_mod
+    import app.news_service as news_mod
     monkeypatch.setattr(
         server_mod.llm_client, "chat", AsyncMock(return_value=json.dumps(payload))
+    )
+    monkeypatch.setattr(
+        news_mod, "is_news_blackout_active", AsyncMock(return_value=(False, "", 0))
     )
 
 

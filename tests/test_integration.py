@@ -481,8 +481,8 @@ def test_breakout_distance_limits_resolver():
     assert resolve_breakout_limits("JP225", None) == (3000.0, 7000.0)
     assert resolve_breakout_limits("HK50", 400.0) == (600.0, 1360.0)
     assert resolve_breakout_limits("HK50", None) == (800.0, 2200.0)
-    assert resolve_breakout_limits("US500", 80.0) == (112.0, 272.0)
-    assert resolve_breakout_limits("US500", None) == (150.0, 450.0)
+    assert resolve_breakout_limits("US500", 80.0) == (176.0, 304.0)
+    assert resolve_breakout_limits("US500", None) == (450.0, 1200.0)
     # Unknown symbol falls back to the Forex majors class - never to an index ceiling
     assert resolve_breakout_limits("EURUSD", 10.0) == (15.0, 34.0)
     assert resolve_breakout_limits("EURGBP", 10.0) == (15.0, 34.0)

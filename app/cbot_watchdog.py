@@ -23,6 +23,16 @@ logger = logging.getLogger("AgentFxTrading.Watchdog")
 # ---------------------------------------------------------------------------
 
 DEFAULT_STALE_FEED_SECONDS = 2400  # 40 min: > one M15 bar + LLM latency, < two bars
+# Three or more bots losing the broker connection in one cycle is an outage, not three
+# independent bot faults. Restarting containers then only churns them during maintenance.
+MASS_OUTAGE_MIN_BOTS = 3
+BROKER_CONNECTIVITY_MARKERS = (
+    "login retr",
+    "reconnect loop",
+    "continuous login",
+    "connection error",
+    "connection has been lost",
+)
 PERIOD_STALE_FEED_SECONDS: Dict[str, int] = {
     "m1": 300,      # 5 min
     "m5": 900,      # 15 min
@@ -51,8 +61,15 @@ def reset_snapshot_telemetry() -> None:
 
 
 def last_snapshot_for(bot_id: str) -> Optional[float]:
-    """Newest snapshot timestamp for `bot_id`, whichever account reported it."""
-    hits = [t for key, t in _snapshot_seen_at.items() if key.endswith(f"/{bot_id}")]
+    """Newest snapshot timestamp for `bot_id`, whichever account reported it.
+
+    Keys are normally "<account_id>/<bot_id>", but a bot without an account in its payload
+    (MTF) records a synthetic scope. Accept a bare id as well so both shapes match.
+    """
+    hits = [
+        t for key, t in _snapshot_seen_at.items()
+        if key == bot_id or key.endswith(f"/{bot_id}")
+    ]
     return max(hits) if hits else None
 
 
@@ -174,6 +191,12 @@ def _adjusted_hour(now_utc: datetime.datetime, base_hour: int, dst_rule: str) ->
 
     is_dst = start <= now_utc < end
     return (base_hour - 1) % 24 if is_dst else base_hour
+
+
+def is_broker_connectivity_reason(reason: str) -> bool:
+    """True when a health reason describes the broker link, not a broken cBot instance."""
+    text = (reason or "").lower()
+    return any(marker in text for marker in BROKER_CONNECTIVITY_MARKERS)
 
 
 def is_forex_weekend(now_utc: datetime.datetime) -> bool:
@@ -309,22 +332,55 @@ class CbotWatchdog:
 
         pm = get_portfolio_manager()
         configs = pm.get_cbot_configs()
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        weekend = is_forex_weekend(now_utc)
 
         fresh_health: Dict[str, Dict[str, Any]] = {}
         for config in configs:
             name = config["name"]
             try:
-                health = docker_manager.check_cbot_health(name)
-                fresh_health[name] = health
-                if health.get("status") != "running":
+                fresh_health[name] = docker_manager.check_cbot_health(name)
+            except Exception as e:
+                logger.error(f"[CBOT WATCHDOG] Error checking bot '{name}': {e}")
+
+        # Broker maintenance (weekend close, cTrader deploy) takes every bot down at once.
+        # Restarting each container turns one outage into a restart storm; the bots reconnect
+        # by themselves once the broker is back.
+        connectivity = [
+            name for name, health in fresh_health.items()
+            if health.get("stuck") and is_broker_connectivity_reason(health.get("reason", ""))
+        ]
+        broker_outage = len(connectivity) >= MASS_OUTAGE_MIN_BOTS
+        if broker_outage:
+            logger.warning(
+                f"[CBOT WATCHDOG] Broker connectivity outage suspected "
+                f"({len(connectivity)} bots: {', '.join(sorted(connectivity))}). "
+                f"Skipping restarts this cycle."
+            )
+
+        for config in configs:
+            name = config["name"]
+            try:
+                health = fresh_health.get(name)
+                if not health or health.get("status") != "running":
                     continue
 
-                # Only heal running containers that are stuck
+                reason = health.get("reason", "")
+                # Only heal running containers that are stuck. A weekend reconnect loop is
+                # the market being closed, not a bot that needs a new process.
                 if health.get("stuck"):
-                    self._restart_bot(name, health.get("reason", "Container stuck"), actions)
+                    if is_broker_connectivity_reason(reason) and (weekend or broker_outage):
+                        logger.info(
+                            f"[CBOT WATCHDOG] Leaving '{name}' alone: {reason} "
+                            f"({'weekend' if weekend else 'broker outage'})."
+                        )
+                        continue
+                    self._restart_bot(name, reason, actions)
                     continue
 
-                feed_reason = self._stale_feed_reason(name, config.get("run_command"))
+                if broker_outage:
+                    continue
+                feed_reason = self._stale_feed_reason(name, config.get("run_command"), now_utc)
                 if feed_reason:
                     self._restart_bot(name, feed_reason, actions)
 

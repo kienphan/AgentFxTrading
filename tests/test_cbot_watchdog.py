@@ -96,6 +96,22 @@ def test_check_cbot_health_transient_reconnect_then_restored_is_healthy():
     assert health["healthy"] is True
     assert health["stuck"] is False
 
+def test_check_cbot_health_ignores_the_old_stop_line_right_after_restart():
+    dm = DockerManager()
+    dm.is_available = True
+    dm.get_container_status = MagicMock(return_value={
+        "status": "running", "id": "12345",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    })
+    dm.get_container_logs = MagicMock(return_value=(
+        "18/10/2026 15:31:10.607 | Info | [ORB] Stopped on USTEC.\n"
+    ))
+    health = dm.check_cbot_health("cbot-ustec")
+    assert health["healthy"] is True
+    assert health["stuck"] is False
+    assert "warming up" in health["reason"]
+
+
 def test_check_cbot_health_not_running():
     dm = DockerManager()
     dm.is_available = True
@@ -237,7 +253,10 @@ def test_watchdog_check_and_heal(mock_get_pm, mock_dm):
     mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
 
     watchdog = CbotWatchdog(cooldown_seconds=100)
-    actions = watchdog.check_and_heal()
+    # A login reconnect reason is deliberately left alone at the weekend, so this test
+    # exercises the weekday healing path.
+    with patch.object(wd, "is_forex_weekend", return_value=False):
+        actions = watchdog.check_and_heal()
 
     assert len(actions) == 1
     assert actions[0]["name"] == "cbot-usdjpy"
@@ -245,8 +264,64 @@ def test_watchdog_check_and_heal(mock_get_pm, mock_dm):
     mock_dm.restart_container.assert_called_once_with("cbot-usdjpy", timeout=15)
 
     # Case 2: Immediate next check -> blocked by cooldown
-    actions2 = watchdog.check_and_heal()
+    with patch.object(wd, "is_forex_weekend", return_value=False):
+        actions2 = watchdog.check_and_heal()
     assert len(actions2) == 0
+
+
+@patch("app.cbot_watchdog.docker_manager")
+@patch("app.cbot_watchdog.get_portfolio_manager")
+def test_watchdog_leaves_a_weekend_reconnect_loop_alone(mock_get_pm, mock_dm):
+    mock_dm.is_available = True
+    mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
+    mock_pm = MagicMock()
+    mock_pm.get_cbot_configs.return_value = [{"name": "cbot-demo-xauusd-mtf"}]
+    mock_get_pm.return_value = mock_pm
+    mock_dm.check_cbot_health.return_value = {
+        "status": "running", "stuck": True,
+        "reason": "All login retry attempts failed",
+    }
+
+    with patch.object(wd, "is_forex_weekend", return_value=True):
+        actions = CbotWatchdog().check_and_heal()
+
+    assert actions == []
+    mock_dm.restart_container.assert_not_called()
+
+
+@patch("app.cbot_watchdog.docker_manager")
+@patch("app.cbot_watchdog.get_portfolio_manager")
+def test_watchdog_treats_a_multi_bot_disconnect_as_one_broker_outage(mock_get_pm, mock_dm):
+    mock_dm.is_available = True
+    mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
+    mock_pm = MagicMock()
+    mock_pm.get_cbot_configs.return_value = [
+        {"name": "cbot-a"}, {"name": "cbot-b"}, {"name": "cbot-c"},
+    ]
+    mock_get_pm.return_value = mock_pm
+    mock_dm.check_cbot_health.return_value = {
+        "status": "running", "stuck": True,
+        "reason": "Reconnect loop: 6 'connection has been lost' in the last 40 lines",
+    }
+
+    with patch.object(wd, "is_forex_weekend", return_value=False):
+        actions = CbotWatchdog().check_and_heal()
+
+    assert actions == []
+    mock_dm.restart_container.assert_not_called()
+
+
+def test_broker_connectivity_reason_classifier():
+    assert wd.is_broker_connectivity_reason("All login retry attempts failed")
+    assert wd.is_broker_connectivity_reason("Reconnect loop: 6 lost")
+    assert not wd.is_broker_connectivity_reason("cBot instance stopped inside container")
+
+
+def test_last_snapshot_for_matches_bare_and_scoped_keys():
+    wd.reset_snapshot_telemetry()
+    wd.record_bot_snapshot("mtf/cbot-demo-xauusd-mtf")
+    assert wd.last_snapshot_for("cbot-demo-xauusd-mtf") is not None
+    wd.reset_snapshot_telemetry()
 
 
 # ---------------------------------------------------------------------------

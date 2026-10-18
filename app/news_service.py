@@ -410,6 +410,39 @@ async def is_news_blackout_active(symbol: str, pause_before_mins: int = 30, paus
 
     return False, "", 0
 
+async def get_upcoming_symbol_events(symbol: str, hours_ahead: int = 12) -> List[str]:
+    """
+    Returns concise summaries of upcoming High/Medium impact economic events
+    related to `symbol` within the next `hours_ahead` hours.
+    Example item: "14:30 UTC: USD Non-Farm Employment Change (High)"
+    """
+    try:
+        events = await fetch_forexfactory_raw_events("thisweek")
+    except Exception:
+        return []
+
+    now_utc = datetime.now(timezone.utc)
+    cutoff_utc = now_utc + timedelta(hours=hours_ahead)
+    collected: List[Tuple[datetime, str]] = []
+
+    for ev in events:
+        impact = str(ev.get("impact", "")).strip()
+        if impact not in ("High", "Medium"):
+            continue
+        country = str(ev.get("country", "")).strip()
+        if not is_symbol_related_to_currencies(symbol, [country]):
+            continue
+        dt = parse_iso_or_ff_date(ev.get("date", ""))
+        if not dt:
+            continue
+        if now_utc - timedelta(minutes=15) <= dt <= cutoff_utc:
+            time_str = dt.strftime("%H:%M UTC")
+            title = str(ev.get("title", "")).strip()
+            collected.append((dt, f"{time_str}: {country} {title} ({impact})"))
+
+    collected.sort(key=lambda x: x[0])
+    return [item[1] for item in collected]
+
 def generate_news_cluster_prompt(
     cluster: Dict[str, Any],
     symbol: str,

@@ -61,6 +61,24 @@ cp /root/cAlgo/Sources/Robots/MtfChartBot.algo cBot/MtfChartBot.algo
 A build error is the only thing standing between the source and a runnable instance: `MtfChartBot.cs`
 has never been compiled in CI, so compile it once by hand before wiring the container.
 
+## Regime modes
+
+The gate classifies the last 20 closed M15 bars before every decision:
+
+- `TREND` — Kaufman Efficiency Ratio `>= 0.30` and range/ATR `>= 2.0`. Pullback
+  continuation only; the stop must sit beyond the recent 8-bar swing.
+- `RANGE` — ER `<= 0.20` and range/ATR `>= 2.0`. Fade the outer boundary with a
+  LIMIT only: SELL in the upper half, stop above `range_high + 0.3 ATR`, target
+  between `mid` and `range_low`; BUY is the mirror. Entry must be within
+  `MTF_RANGE_MAX_ENTRY_PIPS` (default 15) of the market. A target outside the
+  range is a breakout thesis and is refused.
+- `CHOP` — everything else. No new entry; position management still works.
+- `UNKNOWN` — fewer than 21 closed M15 bars. The general rules apply.
+
+The prompt receives the same `REGIME` line, and every journal decision now stores
+`regime` (`mode`, `er`, `range_atr`, range and swing levels). Tune the thresholds
+with `MTF_RANGE_MAX_ENTRY_PIPS`, `MTF_RANGE_STOP_ATR` and `MTF_TREND_STOP_ATR`.
+
 ## 3. Run the container — XAUUSD demo
 
 Replace the three placeholders (`--ctid`, `--account`, `--pwd-file`) with yours, exactly as in the
@@ -100,8 +118,18 @@ Flag notes:
 - `MtfChartBot` has **no** `--AccountLabel`/session parameters. Its `/portfolio/report` carries
   `account_number` and `account_type`, so the registry still attributes trades to the account and keeps
   the label already configured for it.
-- `--RiskPercent=0.2` matches this repo's risk convention (the PR default was `0.5`); the cBot refuses
-  to round size up and refuses a trade whose rounded risk would exceed the budget.
+- `--FixedLots=0.01` (the default) sizes every order at exactly 0.01 lot and bypasses
+  `RiskPercent`. This is the supported setting for the $705 demo: the broker's minimum lot on
+  XAUUSD with a 2000-pip stop risks about $20, which no 0.2–0.5% budget can buy. Set
+  `--FixedLots=0` to return to percentage sizing; pass `--FixedLots=0` in a historical cTrader
+  backtest when you want the run sized by `RiskPercent` instead of the demo's fixed lot.
+- `--RiskPercent=0.2` applies only when `FixedLots=0`. The cBot refuses to round size up and
+  refuses a trade whose rounded risk would exceed the budget.
+- **Sizing feasibility is checked by the gate, not only by the cBot.** `MtfChartBot` sends
+  `equity`, `risk_percent`, `fixed_lots`, `min_volume_units` and `pip_value` with each snapshot.
+  When `FixedLots=0`, `/trade/mtf` refuses with `Minimum lot risk $… exceeds the $… budget`
+  before approving an order the cBot cannot size. With `FixedLots>0` the gate accepts the
+  deliberate size and the fill journal records the real `risk_money`.
 - `--AiTimeoutSeconds=120`: a full MTF reply with thinking was measured at ~69 s. Keep the server's
   `LLM_MTF_DEADLINE` (default 105 s) **below** this value, or the server keeps working on a reply the
   bot has already given up on.
