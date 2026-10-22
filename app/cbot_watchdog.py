@@ -26,6 +26,7 @@ DEFAULT_STALE_FEED_SECONDS = 2400  # 40 min: > one M15 bar + LLM latency, < two 
 # Three or more bots losing the broker connection in one cycle is an outage, not three
 # independent bot faults. Restarting containers then only churns them during maintenance.
 MASS_OUTAGE_MIN_BOTS = 3
+MAX_OUTAGE_SUPPRESSION_CYCLES = 5  # cycles of skipping restarts during suspected total broker outage
 BROKER_CONNECTIVITY_MARKERS = (
     "login retr",
     "reconnect loop",
@@ -274,6 +275,7 @@ class CbotWatchdog:
         # Health verdict from the latest cycle: bot_name -> check_cbot_health() result. /api/bots
         # serves this instead of re-reading every container's logs on each 10 s dashboard poll.
         self._last_health: Dict[str, Dict[str, Any]] = {}
+        self._broker_outage_cycles: int = 0
 
     def _now_gmt7_str(self) -> str:
         dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=7)
@@ -350,14 +352,34 @@ class CbotWatchdog:
             name for name, health in fresh_health.items()
             if health.get("stuck") and is_broker_connectivity_reason(health.get("reason", ""))
         ]
-        broker_outage = len(connectivity) >= MASS_OUTAGE_MIN_BOTS
-        if broker_outage:
-            logger.warning(
-                f"[CBOT WATCHDOG] Broker connectivity outage suspected "
-                f"({len(connectivity)} bots: {', '.join(sorted(connectivity))}). "
-                f"Skipping restarts this cycle."
-            )
+        healthy_running = [
+            name for name, health in fresh_health.items()
+            if health.get("status") == "running" and health.get("healthy") and not health.get("stuck")
+        ]
+        # A mass outage is only suspected if multiple bots disconnect AND no running bots
+        # are healthy. If other bots are healthy, the broker is reachable and individual
+        # bot reconnect/login errors must be auto-healed.
+        is_mass_disconnect = len(connectivity) >= MASS_OUTAGE_MIN_BOTS and len(healthy_running) == 0
 
+        if is_mass_disconnect:
+            self._broker_outage_cycles += 1
+            if self._broker_outage_cycles <= MAX_OUTAGE_SUPPRESSION_CYCLES:
+                broker_outage = True
+                logger.warning(
+                    f"[CBOT WATCHDOG] Broker connectivity outage suspected "
+                    f"({len(connectivity)} bots: {', '.join(sorted(connectivity))}, "
+                    f"0 healthy bots, cycle {self._broker_outage_cycles}/{MAX_OUTAGE_SUPPRESSION_CYCLES}). "
+                    f"Skipping restarts this cycle."
+                )
+            else:
+                broker_outage = False
+                logger.warning(
+                    f"[CBOT WATCHDOG] Broker connectivity outage persisted for {self._broker_outage_cycles} cycles "
+                    f"(>{MAX_OUTAGE_SUPPRESSION_CYCLES}m). Allowing rate-limited auto-healing restarts."
+                )
+        else:
+            self._broker_outage_cycles = 0
+            broker_outage = False
         for config in configs:
             name = config["name"]
             try:

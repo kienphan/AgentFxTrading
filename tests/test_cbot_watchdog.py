@@ -311,6 +311,66 @@ def test_watchdog_treats_a_multi_bot_disconnect_as_one_broker_outage(mock_get_pm
     mock_dm.restart_container.assert_not_called()
 
 
+@patch("app.cbot_watchdog.docker_manager")
+@patch("app.cbot_watchdog.get_portfolio_manager")
+def test_watchdog_does_not_suppress_restart_when_other_bots_are_healthy(mock_get_pm, mock_dm):
+    mock_dm.is_available = True
+    mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
+    mock_pm = MagicMock()
+    mock_pm.get_cbot_configs.return_value = [
+        {"name": "cbot-stuck-1"},
+        {"name": "cbot-stuck-2"},
+        {"name": "cbot-stuck-3"},
+        {"name": "cbot-healthy-1"},
+    ]
+    mock_get_pm.return_value = mock_pm
+
+    def health_side_effect(name):
+        if name.startswith("cbot-stuck"):
+            return {
+                "name": name, "status": "running", "healthy": False, "stuck": True,
+                "reason": "Login retries exhausted without re-authenticating ('All login retry attempts failed')",
+            }
+        return {
+            "name": name, "status": "running", "healthy": True, "stuck": False,
+            "reason": "Healthy and running",
+        }
+
+    mock_dm.check_cbot_health.side_effect = health_side_effect
+
+    with patch.object(wd, "is_forex_weekend", return_value=False):
+        actions = CbotWatchdog().check_and_heal()
+
+    assert len(actions) == 3
+    assert {a["name"] for a in actions} == {"cbot-stuck-1", "cbot-stuck-2", "cbot-stuck-3"}
+    assert mock_dm.restart_container.call_count == 3
+
+
+@patch("app.cbot_watchdog.docker_manager")
+@patch("app.cbot_watchdog.get_portfolio_manager")
+def test_watchdog_allows_staged_restart_after_prolonged_outage(mock_get_pm, mock_dm):
+    mock_dm.is_available = True
+    mock_dm.restart_container.return_value = {"success": True, "message": "restarted"}
+    mock_pm = MagicMock()
+    mock_pm.get_cbot_configs.return_value = [
+        {"name": "cbot-a"}, {"name": "cbot-b"}, {"name": "cbot-c"},
+    ]
+    mock_get_pm.return_value = mock_pm
+    mock_dm.check_cbot_health.return_value = {
+        "status": "running", "stuck": True,
+        "reason": "Reconnect loop: 6 'connection has been lost' in the last 40 lines",
+    }
+
+    watchdog = CbotWatchdog()
+    # Simulate that outage has already lasted MAX_OUTAGE_SUPPRESSION_CYCLES cycles
+    watchdog._broker_outage_cycles = wd.MAX_OUTAGE_SUPPRESSION_CYCLES
+
+    with patch.object(wd, "is_forex_weekend", return_value=False):
+        actions = watchdog.check_and_heal()
+
+    assert len(actions) == 3
+    assert mock_dm.restart_container.call_count == 3
+
 def test_broker_connectivity_reason_classifier():
     assert wd.is_broker_connectivity_reason("All login retry attempts failed")
     assert wd.is_broker_connectivity_reason("Reconnect loop: 6 lost")
