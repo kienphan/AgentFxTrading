@@ -254,3 +254,9 @@ def test_trailing_stop_respects_the_broker_minimum_stop_distance():
 
 def test_a_zero_dollar_cap_does_not_refuse_every_minimum_lot():
     assert "MaxDollarRiskPerTrade > 0 && minLotRisk > MaxDollarRiskPerTrade" in SOURCE
+
+
+def test_fixed_lots_parameter_and_default():
+    assert '[Parameter("Fixed Lots (0=dynamic)", Group = "Risk", DefaultValue = 0.1' in SOURCE
+    assert "public double FixedLots { get; set; }" in SOURCE
+    assert "if (FixedLots > 0)" in SOURCE

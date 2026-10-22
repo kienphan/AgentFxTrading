@@ -163,6 +163,9 @@ namespace cAlgo.Robots
         [Parameter("ATR TP Multiplier", Group = "Risk Management", DefaultValue = 2.0, MinValue = 0.1, Step = 0.1)]
         public double AtrTpMultiplier { get; set; }
 
+        [Parameter("Fixed Lots (0=dynamic)", Group = "Risk Management", DefaultValue = 0.0, MinValue = 0.0, Step = 0.01)]
+        public double FixedLots { get; set; }
+
         [Parameter("Risk per Trade (%)", Group = "Risk Management", DefaultValue = 0.2, MinValue = 0.01, MaxValue = 10.0, Step = 0.1)]
         public double RiskPerTradePercent { get; set; }
 
@@ -2394,46 +2397,58 @@ namespace cAlgo.Robots
             // Scale TP to maintain favorable Risk:Reward ratio relative to SL
             double targetRrRatio = (AtrTpMultiplier > 0 && AtrSlMultiplier > 0) ? (AtrTpMultiplier / AtrSlMultiplier) : 1.5;
             tpPips = Math.Max(minTpPips, Math.Max(tpPips, slPips * targetRrRatio));
-            double riskAmount = Account.Balance * (RiskPerTradePercent / 100.0);
-            
-            // Volume = Risk / (SL * PipValue)
-            // Symbol.PipValue is the value of 1 pip for 1 unit of volume.
-            double volumeInUnits = riskAmount / (slPips * Symbol.PipValue);
-            
-            double volume = Symbol.NormalizeVolumeInUnits(volumeInUnits, RoundingMode.Down);
-            if (volume < Symbol.VolumeInUnitsMin) volume = Symbol.VolumeInUnitsMin;
-
-            // Cap volume at effectiveMaxLots if configured
-            if (effectiveMaxLots > 0 && (volume / Symbol.LotSize) > effectiveMaxLots)
+            double volume;
+            double finalDollarRisk;
+            if (FixedLots > 0)
             {
-                volume = Symbol.NormalizeVolumeInUnits(effectiveMaxLots * Symbol.LotSize, RoundingMode.Down);
-                if (volume < Symbol.VolumeInUnitsMin)
+                volume = Symbol.NormalizeVolumeInUnits(FixedLots * Symbol.LotSize, RoundingMode.Down);
+                if (volume < Symbol.VolumeInUnitsMin) volume = Symbol.VolumeInUnitsMin;
+                if (volume > Symbol.VolumeInUnitsMax) volume = Symbol.VolumeInUnitsMax;
+                finalDollarRisk = volume * slPips * Symbol.PipValue;
+            }
+            else
+            {
+                double riskAmount = Account.Balance * (RiskPerTradePercent / 100.0);
+                
+                // Volume = Risk / (SL * PipValue)
+                // Symbol.PipValue is the value of 1 pip for 1 unit of volume.
+                double volumeInUnits = riskAmount / (slPips * Symbol.PipValue);
+                
+                volume = Symbol.NormalizeVolumeInUnits(volumeInUnits, RoundingMode.Down);
+                if (volume < Symbol.VolumeInUnitsMin) volume = Symbol.VolumeInUnitsMin;
+
+                // Cap volume at effectiveMaxLots if configured
+                if (effectiveMaxLots > 0 && (volume / Symbol.LotSize) > effectiveMaxLots)
                 {
-                    if (ShowLogs) Print($"[Guardrail] Blocked: Capping to MaxAllowedLots ({effectiveMaxLots:F2} lots) falls below broker minimum ({brokerMinLots:F2} lots).");
-                    _ = ReportGuardrailBlockedAsync("BelowMinLotAfterCap", $"Capping at {effectiveMaxLots:F2} lots falls below broker min {brokerMinLots:F2} lots");
+                    volume = Symbol.NormalizeVolumeInUnits(effectiveMaxLots * Symbol.LotSize, RoundingMode.Down);
+                    if (volume < Symbol.VolumeInUnitsMin)
+                    {
+                        if (ShowLogs) Print($"[Guardrail] Blocked: Capping to MaxAllowedLots ({effectiveMaxLots:F2} lots) falls below broker minimum ({brokerMinLots:F2} lots).");
+                        _ = ReportGuardrailBlockedAsync("BelowMinLotAfterCap", $"Capping at {effectiveMaxLots:F2} lots falls below broker min {brokerMinLots:F2} lots");
+                        return;
+                    }
+                }
+
+                if (volume > Symbol.VolumeInUnitsMax) volume = Symbol.VolumeInUnitsMax;
+
+                // Final sanity check: order dollar risk
+                finalDollarRisk = volume * slPips * Symbol.PipValue;
+                if (MaxDollarRiskPerTrade > 0 && finalDollarRisk > MaxDollarRiskPerTrade * 1.05)
+                {
+                    if (ShowLogs) Print($"[Guardrail] Blocked: Order dollar risk ${finalDollarRisk:F2} exceeds MaxDollarRisk ${MaxDollarRiskPerTrade:F2}.");
+                    _ = ReportGuardrailBlockedAsync("ExceedsMaxDollarRisk", $"Order risk ${finalDollarRisk:F2} > max ${MaxDollarRiskPerTrade:F2}");
                     return;
                 }
-            }
 
-            if (volume > Symbol.VolumeInUnitsMax) volume = Symbol.VolumeInUnitsMax;
-
-            // Final sanity check: order dollar risk
-            double finalDollarRisk = volume * slPips * Symbol.PipValue;
-            if (MaxDollarRiskPerTrade > 0 && finalDollarRisk > MaxDollarRiskPerTrade * 1.05)
-            {
-                if (ShowLogs) Print($"[Guardrail] Blocked: Order dollar risk ${finalDollarRisk:F2} exceeds MaxDollarRisk ${MaxDollarRiskPerTrade:F2}.");
-                _ = ReportGuardrailBlockedAsync("ExceedsMaxDollarRisk", $"Order risk ${finalDollarRisk:F2} > max ${MaxDollarRiskPerTrade:F2}");
-                return;
-            }
-
-            // The clamp up to the broker minimum ignores RiskPerTradePercent, and the dollar cap
-            // above is far looser than the % target on a small account.
-            if (MaxMinLotRiskMultiple > 0 && riskAmount > 0 && finalDollarRisk > riskAmount * MaxMinLotRiskMultiple)
-            {
-                string detail = $"{volume / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalDollarRisk:F2} = {finalDollarRisk / riskAmount:F1}x the {RiskPerTradePercent:F2}% target ${riskAmount:F2} (max {MaxMinLotRiskMultiple:F1}x)";
-                if (ShowLogs) Print($"[Guardrail] Blocked: {detail}");
-                _ = ReportGuardrailBlockedAsync("MinLotExceedsRiskPct", detail);
-                return;
+                // The clamp up to the broker minimum ignores RiskPerTradePercent, and the dollar cap
+                // above is far looser than the % target on a small account.
+                if (MaxMinLotRiskMultiple > 0 && riskAmount > 0 && finalDollarRisk > riskAmount * MaxMinLotRiskMultiple)
+                {
+                    string detail = $"{volume / Symbol.LotSize:F2} lots at {slPips:F1}p risks ${finalDollarRisk:F2} = {finalDollarRisk / riskAmount:F1}x the {RiskPerTradePercent:F2}% target ${riskAmount:F2} (max {MaxMinLotRiskMultiple:F1}x)";
+                    if (ShowLogs) Print($"[Guardrail] Blocked: {detail}");
+                    _ = ReportGuardrailBlockedAsync("MinLotExceedsRiskPct", detail);
+                    return;
+                }
             }
 
             var tradeType = decision.action == "BUY" ? TradeType.Buy : TradeType.Sell;

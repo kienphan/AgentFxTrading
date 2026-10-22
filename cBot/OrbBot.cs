@@ -219,6 +219,8 @@ namespace cAlgo.Robots
         [Parameter("Risk per Trade (% Equity)", Group = "Risk", DefaultValue = 0.2, MinValue = 0.01, MaxValue = 10.0, Step = 0.01)]
         public double RiskPerTradePercent { get; set; }
 
+        [Parameter("Fixed Lots (0=dynamic)", Group = "Risk", DefaultValue = 0.1, MinValue = 0.0, Step = 0.01)]
+        public double FixedLots { get; set; }
         [Parameter("Max Lots per Trade", Group = "Risk", DefaultValue = 5.0, MinValue = 0.01)]
         public double MaxAllowedLots { get; set; }
 
@@ -296,7 +298,8 @@ namespace cAlgo.Robots
                   $"{EodFlattenHourWinterUtc:00}:{EodFlattenMinute:00} UTC | dir {Direction} | " +
                   $"stop {StopMode} (min {MinSlPips:F0} pips) | BE {BreakevenTriggerR:F1}R (partial {PartialCloseRatio:F2}) | " +
                   $"TP {(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : (TakeProfitPips > 0 ? $"{TakeProfitPips:F0}p" : "none"))} | " +
-                  $"PrevOR[sl={(PrevDayOrSlEnabled ? "on" : "off")}] | risk {RiskPerTradePercent:F2}%/trade");
+                  $"PrevOR[sl={(PrevDayOrSlEnabled ? "on" : "off")}] | " +
+                  (FixedLots > 0 ? $"lots fixed {FixedLots:F2}" : $"risk {RiskPerTradePercent:F2}%/trade"));
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
@@ -824,6 +827,21 @@ namespace cAlgo.Robots
             {
                 refusal = "pip value is not positive";
                 return 0.0;
+            }
+
+            if (FixedLots > 0)
+            {
+                double fixedUnits = Symbol.NormalizeVolumeInUnits(FixedLots * Symbol.LotSize, RoundingMode.Down);
+                if (fixedUnits < Symbol.VolumeInUnitsMin)
+                {
+                    refusal = $"fixed lots ({FixedLots:F2}) is below broker minimum ({Symbol.VolumeInUnitsMin / Symbol.LotSize:F2})";
+                    return 0.0;
+                }
+                if (fixedUnits > Symbol.VolumeInUnitsMax)
+                    fixedUnits = Symbol.NormalizeVolumeInUnits(Symbol.VolumeInUnitsMax, RoundingMode.Down);
+
+                dollarRisk = fixedUnits * perUnitRisk;
+                return fixedUnits;
             }
 
             double units = Symbol.NormalizeVolumeInUnits(riskAmount / perUnitRisk, RoundingMode.Down);
