@@ -246,3 +246,41 @@ def test_ctrader_home_defaults_to_root(monkeypatch):
     assert str(host) == "/root/ctrader_data/ctid_demo-main_pwd" and container == "/root/ctrader_data/ctid_demo-main_pwd"
     monkeypatch.setenv("CTRADER_HOME", "  ")
     assert ctrader_home() == "/root"
+
+
+def test_upsert_from_bot_preserves_balance_on_zero_or_negative(registry):
+    """Disconnected or unauthenticated cBots send 0.0 balance, which must not zero out an existing balance."""
+    acc_id = registry.upsert_from_bot(
+        account_number="123456", account_type="live", label="Live IC",
+        balance=1500.0, equity=1520.0
+    )
+    row = next(a for a in registry.list_accounts(include_unconfigured=True) if a["account_id"] == acc_id)
+    assert row["last_balance"] == 1500.0
+    assert row["last_equity"] == 1520.0
+
+    # A zero balance from a disconnected bot must NOT overwrite last_balance/last_equity
+    registry.upsert_from_bot(
+        account_number="123456", account_type="live", label="Live IC",
+        balance=0.0, equity=0.0
+    )
+    row = next(a for a in registry.list_accounts(include_unconfigured=True) if a["account_id"] == acc_id)
+    assert row["last_balance"] == 1500.0
+    assert row["last_equity"] == 1520.0
+
+    # A negative balance must also not overwrite
+    registry.upsert_from_bot(
+        account_number="123456", account_type="live", label="Live IC",
+        balance=-50.0, equity=-50.0
+    )
+    row = next(a for a in registry.list_accounts(include_unconfigured=True) if a["account_id"] == acc_id)
+    assert row["last_balance"] == 1500.0
+    assert row["last_equity"] == 1520.0
+
+    # A subsequent positive balance updates properly
+    registry.upsert_from_bot(
+        account_number="123456", account_type="live", label="Live IC",
+        balance=1600.0, equity=1610.0
+    )
+    row = next(a for a in registry.list_accounts(include_unconfigured=True) if a["account_id"] == acc_id)
+    assert row["last_balance"] == 1600.0
+    assert row["last_equity"] == 1610.0

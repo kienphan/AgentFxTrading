@@ -10,6 +10,7 @@ if str(root) not in sys.path:
 
 from app.server import app as fastapi_app
 import app.server
+from app.accounts import get_account_registry
 
 client = TestClient(fastapi_app)
 
@@ -67,6 +68,15 @@ def test_telemetry_tick():
     res = client.post("/api/tick", json=payload)
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
+
+    # Post with 0.0 balance (as from a disconnected cBot) - must not zero out account balance
+    zero_payload = dict(payload, balance=0.0, equity=0.0)
+    res_zero = client.post("/api/tick", json=zero_payload)
+    assert res_zero.status_code == 200
+    reg = get_account_registry()
+    acc = next(a for a in reg.list_accounts(include_unconfigured=True) if a["account_number"] == "123456")
+    assert acc["last_balance"] == 10000.0
+    assert acc["last_equity"] == 10250.0
 
 def test_portfolio_reports():
     open_payload = {

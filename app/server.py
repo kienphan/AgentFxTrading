@@ -2491,8 +2491,8 @@ async def handle_telemetry_tick(request: dict):
             account_type = registry.get_account_type(account_number) or "demo"
         account_type = str(account_type)
         account_label = request.get("account_label")
-        balance = float(request.get("balance", request.get("equity", 0.0)) or 0.0)
-        equity = float(request.get("equity", request.get("balance", 0.0)) or 0.0)
+        balance = float(request.get("balance") or request.get("account_balance") or request.get("equity") or request.get("account_equity") or 0.0)
+        equity = float(request.get("equity") or request.get("account_equity") or request.get("balance") or request.get("account_balance") or 0.0)
         
         account_id = registry.upsert_from_bot(
             account_number=account_number,
@@ -2626,8 +2626,8 @@ async def report_position(request: dict):
             account_type = registry.get_account_type(account_number) or "demo"
         account_type = str(account_type)
         account_label = request.get("account_label")
-        account_balance = float(request.get("account_balance", 0) or 0)
-        account_equity = float(request.get("account_equity", 0) or 0)
+        account_balance = float(request.get("account_balance") or request.get("balance") or 0.0)
+        account_equity = float(request.get("account_equity") or request.get("equity") or 0.0)
         
         account_id = registry.upsert_from_bot(
             account_number=account_number,

@@ -120,11 +120,20 @@ class AccountRegistry:
                 row = cursor.fetchone()
             if row:
                 account_id = row["account_id"]
-                update_query = """
-                UPDATE accounts 
-                SET last_balance = ?, last_equity = ?, last_seen = datetime('now')
-                """
-                params = [balance, equity]
+                # Only overwrite last_balance and last_equity if balance > 0.
+                # Disconnected or unauthenticated cBots report 0.0, which must never wipe a valid balance.
+                if balance > 0:
+                    update_query = """
+                    UPDATE accounts 
+                    SET last_balance = ?, last_equity = ?, last_seen = datetime('now')
+                    """
+                    params = [balance, equity]
+                else:
+                    update_query = """
+                    UPDATE accounts 
+                    SET last_seen = datetime('now')
+                    """
+                    params = []
                 
                 if label is not None:
                     update_query += ", label = ?"
