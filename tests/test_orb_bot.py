@@ -260,3 +260,11 @@ def test_fixed_lots_parameter_and_default():
     assert '[Parameter("Fixed Lots (0=dynamic)", Group = "Risk", DefaultValue = 0.1' in SOURCE
     assert "public double FixedLots { get; set; }" in SOURCE
     assert "if (FixedLots > 0)" in SOURCE
+
+
+def test_max_breakout_distance_parameter_and_filter():
+    assert '[Parameter("Max Breakout Distance (pips, 0=off)", Group = "Breakout Quality"' in SOURCE
+    assert "public double MaxBreakoutDistancePips { get; set; }" in SOURCE
+    assert "if (MaxBreakoutDistancePips <= 0) return true;" in SOURCE
+    assert "if (distance <= MaxBreakoutDistancePips) return true;" in SOURCE
+    assert 'Print($"[ORB] Breakout too far' in SOURCE
