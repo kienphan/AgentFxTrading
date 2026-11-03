@@ -192,7 +192,7 @@ namespace cAlgo.Robots
         [Parameter("Touch Tolerance (ticks)", Group = "Entry", DefaultValue = 1, MinValue = 0, MaxValue = 20)]
         public int TouchToleranceTicks { get; set; }
 
-        [Parameter("Confirmations For Setups", Group = "Entry", DefaultValue = 0, MinValue = 0, MaxValue = 3)]
+        [Parameter("Confirmations For Setups", Group = "Entry", DefaultValue = 1, MinValue = 0, MaxValue = 3)]
         public int ConfirmationsSetups { get; set; }
 
         [Parameter("Max Spread (pips)", Group = "Entry", DefaultValue = 50.0, MinValue = 0.1, MaxValue = 10000.0, Step = 0.1)]
@@ -235,7 +235,7 @@ namespace cAlgo.Robots
         [Parameter("Low-Volume Pocket Fraction", Group = "Risk", DefaultValue = 0.2, MinValue = 0.01, MaxValue = 1.0, Step = 0.01)]
         public double LowVolumeFraction { get; set; }
 
-        [Parameter("Min SL (pips)", Group = "Risk", DefaultValue = 5.0, MinValue = 0.1, MaxValue = 1000.0, Step = 0.1)]
+        [Parameter("Min SL (pips)", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 1000.0, Step = 0.1)]
         public double MinSlPips { get; set; }
 
         [Parameter("Min Reward/Risk", Group = "Risk", DefaultValue = 1.5, MinValue = 0.2, MaxValue = 20.0, Step = 0.1)]
@@ -247,19 +247,19 @@ namespace cAlgo.Robots
         [Parameter("TP HVN Factor (x median)", Group = "Risk", DefaultValue = 1.5, MinValue = 0.5, MaxValue = 20.0, Step = 0.1)]
         public double TpHvnFactor { get; set; }
 
-        [Parameter("TP Buffer (pips)", Group = "Risk", DefaultValue = 2.0, MinValue = 0.0, MaxValue = 1000.0, Step = 0.1)]
+        [Parameter("TP Buffer (pips)", Group = "Risk", DefaultValue = 1.0, MinValue = 0.0, MaxValue = 1000.0, Step = 0.1)]
         public double TpBufferPips { get; set; }
 
-        [Parameter("Break-even at R", Group = "Management", DefaultValue = 1.0, MinValue = 0.0, MaxValue = 10.0, Step = 0.1)]
+        [Parameter("Break-even at R (0=off)", Group = "Management", DefaultValue = 0.0, MinValue = 0.0, MaxValue = 10.0, Step = 0.1)]
         public double BreakEvenR { get; set; }
 
-        [Parameter("Trail Start at R", Group = "Management", DefaultValue = 1.5, MinValue = 0.0, MaxValue = 20.0, Step = 0.1)]
+        [Parameter("Trail Start at R", Group = "Management", DefaultValue = 2.0, MinValue = 0.0, MaxValue = 20.0, Step = 0.1)]
         public double TrailStartR { get; set; }
 
-        [Parameter("Trail ATR Multiple (M5)", Group = "Management", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Step = 0.1)]
+        [Parameter("Trail ATR Multiple (M5)", Group = "Management", DefaultValue = 2.5, MinValue = 0.1, MaxValue = 10.0, Step = 0.1)]
         public double TrailAtrMult { get; set; }
 
-        [Parameter("Use ATR Trail", Group = "Management", DefaultValue = true)]
+        [Parameter("Use ATR Trail", Group = "Management", DefaultValue = false)]
         public bool UseAtrTrail { get; set; }
 
         [Parameter("Order-Flow Exit Bars (M5)", Group = "Management", DefaultValue = 2, MinValue = 1, MaxValue = 20)]
