@@ -268,3 +268,31 @@ def test_max_breakout_distance_parameter_and_filter():
     assert "if (MaxBreakoutDistancePips <= 0) return true;" in SOURCE
     assert "if (distance <= MaxBreakoutDistancePips) return true;" in SOURCE
     assert 'Print($"[ORB] Breakout too far' in SOURCE
+
+# --- startup reconciliation of deals booked while the bot was down -----------------------
+
+def test_closed_deals_are_reconciled_on_start():
+    # A position that closes during a restart raises no PositionClosed event: the row would stay
+    # "open" on the dashboard forever (US30 398836070, 2026-11-04 02:48:55Z).
+    assert ('[Parameter("Reconcile Closed Deals (hours, 0=off)", Group = "Reporting", '
+            'DefaultValue = 24, MinValue = 0, MaxValue = 168)]') in SOURCE
+    assert "public int ReconcileClosedHours { get; set; }" in SOURCE
+    assert "ReconcileClosedDealsFromHistory();" in SOURCE
+    assert "if (ReconcileClosedHours <= 0) return;" in SOURCE
+    assert "if (RunningMode != RunningMode.RealTime) return;" in SOURCE
+
+
+def test_reconciliation_reports_only_real_final_closes():
+    # An open position id means a partial close: reporting it would close the row early.
+    assert "if (openIds.Contains(deal.PositionId)) continue;" in SOURCE
+    assert "if (!seen.Add(deal.PositionId)) continue;" in SOURCE
+    assert "if (deal.ClosingTime.ToUniversalTime() < since) continue;" in SOURCE
+    assert "if (!string.Equals(deal.SymbolName, SymbolName, StringComparison.OrdinalIgnoreCase)) continue;" in SOURCE
+
+
+def test_reconciliation_uses_the_brokers_own_numbers():
+    assert "reason = \"Reconciled from broker history (bot was down at close)\"" in SOURCE
+    assert "ctrader_id = deal.PositionId," in SOURCE
+    assert "pnl = Math.Round(deal.NetProfit, 2)," in SOURCE
+    assert "exit_price = deal.ClosingPrice," in SOURCE
+    assert "exit_time = deal.ClosingTime.ToUniversalTime().ToString(\"o\")," in SOURCE

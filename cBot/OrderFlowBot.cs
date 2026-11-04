@@ -309,6 +309,14 @@ namespace cAlgo.Robots
         [Parameter("Portfolio Report Endpoint", Group = "Reporting", DefaultValue = "http://127.0.0.1:8000/portfolio/report")]
         public string AiReportUrl { get; set; }
 
+        // A position that closes while the process is down (restart, watchdog heal, crash loop)
+        // raises no PositionClosed event, so the server never learns about it and the dashboard
+        // keeps showing the trade as open. On start we re-send a close report for every deal the
+        // broker booked inside the window; the server dedupes on ctrader_id, so an already
+        // reported deal is ignored rather than booked twice. 0 disables the sweep.
+        [Parameter("Reconcile Closed Deals (hours, 0=off)", Group = "Reporting", DefaultValue = 24, MinValue = 0, MaxValue = 168)]
+        public int ReconcileClosedHours { get; set; }
+
         #endregion
 
         #region State types
@@ -490,6 +498,7 @@ namespace cAlgo.Robots
             Positions.Closed += OnPositionClosed;
             SendAccountSync();
             ResumeOpenPositions();
+            ReconcileClosedDealsFromHistory();
 
             Print("OF|start|{0}|{1}|period={2}m|warmup={3}|breakout={4}|stack={5:F1}x{6}|cluster={7:F1}x{8}|" +
                   "risk={9}|sl={10}|minRR={11:F1}|profile={12}",
@@ -2377,6 +2386,93 @@ namespace cAlgo.Robots
         #endregion
 
         #region Reporting
+
+        /// <summary>
+        /// Re-sends a close report for deals the broker booked while this cBot was not running.
+        /// The server matches on `ctrader_id` and only touches rows still `open`, so replaying a
+        /// deal it already knows is a no-op — the sweep is safe to run on every start.
+        /// </summary>
+        private void ReconcileClosedDealsFromHistory()
+        {
+            if (ReconcileClosedHours <= 0) return;
+            if (RunningMode != RunningMode.RealTime) return;
+
+            try
+            {
+                var openIds = new HashSet<int>();
+                foreach (var p in Positions.FindAll(BotId, SymbolName)) openIds.Add(p.Id);
+
+                var since = Server.Time.ToUniversalTime().AddHours(-ReconcileClosedHours);
+                var seen = new HashSet<int>();
+                int sent = 0;
+
+                foreach (var deal in History)
+                {
+                    if (!string.Equals(deal.SymbolName, SymbolName, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (deal.ClosingTime.ToUniversalTime() < since) continue;
+                    if (deal.Label != BotId) continue;
+                    if (openIds.Contains(deal.PositionId)) continue;   // partial close: position still alive
+                    if (!seen.Add(deal.PositionId)) continue;          // one report per position
+                    SendCloseReportForDeal(deal);
+                    sent++;
+                }
+
+                if (sent > 0)
+                    Print("OF|reconcile|sent={0}|window_h={1}", sent, ReconcileClosedHours);
+            }
+            catch (Exception ex)
+            {
+                Print("OF|reconcile|error|{0}", OneLine(ex.Message));
+            }
+        }
+
+        private void SendCloseReportForDeal(HistoricalTrade deal)
+        {
+            try
+            {
+                string owner = string.IsNullOrEmpty(deal.Label) ? BotId : deal.Label;
+                double pips = (deal.ClosingPrice - deal.EntryPrice) / Symbol.PipSize;
+                if (deal.TradeType == TradeType.Sell) pips = -pips;
+
+                var report = new
+                {
+                    ctrader_id = deal.PositionId,
+                    bot_id = owner,
+                    action = "close",
+                    symbol = deal.SymbolName,
+                    side = deal.TradeType.ToString(),
+                    volume = deal.VolumeInUnits / Symbol.LotSize,
+                    entry_price = deal.EntryPrice,
+                    exit_price = deal.ClosingPrice,
+                    sl_price = (double?)null,
+                    tp_price = (double?)null,
+                    sl_pips = 0.0,
+                    pnl = Math.Round(deal.NetProfit, 2),
+                    pips = Math.Round(pips, 1),
+                    reason = "Reconciled from broker history (bot was down at close)",
+                    entry_time = deal.EntryTime.ToUniversalTime().ToString("o"),
+                    exit_time = deal.ClosingTime.ToUniversalTime().ToString("o"),
+                    account_number = Account.Number.ToString(CultureInfo.InvariantCulture),
+                    account_type = Account.IsLive ? "live" : "demo",
+                    account_label = AccountLabel,
+                    account_balance = Account.Balance,
+                    account_equity = Account.Equity
+                };
+
+                string json = JsonSerializer.Serialize(report);
+                string url = ReportUrl();
+                Task.Run(async () =>
+                {
+                    string error = await PostReportAsync(url, json);
+                    if (error != null)
+                        Print("OF|reconcile|failed|pos={0}|{1}", deal.PositionId, error);
+                });
+            }
+            catch (Exception ex)
+            {
+                Print("OF|reconcile|payload_error|pos={0}|{1}", deal.PositionId, OneLine(ex.Message));
+            }
+        }
 
         private string ReportUrl()
         {
