@@ -291,3 +291,25 @@ def test_reconciliation_uses_the_brokers_own_numbers():
 
 def test_adopted_labels_are_reconciled_too():
     assert "ManagesLabel(deal.Label)" in SOURCE
+
+# --- opening-range availability (tick-driven finalize + explicit entry delay) -----------
+
+def test_the_range_is_finalized_from_a_tick_not_one_bar_late():
+    # Live DE40 2026-11-04: window 08:00-08:15 was announced at 08:45 because the bar hook lags a
+    # bar, leaving the bot blind for the first 30 minutes after the window.
+    assert "private void TryFinalizeOrFromTick()" in SOURCE
+    assert "TryFinalizeOrFromTick();" in SOURCE
+    assert "if (Server.Time < end) return;              // window still open" in SOURCE
+    assert "var lastClosed = Bars.Last(1);" in SOURCE
+    assert "if (lastClosed.OpenTime < end) return;      // the bar past the window has not closed yet" in SOURCE
+    assert "FinalizeOr();" in SOURCE
+
+
+def test_the_entry_delay_is_an_explicit_knob():
+    # The old one-bar lag was accidentally acting as a "wait for the break to stick" filter:
+    # with an immediate entry XAUUSD dropped from +1607 to -137, so the delay is modelled
+    # instead of relying on hook timing.
+    assert ('[Parameter("Entry Delay After OR (minutes, 0=none)", Group = "Session", '
+            'DefaultValue = 0, MinValue = 0, MaxValue = 240)]') in SOURCE
+    assert "public int EntryDelayMinutes { get; set; }" in SOURCE
+    assert "if (EntryDelayMinutes > 0 && now < OrWindowEndUtc(sessionOpen).AddMinutes(EntryDelayMinutes)) return;" in SOURCE

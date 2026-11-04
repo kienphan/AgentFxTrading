@@ -296,3 +296,14 @@ def test_reconciliation_uses_the_brokers_own_numbers():
     assert "pnl = Math.Round(deal.NetProfit, 2)," in SOURCE
     assert "exit_price = deal.ClosingPrice," in SOURCE
     assert "exit_time = deal.ClosingTime.ToUniversalTime().ToString(\"o\")," in SOURCE
+
+# --- opening-range availability ---------------------------------------------------------
+
+def test_the_range_is_finalized_from_a_tick_not_one_bar_late():
+    # The bar hook delivers the closed bar one bar late, so the OR appeared 30 minutes after the
+    # window ended. Finalizing on a tick is still bar-safe: a bar past the window has closed.
+    assert "private void TryFinalizeOrFromTick()" in SOURCE
+    assert "TryFinalizeOrFromTick();" in SOURCE
+    assert "var lastClosed = Bars.Last(1);" in SOURCE
+    assert "if (lastClosed.OpenTime < end) return;" in SOURCE
+    assert "FinalizeOr();" in SOURCE

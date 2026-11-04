@@ -319,6 +319,7 @@ namespace cAlgo.Robots
         protected override void OnTick()
         {
             _lastTickAt = Server.Time;
+            TryFinalizeOrFromTick();
             Evaluate();
             SendLiveTickTelemetry();
         }
@@ -487,6 +488,30 @@ namespace cAlgo.Robots
             _orBarCount++;
             if (bar.High > _orHigh) _orHigh = bar.High;
             if (bar.Low < _orLow) _orLow = bar.Low;
+        }
+
+        /// <summary>
+        /// Finalizes the opening range from a TICK as soon as the chart has a closed bar beyond the
+        /// window. The bar hook arrives one bar late in practice (live DE40 2026-11-04: window
+        /// 08:00-08:15, range announced 08:45), which kept the bot blind for the first 30 minutes
+        /// after the window. Waiting for `lastClosed.OpenTime >= end` is still bar-safe: every bar
+        /// inside the window is final by then, and `FinalizeOr` backfills from Bars if the
+        /// incremental collection missed the window (cold start).
+        /// </summary>
+        private void TryFinalizeOrFromTick()
+        {
+            if (_orFinalized) return;
+            if (_sessionDate == DateTime.MinValue) return;
+            if (Bars.Count < 2) return;
+
+            DateTime sessionOpen = SessionOpenUtc(Server.Time);
+            DateTime end = OrWindowEndUtc(sessionOpen);
+            if (Server.Time < end) return;              // window still open
+
+            var lastClosed = Bars.Last(1);
+            if (lastClosed.OpenTime < end) return;      // the bar past the window has not closed yet
+
+            FinalizeOr();
         }
 
         private void FinalizeOr()
