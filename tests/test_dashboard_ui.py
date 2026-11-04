@@ -319,3 +319,25 @@ const code = fs.readFileSync(0, "utf-8");
 new vm.Script(code, { filename: "dashboard.js" });
 """], input=script, text=True, capture_output=True)
     assert res.returncode == 0, f"Dashboard JS syntax error:\n{res.stderr}"
+
+
+def test_orb_re2_badge_takes_precedence_over_plain_orb():
+    """OrbRE2Bot instances carry 're2' in their bot id and must not fall back to the orange ORB badge."""
+    from pathlib import Path
+    template = (Path(__file__).resolve().parent.parent / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    css = (Path(__file__).resolve().parent.parent / "static" / "css" / "dashboard.css").read_text(encoding="utf-8")
+
+    assert "bot-badge--re2" in css, "the RE2 badge needs its own style"
+    assert template.count("{% set is_re2 = 're2' in b_lower %}") == 2, \
+        "both position tables must classify RE2 (open + closed history)"
+    # Server-side: in BOTH tables the RE2 branch sits immediately before the ORB fallback, so an
+    # id like "us30_re2" can never be classified as a plain ORB.
+    orb_branches = [i for i in range(len(template)) if template.startswith("{% elif is_orb %}", i)]
+    assert len(orb_branches) == 2, "expected the open + closed-history tables"
+    for pos in orb_branches:
+        preceding = template[max(0, pos - 400):pos]
+        assert "{% elif is_re2 %}" in preceding and "ORB-RE2" in preceding
+    # Client-side re-render of the live list follows the same precedence.
+    assert "const isRe2=bl.includes('re2');" in template
+    assert ": isRe2 ? 'bot-badge--re2' :" in template
+    assert ": isRe2 ? 'ORB-RE2' :" in template
