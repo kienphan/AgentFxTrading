@@ -165,7 +165,8 @@ def test_spot_gold_style_defaults_are_not_assumed():
 # --- session discipline ----------------------------------------------------------------
 
 def test_one_position_and_one_signal_per_session():
-    assert "if (Positions.FindAll(BotId, SymbolName).Length > 0) return;" in SOURCE
+    # The guard covers every label this instance owns, adopted ones included.
+    assert "if (MyPositions().Length > 0) return;" in SOURCE
     assert "if (_tradesFired >= MaxTradesPerSession) return;" in SOURCE
     assert "if (_blockedAfterStop && !AllowReentryAfterSl) return;" in SOURCE
 
@@ -213,3 +214,49 @@ def test_backtests_do_not_post_to_the_live_endpoints():
     # condition together with its null check.
     assert SOURCE.count("if (RunningMode != RunningMode.RealTime) return;") == 4
     assert "if (RunningMode != RunningMode.RealTime || position == null) return;" in SOURCE
+
+
+# --- adopted labels (renaming a bot must not orphan its live position) -------------------
+
+def test_adopted_labels_are_a_parameter_and_parsed_on_start():
+    assert '[Parameter("Adopted Bot IDs (comma separated)", Group = "General", DefaultValue = "")]' in SOURCE
+    assert "public string AdoptedBotIds { get; set; }" in SOURCE
+    assert 'foreach (var part in (AdoptedBotIds ?? string.Empty).Split(\',\'))' in SOURCE
+    assert "if (label.Length > 0 && label != BotId) _adoptedLabels.Add(label);" in SOURCE
+
+
+def test_the_position_helper_never_calls_itself():
+    start = SOURCE.index("private Position[] MyPositions()")
+    body = SOURCE[SOURCE.index("{", start):]
+    body = body[:body.index("\n        }\n")]
+    assert "Positions.FindAll(BotId, SymbolName)" in body
+    assert "MyPositions()" not in body, "the helper must query Positions directly or it recurses forever"
+
+
+def test_every_position_query_goes_through_the_helper():
+    # Entry guard, flush, breakeven and trailing must all see adopted positions.
+    uses = SOURCE.count("MyPositions()")
+    assert uses >= 6, uses
+    assert "if (MyPositions().Length > 0) return;" in SOURCE          # entry guard
+    assert "foreach (var position in MyPositions())" in SOURCE          # EOD flatten
+    assert SOURCE.count("foreach (var pos in MyPositions())") == 2      # breakeven + trailing
+    assert "var positions = MyPositions();" in SOURCE                   # telemetry
+
+
+def test_the_close_handler_accepts_adopted_labels():
+    assert "if (!ManagesLabel(position.Label)) return;" in SOURCE
+    assert "private bool ManagesLabel(string label) =>" in SOURCE
+
+
+def test_reports_carry_the_positions_own_label():
+    # The server matches a close by bot_id + ctrader_id, so an adopted position must be reported
+    # under the label its row was opened with, not under the new bot id.
+    assert SOURCE.count('string owner = string.IsNullOrEmpty(position.Label) ? BotId : position.Label;') == 2
+    assert "bot_id = owner," in SOURCE
+
+
+def test_telemetry_is_published_per_label():
+    # One live snapshot per bot id: an adopted position also refreshes the old label's cache.
+    assert "PostTelemetry(BotId, positions.Where(" in SOURCE
+    assert "PostTelemetry(label, adopted);" in SOURCE
+    assert "bot_id = label," in SOURCE

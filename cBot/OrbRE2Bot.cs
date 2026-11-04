@@ -91,6 +91,12 @@ namespace cAlgo.Robots
         [Parameter("Enable Trading", Group = "General", DefaultValue = true)]
         public bool EnableTrading { get; set; }
 
+        // Positions opened by another bot id (for example a predecessor that was renamed) are
+        // managed here as well: entries, breakeven, trailing, the EOD flatten and the close
+        // report all treat them as ours. Comma separated, exact labels.
+        [Parameter("Adopted Bot IDs (comma separated)", Group = "General", DefaultValue = "")]
+        public string AdoptedBotIds { get; set; }
+
         // ---- Session -------------------------------------------------------------------------
         // "Winter UTC" means the UTC hour matching the local open while DST is off; the DstRule
         // pulls it back an hour while DST is on, so the local open stays put.
@@ -277,6 +283,7 @@ namespace cAlgo.Robots
         private string _trendNote = "off";
 
         // ---- Execution -----------------------------------------------------------------------
+        private readonly HashSet<string> _adoptedLabels = new HashSet<string>();
         private readonly Dictionary<int, double> _initialSlPips = new Dictionary<int, double>();
         private readonly Dictionary<int, string> _closeReasons = new Dictionary<int, string>();
         private readonly HashSet<int> _breakevenApplied = new HashSet<int>();
@@ -308,6 +315,14 @@ namespace cAlgo.Robots
                   $"SL {DailyAtrMultiplier:F2}xATR (min {MinSlPips:F0}p) | TP " +
                   $"{(TakeProfitRMultiple > 0 ? $"{TakeProfitRMultiple:F1}R" : (TakeProfitPips > 0 ? $"{TakeProfitPips:F0}p" : "none"))} | " +
                   (FixedLots > 0 ? $"lots fixed {FixedLots:F2}" : $"risk {RiskPerTradePercent:F2}%/trade"));
+
+            foreach (var part in (AdoptedBotIds ?? string.Empty).Split(','))
+            {
+                string label = part.Trim();
+                if (label.Length > 0 && label != BotId) _adoptedLabels.Add(label);
+            }
+            if (_adoptedLabels.Count > 0)
+                Print($"[RE2] Adopting positions labelled {string.Join(", ", _adoptedLabels)} as '{BotId}'");
 
             Positions.Closed += OnPositionClosed;
             _dailyBars = MarketData.GetBars(TimeFrame.Daily);
@@ -730,7 +745,7 @@ namespace cAlgo.Robots
             if (MaxEntryWindowMinutes > 0 && (now - sessionOpen).TotalMinutes > MaxEntryWindowMinutes) return;
             if (_tradesFired >= MaxTradesPerSession) return;
             if (_blockedAfterStop && !AllowReentryAfterSl) return;
-            if (Positions.FindAll(BotId, SymbolName).Length > 0) return;
+            if (MyPositions().Length > 0) return;
 
             double price = Symbol.Bid;                            // chart/bid basis, as the OR is built
             double longTrig = _orHigh + TickBufferPips * Symbol.PipSize;
@@ -922,6 +937,22 @@ namespace cAlgo.Robots
 
         #region Exits
 
+        /// <summary>Posisitions this instance owns: its own label plus every adopted label.</summary>
+        private Position[] MyPositions()
+        {
+            var mine = Positions.FindAll(BotId, SymbolName).ToList();
+            foreach (var label in _adoptedLabels)
+            {
+                foreach (var p in Positions.FindAll(label, SymbolName))
+                    if (!mine.Any(x => x.Id == p.Id)) mine.Add(p);
+            }
+            return mine.ToArray();
+        }
+
+        /// <summary>True when a position label belongs to this instance (own or adopted).</summary>
+        private bool ManagesLabel(string label) =>
+            label == BotId || (!string.IsNullOrEmpty(label) && _adoptedLabels.Contains(label));
+
         private void Evaluate()
         {
             if (_isStopped || !EnableTrading) return;
@@ -947,7 +978,7 @@ namespace cAlgo.Robots
 
         private void FlattenAll(string reason)
         {
-            foreach (var position in Positions.FindAll(BotId, SymbolName))
+            foreach (var position in MyPositions())
             {
                 var result = CloseWithReason(position, reason);
                 if (result == null || !result.IsSuccessful)
@@ -966,7 +997,7 @@ namespace cAlgo.Robots
         {
             if (BreakevenTriggerR <= 0) return;
 
-            foreach (var pos in Positions.FindAll(BotId, SymbolName))
+            foreach (var pos in MyPositions())
             {
                 if (_breakevenApplied.Contains(pos.Id)) continue;
                 if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
@@ -1050,7 +1081,7 @@ namespace cAlgo.Robots
         {
             if (TrailTriggerR <= 0 || TrailDistanceR <= 0) return;
 
-            foreach (var pos in Positions.FindAll(BotId, SymbolName))
+            foreach (var pos in MyPositions())
             {
                 if (!_initialSlPips.TryGetValue(pos.Id, out double initialSlPips) || initialSlPips <= 0)
                 {
@@ -1123,7 +1154,8 @@ namespace cAlgo.Robots
                 try
                 {
                     var position = args.Position;
-                    if (position == null || position.Label != BotId || position.SymbolName != SymbolName) return;
+                    if (position == null || position.SymbolName != SymbolName) return;
+                    if (!ManagesLabel(position.Label)) return;
 
                     double exitPrice = position.TradeType == TradeType.Buy ? Symbol.Bid : Symbol.Ask;
                     if (args.Reason == PositionCloseReason.TakeProfit && position.TakeProfit.HasValue)
@@ -1285,10 +1317,11 @@ namespace cAlgo.Robots
             if (RunningMode != RunningMode.RealTime) return;
             try
             {
+                string owner = string.IsNullOrEmpty(position.Label) ? BotId : position.Label;
                 var report = new
                 {
                     ctrader_id = position.Id,
-                    bot_id = BotId,
+                    bot_id = owner,
                     action = "close",
                     symbol = position.SymbolName,
                     side = position.TradeType.ToString(),
@@ -1331,10 +1364,11 @@ namespace cAlgo.Robots
             if (RunningMode != RunningMode.RealTime || position == null) return;
             try
             {
+                string owner = string.IsNullOrEmpty(position.Label) ? BotId : position.Label;
                 var report = new
                 {
                     ctrader_id = position.Id,
-                    bot_id = BotId,
+                    bot_id = owner,
                     action = "partial_close",
                     symbol = position.SymbolName,
                     side = position.TradeType.ToString(),
@@ -1420,11 +1454,24 @@ namespace cAlgo.Robots
         private void SendLiveTickTelemetry(bool force = false)
         {
             if (RunningMode != RunningMode.RealTime) return;
-            var positions = Positions.FindAll(BotId, SymbolName);
+
+            var positions = MyPositions();
             double interval = positions.Length > 0 ? 5.0 : 15.0;
             if (!force && (DateTime.UtcNow - _lastTickTelemetryTime).TotalSeconds < interval) return;
             _lastTickTelemetryTime = DateTime.UtcNow;
 
+            // The dashboard keeps one live snapshot per reported bot id, so an adopted position has
+            // to be published under its own label as well or its price/P&L freezes on screen.
+            PostTelemetry(BotId, positions.Where(x => string.IsNullOrEmpty(x.Label) || x.Label == BotId).ToArray());
+            foreach (var label in _adoptedLabels)
+            {
+                var adopted = positions.Where(x => x.Label == label).ToArray();
+                if (adopted.Length > 0) PostTelemetry(label, adopted);
+            }
+        }
+
+        private void PostTelemetry(string label, Position[] positions)
+        {
             try
             {
                 var posList = new List<object>();
@@ -1451,7 +1498,7 @@ namespace cAlgo.Robots
 
                 var telemetry = new
                 {
-                    bot_id = BotId,
+                    bot_id = label,
                     account_number = Account.Number.ToString(CultureInfo.InvariantCulture),
                     account_type = Account.IsLive ? "live" : "demo",
                     account_label = AccountLabel,
