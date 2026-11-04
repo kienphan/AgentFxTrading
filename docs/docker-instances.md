@@ -14,6 +14,13 @@ drift apart.
 > **Outside the grid:** the demo-only MTF forward test (`MtfChartBot`, D1/H4/H1/M15 AI analyst, journal-based)
 > is installed by hand — see [MTF forward test](mtf-forward-test.md). It has no cell in the grid below, by design.
 
+> **Also outside the grid (rule-only cBots, hand-tuned per instrument):**
+> `OrbBot.algo` (opening-range breakout confirmed on the closed bar), `OrbRE2Bot.algo` (same window but a
+> tick-break entry plus a daily trend filter, a whipsaw guard and an ATR band — see the ORB-RE2 section in the
+> READMEs) and `OrderFlowBot.algo` (footprint / volume-profile zones). They take per-instrument session and
+> risk flags that the 45-cell preset matrix does not model, so their `docker run` lines live with the deployed
+> bot configuration (dashboard → Docker Bot Management) instead of here.
+
 ---
 
 ## 📋 Contents

@@ -372,6 +372,21 @@ ORB cung cấp **thời điểm vào lệnh chính xác**:
 2. **Breakout**: Giá đóng cửa vượt qua ranh giới OR
 3. **Bộ Lọc Quyết Định**: Breakout phải dứt khoát (≥ MinDecisiveBreakoutPips, mặc định 10.0 pips cho XAUUSD)
 
+#### ORB-RE2 — biến thể tick-break độc lập (chỉ thuần quy tắc)
+
+`cBot/OrbRE2Bot.cs` là cBot ORB thứ hai, port từ cùng một tham chiếu Python. Vẫn giữ cửa sổ Opening Range
+nhưng **khớp lệnh ngay khi tick phá biên** thay vì chờ nến đóng, và thêm ba bộ lọc mà ORB thuần không có:
+
+1. **Lọc xu hướng ngày (D1)** — giá so với MA ngày, hoặc MA nhanh so với MA chậm, chỉ tính trên **nến ngày đã đóng**.
+2. **Chống quét hai đầu (whipsaw)** — nếu biên ngược lại đã bị phá trong phiên, chiều đó bị từ chối.
+3. **Dải ATR + chống căng giá** — bỏ qua ngày quá chết/quá nổ và bỏ qua khi giá đã đi quá xa MA.
+
+SL = hệ số × ATR ngày (có sàn), TP = bội số R, 1 lệnh/phiên, đóng hết cuối phiên. Không AI, không tin tức.
+
+So với ORB thuần trên cùng 23 phiên dữ liệu tick (0.1 lot, cùng session/stop): RE2 giảm drawdown XAUUSD từ
+$960 xuống $328 trong khi lợi nhuận hơn gấp đôi, và đưa US30/USTEC từ −$81/−$61 về gần hòa với drawdown còn
+khoảng 1/4. GBPJPY/EURJPY vẫn dùng ORB thuần vì phiên Á trend sạch, thêm bộ lọc chỉ làm mất lệnh.
+
 ### Nhận Diện Chế Độ Thị Trường (Market Regime)
 
 Hệ thống tính toán các chỉ số hiệu suất dòng tiền thời gian thực:
@@ -740,6 +755,9 @@ AgentFxTrading/
 ├── cBot/
 │   ├── AiAgentBot.cs               # cBot chiến thuật TMS + ORB
 │   ├── AsianRangeJudasSweepBot.cs # cBot săn thanh khoản ICT Judas Sweep
+│   ├── OrbBot.cs                  # Opening Range Breakout (xác nhận bằng nến đóng)
+│   ├── OrbRE2Bot.cs               # ORB-RE2: tick break + lọc trend D1 + chống whipsaw
+│   ├── OrderFlowBot.cs            # cBot order flow (footprint / volume profile)
 │   └── FlowRsiBot.cs              # cBot lướt sóng Nested RSI & SMC Flow
 ├── scripts/
 │   ├── backup_postgres.sh # Tự động sao lưu hàng ngày (03:00 sáng)

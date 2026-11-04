@@ -375,6 +375,21 @@ ORB提供**精确的入场时机**：
 2. **突破**：价格收于OR边界之外
 3. **决定性过滤**：突破必须具备决定性（≥ MinDecisiveBreakoutPips，XAUUSD默认10.0 pips）
 
+#### ORB-RE2 —— 独立的逐笔突破版本（纯规则）
+
+`cBot/OrbRE2Bot.cs` 是第二个独立 ORB cBot，移植自同一份 Python 参考实现。保留开盘区间窗口，但**在逐笔价格
+突破边界时立即下单**，不再等待K线收线，并新增三个原版 ORB 没有的过滤器：
+
+1. **日线趋势过滤** —— 价格与日线均线比较，或快慢均线交叉，**只用已收线的日线**计算。
+2. **双杀防护（whipsaw）** —— 若同一时段内反向边界已被突破，则该方向拒绝入场。
+3. **ATR 带 + 防追高** —— 跳过波动过小/过大的日子，价格离均线过远时也不入场。
+
+止损 = 系数 × 日线ATR（有下限），止盈 = R 倍数，每时段一笔，收盘前平仓。无AI、无新闻。
+
+在与原版 ORB 相同的23个交易时段逐笔数据对比（0.1手，时段与止损完全一致）：RE2 把 XAUUSD 的回撤从 $960
+降到 $328，同时利润翻倍以上；US30/USTEC 从 −$81/−$61 变为接近持平，回撤约为原来的四分之一。
+GBPJPY/EURJPY 继续使用原版 ORB —— 亚洲开盘趋势干净，额外过滤只会减少交易。
+
 ### 市场状态识别 (Market Regime)
 
 系统计算实时资金效率指标以动态调整交易与出场行为：
@@ -739,6 +754,9 @@ AgentFxTrading/
 ├── cBot/
 │   ├── AiAgentBot.cs               # TMS + ORB 策略 cBot
 │   ├── AsianRangeJudasSweepBot.cs # ICT 亚洲时段流动性猎杀 cBot
+│   ├── OrbBot.cs                  # 开盘区间突破（收盘确认）
+│   ├── OrbRE2Bot.cs               # ORB-RE2：逐笔突破 + 日线趋势 + 双杀防护
+│   ├── OrderFlowBot.cs            # 订单流 cBot（footprint / 成交量分布）
 │   └── FlowRsiBot.cs              # 嵌套RSI & SMC Flow cBot
 ├── scripts/
 │   ├── backup_postgres.sh # 自动每日备份 (03:00)

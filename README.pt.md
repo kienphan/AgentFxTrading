@@ -371,6 +371,22 @@ ORB fornece **timing preciso de entrada**:
 2. **Breakout**: Preço fecha além do limite OR
 3. **Filtro Decisivo**: Breakout deve ser decisivo (≥ MinDecisiveBreakoutPips, padrão 10.0 pips no XAUUSD)
 
+#### ORB-RE2 — variante autônoma de rompimento por tick (apenas regras)
+
+`cBot/OrbRE2Bot.cs` é um segundo cBot ORB autônomo, portado da mesma referência Python. Mantém a janela de
+abertura, mas dispara no **rompimento por tick** em vez de esperar o fechamento do candle, e adiciona três
+filtros que o ORB simples não tem:
+
+1. **Filtro de tendência diária** — preço vs MA diária, ou MA rápida vs MA lenta, calculado **apenas** com candles diários fechados.
+2. **Proteção contra whipsaw** — se a borda oposta já foi rompida na sessão, aquela direção é recusada.
+3. **Banda de ATR + anti-extensão** — ignora dias mortos/explosivos e entradas com preço muito esticado da MA.
+
+SL = multiplicador × ATR diário (com piso), TP = múltiplo de R, uma entrada por sessão, zeragem no fim do dia. Sem IA e sem notícias.
+
+Comparado ao ORB simples nas mesmas 23 sessões de ticks (0,1 lote, sessões e stops iguais): o RE2 reduziu o
+drawdown do XAUUSD de $960 para $328 com mais que o dobro de lucro, e levou US30/USTEC de −$81/−$61 para
+praticamente zero com cerca de 1/4 do drawdown. GBPJPY/EURJPY seguem no ORB simples.
+
 ### Detecção de Regime de Mercado (Market Regime)
 
 O sistema calcula métricas de eficiência em tempo real para adaptar o comportamento de negociação e saída:
@@ -735,6 +751,9 @@ AgentFxTrading/
 ├── cBot/
 │   ├── AiAgentBot.cs               # cBot estratégia TMS + ORB
 │   ├── AsianRangeJudasSweepBot.cs # cBot ICT Judas Sweep asiático
+│   ├── OrbBot.cs                  # Opening Range Breakout (confirmação no fechamento)
+│   ├── OrbRE2Bot.cs               # ORB-RE2: rompimento por tick + tendência diária + whipsaw
+│   ├── OrderFlowBot.cs            # cBot de order flow (footprint / volume profile)
 │   └── FlowRsiBot.cs              # cBot Nested RSI & SMC Flow
 ├── scripts/
 │   ├── backup_postgres.sh # Backup diário automático (03:00)
