@@ -199,3 +199,69 @@ def test_spread_session_and_daily_limits_gate_entries():
 def test_dry_run_does_not_send_orders():
     assert "if (DryRun)" in SOURCE
     assert "ENTRY_DRY" in SOURCE
+
+
+# --- footprint state persistence (warm-up must survive a restart) ------------------------
+
+def test_state_persistence_is_configured_but_opt_out():
+    assert ('[Parameter("State Directory (blank=off)", Group = "Footprint", '
+            'DefaultValue = "/root/ctrader_data/orderflow_state")]') in SOURCE
+    assert "public string StateDir { get; set; }" in SOURCE
+    assert '[Parameter("Max State Gap (hours)", Group = "Footprint", DefaultValue = 48' in SOURCE
+    assert "public int MaxStateGapHours { get; set; }" in SOURCE
+    assert "if (string.IsNullOrWhiteSpace(StateDir)) return null;" in SOURCE
+
+
+def test_state_is_never_used_by_a_backtest():
+    # A stale file would silently change a replay, so both directions are live-only.
+    assert "_stateFile = null;      // never read or write state during a backtest" in SOURCE
+    assert "if (_stateFile == null || RunningMode != RunningMode.RealTime) return;" in SOURCE
+
+
+def test_restore_rejects_a_foreign_or_mismatched_file():
+    assert "if (doc.Version != StateVersion)" in SOURCE
+    assert "if (!string.Equals(doc.Symbol, SymbolName, StringComparison.OrdinalIgnoreCase) || doc.Period != PeriodMinutes)" in SOURCE
+    assert 'Print("STATE|discard|stale|age_h={0:F1}|max={1}", ageHours, MaxStateGapHours);' in SOURCE
+
+
+def test_restore_brings_back_bars_indicators_and_zones():
+    for snippet in (
+        "_m30Bars.Clear();",
+        "_atr = doc.Atr;",
+        "_emaFast = doc.EmaFast;",
+        "_emaSlow = doc.EmaSlow;",
+        "_m30BarCount = doc.BarCount;",
+        "_nextZoneId = doc.NextZoneId;",
+        "_zones.Add(new Zone",
+        "_restoredThroughUtc = _m30Bars[_m30Bars.Count - 1].Start.AddMinutes(PeriodMinutes);",
+    ):
+        assert snippet in SOURCE, snippet
+    # A restored, already-warm bot announces READY instead of waiting another 96 bars.
+    assert 'Print("READY|bars={0}|atr={1}|ema={2}/{3}|restored"' in SOURCE
+
+
+def test_the_seed_only_replays_ticks_the_state_does_not_cover():
+    assert "int covered = LowerBound(_restoredThroughUtc);" in SOURCE
+    assert 'Print("SEED|skip_before_state|from={0:o}|ticks={1}", _restoredThroughUtc, covered - start);' in SOURCE
+    # ...and a replayed bar that the state already holds is ignored instead of duplicated.
+    assert "if (_m30Bars.Count > 0 && bar.Start <= _m30Bars[_m30Bars.Count - 1].Start) return;" in SOURCE
+
+
+def test_state_is_written_atomically_and_not_on_every_tick():
+    assert "private void SaveState(bool force = false)" in SOURCE
+    assert "if (!force && (DateTime.UtcNow - _lastStateSaveUtc).TotalSeconds < 5) return;" in SOURCE
+    assert "string tmp = _stateFile + \".tmp\";" in SOURCE
+    assert "System.IO.File.Move(tmp, _stateFile);" in SOURCE
+
+
+def test_the_whole_rebuilt_set_is_persisted_after_seeding():
+    # The replay closes many bars inside a few seconds; the per-bar throttle would keep only one.
+    assert "SaveState(force: true);" in SOURCE
+
+
+def test_state_is_persisted_on_bar_close_entry_and_stop():
+    assert SOURCE.count("SaveState();") >= 3          # warm-up bar, processed bar, entry
+    assert SOURCE.count("SaveState(true") == 0
+    stop_block = SOURCE[SOURCE.index("protected override void OnStop()"):]
+    stop_block = stop_block[:stop_block.index("\n        }")]
+    assert "SaveState();" in stop_block

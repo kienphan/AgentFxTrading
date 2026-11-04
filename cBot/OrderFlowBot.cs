@@ -115,6 +115,18 @@ namespace cAlgo.Robots
         [Parameter("Seed Max Ticks", Group = "Footprint", DefaultValue = 3000000, MinValue = 10000, MaxValue = 50000000)]
         public int SeedMaxTicks { get; set; }
 
+        // Warm-up is the expensive part: 96 H1 footprint bars can only be rebuilt from ticks, and
+        // the broker serves ~half a day of them. Persisting the built bars + zones means a restart
+        // (watchdog, reboot, plan change) resumes instead of starting the count again.
+        // Blank disables persistence. Live only — backtests never read or write state.
+        [Parameter("State Directory (blank=off)", Group = "Footprint", DefaultValue = "/root/ctrader_data/orderflow_state")]
+        public string StateDir { get; set; }
+
+        // A gap longer than this throws the saved state away: the missing bars would leave the
+        // EMA/ATR series non-contiguous, and stale zones would be traded as if they were fresh.
+        [Parameter("Max State Gap (hours)", Group = "Footprint", DefaultValue = 48, MinValue = 1, MaxValue = 720)]
+        public int MaxStateGapHours { get; set; }
+
         [Parameter("EMA Fast", Group = "Footprint", DefaultValue = 20, MinValue = 5, MaxValue = 200)]
         public int EmaFastPeriod { get; set; }
 
@@ -444,6 +456,11 @@ namespace cAlgo.Robots
         private int _activePositionId;
         private DateTime _lastModifyTime;
 
+        private const int StateVersion = 1;
+        private string _stateFile;
+        private DateTime _restoredThroughUtc = DateTime.MinValue;
+        private DateTime _lastStateSaveUtc = DateTime.MinValue;
+
         // uvicorn closes an idle keep-alive connection after 5 s; retire pooled ones before it does.
         private readonly HttpClient _httpClient = new HttpClient(new SocketsHttpHandler
         {
@@ -481,6 +498,7 @@ namespace cAlgo.Robots
                 RiskSizingEnabled ? $"{RiskPerTradePercent:F2}%/trade" : $"fixed {FixedLots:F2} lots",
                 SlMode, MinRR, UseProfileZones ? $"on({ProfileConfirmations} confirm)" : "off");
 
+            TryRestoreState();
             SeedFromHistory();
 
             if (_m30Bars.Count == 0 && _ticks.Count == 0 && !_noTicksLogged)
@@ -492,6 +510,7 @@ namespace cAlgo.Robots
 
         protected override void OnStop()
         {
+            SaveState();
             Positions.Closed -= OnPositionClosed;
             if (_ticks != null)
                 _ticks.Tick -= OnTickEvent;
@@ -504,6 +523,294 @@ namespace cAlgo.Robots
             if (_seeding)
                 return;
             ProcessTick(args.Ticks.LastTick);
+        }
+
+        #endregion
+
+        #region State persistence
+
+        private sealed class StateCell
+        {
+            public long L { get; set; }
+            public int B { get; set; }
+            public int A { get; set; }
+        }
+
+        private sealed class StateBar
+        {
+            public string T { get; set; }
+            public double O { get; set; }
+            public double H { get; set; }
+            public double L { get; set; }
+            public double C { get; set; }
+            public int Ticks { get; set; }
+            public long TotalBid { get; set; }
+            public long TotalAsk { get; set; }
+            public int Levels { get; set; }
+            public int MaxCell { get; set; }
+            public long PocLevel { get; set; }
+            public int PocVol { get; set; }
+            public double MedianCell { get; set; }
+            public double CumulativeDelta { get; set; }
+            public List<StateCell> Cells { get; set; }
+        }
+
+        private sealed class StateZone
+        {
+            public int Id { get; set; }
+            public string Kind { get; set; }
+            public string Bias { get; set; }
+            public double Low { get; set; }
+            public double High { get; set; }
+            public double Anchor { get; set; }
+            public string CreatedBar { get; set; }
+            public int AgeBars { get; set; }
+            public int ArmBars { get; set; }
+            public int TouchCount { get; set; }
+            public bool Armed { get; set; }
+            public bool Consumed { get; set; }
+            public int ConfirmationsRequired { get; set; }
+            public string ArmSide { get; set; }
+            public string Note { get; set; }
+        }
+
+        private sealed class StateDoc
+        {
+            public int Version { get; set; }
+            public string Bot { get; set; }
+            public string Symbol { get; set; }
+            public int Period { get; set; }
+            public string SavedUtc { get; set; }
+            public long BarCount { get; set; }
+            public bool WarmupReady { get; set; }
+            public double Atr { get; set; }
+            public bool HasAtr { get; set; }
+            public double EmaFast { get; set; }
+            public double EmaSlow { get; set; }
+            public double PrevClose { get; set; }
+            public bool HasPrevClose { get; set; }
+            public int NextZoneId { get; set; }
+            public List<StateBar> Bars { get; set; }
+            public List<StateZone> Zones { get; set; }
+        }
+
+        private string StateFilePath()
+        {
+            if (string.IsNullOrWhiteSpace(StateDir)) return null;
+            var name = new StringBuilder();
+            foreach (char c in SymbolName + "_" + PeriodMinutes + "m_" + BotId)
+                name.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' ? c : '_');
+            return System.IO.Path.Combine(StateDir.Trim(), name + ".json");
+        }
+
+        /// <summary>
+        /// Restores the closed footprint bars, the indicator state and the live zone list that a
+        /// previous process left on disk. Live only: a backtest must stay a pure replay, otherwise
+        /// a stale file would silently change its result.
+        /// </summary>
+        private void TryRestoreState()
+        {
+            _stateFile = StateFilePath();
+            if (_stateFile == null)
+            {
+                Print("STATE|off");
+                return;
+            }
+            if (RunningMode != RunningMode.RealTime)
+            {
+                _stateFile = null;      // never read or write state during a backtest
+                return;
+            }
+            if (!System.IO.File.Exists(_stateFile))
+            {
+                Print("STATE|none|{0}", _stateFile);
+                return;
+            }
+
+            try
+            {
+                var doc = JsonSerializer.Deserialize<StateDoc>(System.IO.File.ReadAllText(_stateFile));
+                if (doc == null)
+                {
+                    Print("STATE|discard|unreadable|{0}", _stateFile);
+                    return;
+                }
+                if (doc.Version != StateVersion)
+                {
+                    Print("STATE|discard|version={0}|expected={1}", doc.Version, StateVersion);
+                    return;
+                }
+                if (!string.Equals(doc.Symbol, SymbolName, StringComparison.OrdinalIgnoreCase) || doc.Period != PeriodMinutes)
+                {
+                    Print("STATE|discard|mismatch|{0}|{1}m", doc.Symbol, doc.Period);
+                    return;
+                }
+
+                DateTime savedUtc = DateTime.MinValue;
+                if (!string.IsNullOrEmpty(doc.SavedUtc))
+                {
+                    DateTime.TryParse(doc.SavedUtc, CultureInfo.InvariantCulture,
+                        DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out savedUtc);
+                }
+                double ageHours = savedUtc == DateTime.MinValue
+                    ? double.MaxValue
+                    : (Server.Time.ToUniversalTime() - savedUtc).TotalHours;
+                if (ageHours > MaxStateGapHours)
+                {
+                    Print("STATE|discard|stale|age_h={0:F1}|max={1}", ageHours, MaxStateGapHours);
+                    return;
+                }
+
+                var bars = new List<FootprintBar>();
+                foreach (var sb in doc.Bars ?? new List<StateBar>())
+                {
+                    DateTime start;
+                    if (sb.T == null || !DateTime.TryParse(sb.T, CultureInfo.InvariantCulture,
+                            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out start))
+                        continue;
+                    var bar = new FootprintBar
+                    {
+                        Start = start, Open = sb.O, High = sb.H, Low = sb.L, Close = sb.C,
+                        Ticks = sb.Ticks, TotalBid = sb.TotalBid, TotalAsk = sb.TotalAsk,
+                        Levels = sb.Levels, MaxCell = sb.MaxCell, PocLevel = sb.PocLevel,
+                        PocVol = sb.PocVol, MedianCell = sb.MedianCell, CumulativeDelta = sb.CumulativeDelta
+                    };
+                    foreach (var sc in sb.Cells ?? new List<StateCell>())
+                        bar.Cells[sc.L] = new Cell { Bid = sc.B, Ask = sc.A };
+                    bars.Add(bar);
+                }
+                if (bars.Count == 0)
+                {
+                    Print("STATE|discard|no_bars");
+                    return;
+                }
+                bars.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+                _m30Bars.Clear();
+                foreach (var bar in bars)
+                    AddBar(_m30Bars, bar, MaxBarsKept);
+
+                // Indicator values ride along; replaying them from the bars would re-seed the EMAs
+                // and drift away from what the warm-up actually computed.
+                _atr = doc.Atr;
+                _hasAtr = doc.HasAtr;
+                _emaFast = doc.EmaFast;
+                _emaSlow = doc.EmaSlow;
+                _prevClose30 = doc.PrevClose;
+                _hasPrevClose30 = doc.HasPrevClose;
+                _hasEmaFast = doc.WarmupReady;
+                _hasEmaSlow = doc.WarmupReady;
+                _m30BarCount = doc.BarCount;
+                _nextZoneId = doc.NextZoneId;
+
+                int restoredZones = 0;
+                _zones.Clear();
+                foreach (var sz in doc.Zones ?? new List<StateZone>())
+                {
+                    ZoneKind kind;
+                    ZoneBias bias;
+                    if (!Enum.TryParse(sz.Kind, out kind) || !Enum.TryParse(sz.Bias, out bias)) continue;
+                    DateTime createdBar;
+                    DateTime.TryParse(sz.CreatedBar ?? "", CultureInfo.InvariantCulture,
+                        DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out createdBar);
+                    ZoneBias armSide;
+                    if (!Enum.TryParse(sz.ArmSide ?? "", out armSide)) armSide = ZoneBias.None;
+
+                    _zones.Add(new Zone
+                    {
+                        Id = sz.Id, Kind = kind, Bias = bias, Low = sz.Low, High = sz.High, Anchor = sz.Anchor,
+                        CreatedBar = createdBar, AgeBars = sz.AgeBars, ArmBars = sz.ArmBars,
+                        TouchCount = sz.TouchCount, Armed = sz.Armed, Consumed = sz.Consumed,
+                        ConfirmationsRequired = sz.ConfirmationsRequired, ArmSide = armSide, Note = sz.Note
+                    });
+                    restoredZones++;
+                }
+
+                _restoredThroughUtc = _m30Bars[_m30Bars.Count - 1].Start.AddMinutes(PeriodMinutes);
+                _warmupReady = doc.WarmupReady && _m30Bars.Count >= _warmupNeeded;
+                if (_warmupReady)
+                {
+                    _warmupLogged = true;
+                    Print("READY|bars={0}|atr={1}|ema={2}/{3}|restored", _m30Bars.Count, F(_atr), F(_emaFast), F(_emaSlow));
+                }
+
+                Print("STATE|loaded|bars={0}|zones={1}|barCount={2}|ready={3}|age_min={4:F0}",
+                    _m30Bars.Count, restoredZones, _m30BarCount, _warmupReady, ageHours * 60.0);
+            }
+            catch (Exception ex)
+            {
+                Print("STATE|load_error|{0}", OneLine(ex.Message));
+            }
+        }
+
+        /// <summary>Writes the bars, indicators and zones atomically (tmp + move).</summary>
+        private void SaveState(bool force = false)
+        {
+            if (_stateFile == null || RunningMode != RunningMode.RealTime) return;
+            if (_m30Bars.Count == 0) return;
+
+            // One write per closed bar is plenty; the entry hook also calls this.
+            if (!force && (DateTime.UtcNow - _lastStateSaveUtc).TotalSeconds < 5) return;
+
+            try
+            {
+                var doc = new StateDoc
+                {
+                    Version = StateVersion, Bot = BotId, Symbol = SymbolName, Period = PeriodMinutes,
+                    SavedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                    BarCount = _m30BarCount, WarmupReady = _warmupReady,
+                    Atr = _atr, HasAtr = _hasAtr, EmaFast = _emaFast, EmaSlow = _emaSlow,
+                    PrevClose = _prevClose30, HasPrevClose = _hasPrevClose30,
+                    NextZoneId = _nextZoneId,
+                    Bars = new List<StateBar>(_m30Bars.Count),
+                    Zones = new List<StateZone>(_zones.Count)
+                };
+
+                foreach (var bar in _m30Bars)
+                {
+                    var sb = new StateBar
+                    {
+                        T = bar.Start.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture),
+                        O = bar.Open, H = bar.High, L = bar.Low, C = bar.Close, Ticks = bar.Ticks,
+                        TotalBid = bar.TotalBid, TotalAsk = bar.TotalAsk, Levels = bar.Levels,
+                        MaxCell = bar.MaxCell, PocLevel = bar.PocLevel, PocVol = bar.PocVol,
+                        MedianCell = bar.MedianCell, CumulativeDelta = bar.CumulativeDelta,
+                        Cells = new List<StateCell>(bar.Cells.Count)
+                    };
+                    foreach (var kv in bar.Cells)
+                        sb.Cells.Add(new StateCell { L = kv.Key, B = kv.Value.Bid, A = kv.Value.Ask });
+                    doc.Bars.Add(sb);
+                }
+
+                foreach (var zone in _zones)
+                {
+                    if (zone.Invalid) continue;         // dead zones are not worth restoring
+                    doc.Zones.Add(new StateZone
+                    {
+                        Id = zone.Id, Kind = zone.Kind.ToString(), Bias = zone.Bias.ToString(),
+                        Low = zone.Low, High = zone.High, Anchor = zone.Anchor,
+                        CreatedBar = zone.CreatedBar.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture),
+                        AgeBars = zone.AgeBars, ArmBars = zone.ArmBars, TouchCount = zone.TouchCount,
+                        Armed = zone.Armed, Consumed = zone.Consumed,
+                        ConfirmationsRequired = zone.ConfirmationsRequired,
+                        ArmSide = zone.ArmSide.ToString(), Note = zone.Note
+                    });
+                }
+
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_stateFile));
+                string tmp = _stateFile + ".tmp";
+                System.IO.File.WriteAllText(tmp, JsonSerializer.Serialize(doc));
+                if (System.IO.File.Exists(_stateFile)) System.IO.File.Delete(_stateFile);
+                System.IO.File.Move(tmp, _stateFile);
+                _lastStateSaveUtc = DateTime.UtcNow;
+
+                if (ShowLogs)
+                    Print("STATE|saved|bars={0}|zones={1}", doc.Bars.Count, doc.Zones.Count);
+            }
+            catch (Exception ex)
+            {
+                Print("STATE|save_error|{0}", OneLine(ex.Message));
+            }
         }
 
         #endregion
@@ -554,6 +861,16 @@ namespace cAlgo.Robots
             // with zones formed before it came up, not only with the bar that completed warm-up.
             DateTime cutoff = last - TimeSpan.FromMinutes((_warmupNeeded + SeedZoneBars + 10L) * PeriodMinutes);
             int start = LowerBound(cutoff);
+            if (_restoredThroughUtc != DateTime.MinValue)
+            {
+                int covered = LowerBound(_restoredThroughUtc);
+                if (covered > start)
+                {
+                    if (ShowLogs)
+                        Print("SEED|skip_before_state|from={0:o}|ticks={1}", _restoredThroughUtc, covered - start);
+                    start = covered;
+                }
+            }
             if (total - start > SeedMaxTicks)
                 start = total - SeedMaxTicks;
 
@@ -573,6 +890,10 @@ namespace cAlgo.Robots
 
             if (!_warmupReady)
                 Print("WARMUP|bars={0}|need={1}|live bars will finish the warm-up", _m30Bars.Count, _warmupNeeded);
+
+            // The replay can add dozens of bars inside a few seconds, so the per-bar throttle above
+            // would leave only the first one on disk. Persist the whole rebuilt set here.
+            SaveState(force: true);
         }
 
         private int LowerBound(DateTime cutoff)
@@ -750,6 +1071,9 @@ namespace cAlgo.Robots
 
         private void OnM30Closed(FootprintBar bar)
         {
+            // After a state restore the seed replay can walk over bars already on disk.
+            if (_m30Bars.Count > 0 && bar.Start <= _m30Bars[_m30Bars.Count - 1].Start) return;
+
             _m30BarCount++;
             AddBar(_m30Bars, bar, MaxBarsKept);
             UpdateIndicators(bar);
@@ -761,6 +1085,7 @@ namespace cAlgo.Robots
                     _warmupLogged = true;
                     Print("WARMUP|bars={0}|need={1}", _m30Bars.Count, _warmupNeeded);
                 }
+                SaveState();
                 return;
             }
 
@@ -773,6 +1098,7 @@ namespace cAlgo.Robots
             DetectZones(bar);
             UpdateZones(bar);
             PruneZones();
+            SaveState();
         }
 
         private void OnM5Closed(FootprintBar bar)
@@ -1497,6 +1823,7 @@ namespace cAlgo.Robots
 
             ReportPositionOpen(position, slPips, tpPips,
                 $"{zone.Kind} first test after {BreakoutBars}-bar breakout", zone, confirmations);
+            SaveState();
         }
 
         private void LogSkip(Zone zone, string reason)
