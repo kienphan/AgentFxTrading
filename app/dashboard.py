@@ -15,7 +15,8 @@ import asyncio
 from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from app.accounts import get_account_registry
-from app.leaderboard import InvalidDateRange, compute_bot_leaderboard, compute_profit_factor
+from app.leaderboard import (InvalidDateRange, compute_bot_leaderboard, compute_bot_pnl_curves,
+                             compute_profit_factor)
 import logging
 from app import news_service
 
@@ -733,6 +734,26 @@ async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optio
                                        date_from=date_from, date_to=date_to)
     except InvalidDateRange as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/api/leaderboard/pnl-curves")
+@router.get("/api/dashboard/leaderboard/pnl-curves")
+async def api_leaderboard_pnl_curves(account_id: str = "all", account_type: Optional[str] = None,
+                                     period: str = "1w", date_from: Optional[str] = None,
+                                     date_to: Optional[str] = None, basis: str = "usd"):
+    """Cumulative closed P&L per bot for the leaderboard's chart.
+
+    Takes the same account, mode, period and custom-range filters as /api/leaderboard, plus
+    ``basis`` (usd|lot) for the ranking tab on screen. Each series carries the bot's curve for
+    the chart to draw; a malformed or reversed range is a 400, as on the ranking endpoint.
+    """
+    try:
+        return compute_bot_pnl_curves(account_id, account_type=account_type, period=period,
+                                      date_from=date_from, date_to=date_to, basis=basis)
+    except InvalidDateRange as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/api/dashboard/sessions")
 async def api_dashboard_sessions():
     """API endpoint for trading sessions, killzones, and market status."""
