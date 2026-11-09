@@ -727,6 +727,57 @@ body.app-shell{font-family:var(--font-ui);background:var(--bg-app);color:var(--t
         padding: 7px 14px;
     }
 }
+/* Bot P&L curves: follows the ranking's period, account scope and USD/Lot tab */
+.lb-chart-panel {
+    margin-top: 14px;
+}
+.lb-chart-subtitle {
+    margin-left: 10px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+.lb-chart-focus {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+.lb-chart-bot {
+    min-width: 150px;
+    max-width: 230px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+}
+.lb-chart-body {
+    height: 300px;
+}
+.lb-chart-body[hidden],
+#lb-pnl-chart[hidden],
+.lb-chart-empty[hidden] {
+    display: none;
+}
+.lb-chart-caret {
+    transition: transform .15s;
+}
+#lb-chart-toggle[aria-expanded="false"] .lb-chart-caret {
+    transform: rotate(180deg);
+}
+.lb-chart-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 0 16px;
+}
 .rank-cell {
     font-size: 0.95rem;
     font-weight: 700;

@@ -29,6 +29,10 @@ DB_PATH = PROJECT_ROOT / "portfolio.db"
 # top of both curves; unweighted, three lucky trades would outrank a long, proven record.
 FULL_SAMPLE_TRADES = 10
 
+# Points a bot's P&L curve may carry before it is thinned for the dashboard chart (see _downsample):
+# enough resolution for a day's trades, small enough to keep the polling payload light.
+MAX_CURVE_POINTS = 400
+
 # Rolling look-back windows for the period filter, in days (None = all time). Rolling rather
 # than calendar periods: on a Monday morning "this week" would hold almost no trades, and a bot
 # whose code just changed should be judged on its last N days whatever the weekday.
@@ -255,14 +259,20 @@ def _size_neutral_units(trades: List[Dict[str, Any]]) -> Tuple[str, List[float]]
     opening size, so both bases cover the whole trade. A row without a volume cannot be
     normalised and is left out.
     """
+    basis, rows = _size_neutral_trade_units(trades)
+    return basis, [unit for _, unit in rows]
+
+
+def _size_neutral_trade_units(trades: List[Dict[str, Any]]) -> Tuple[str, List[Tuple[Dict[str, Any], float]]]:
+    """Each trade's result with its position size taken out, paired with the trade, plus the
+    basis used (see _size_neutral_units)."""
     sized = [t for t in trades if float(t.get("volume") or 0.0) > 0]
     basis = "risk" if sized and all(float(t.get("sl_pips") or 0.0) > 0 for t in sized) else "lot"
-    units = [
-        float(t.get("pnl") or 0.0)
-        / (float(t["volume"]) * (float(t["sl_pips"]) if basis == "risk" else 1.0))
+    return basis, [
+        (t, float(t.get("pnl") or 0.0)
+         / (float(t["volume"]) * (float(t["sl_pips"]) if basis == "risk" else 1.0)))
         for t in sized
     ]
-    return basis, units
 
 
 def _oldest_first(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -311,6 +321,109 @@ def _size_neutral_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _resolve_scope(
+    account_id: str,
+    account_type: Optional[str],
+    period: str,
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> Tuple[str, Optional[str], str, List[Any], Optional[str], Optional[str], bool]:
+    """Normalise the selection every leaderboard query shares.
+
+    Returns (period, account_type, account_filter, params, since, until, include_open): the
+    period name after fallback/normalisation, the mode after the "live"/"demo" account_id
+    shorthand, the SQL fragment for the account scope (leading " AND ", or ""), its parameters,
+    the UTC window bounds and whether open positions belong in the window.
+    Raises InvalidDateRange on a malformed custom range.
+    """
+    if account_type not in ("live", "demo"):
+        account_type = account_id if account_id in ("live", "demo") else None
+    if period == "custom" or date_from or date_to:
+        period = "custom"
+        since, until, include_open = date_range_bounds(date_from, date_to)
+    else:
+        if period not in LEADERBOARD_PERIODS:
+            period = "all"
+        since, until, include_open = period_start(period), None, True
+    filters: List[str] = []
+    params: List[Any] = []
+    if account_type:
+        filters.append("account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)")
+        params.append(account_type)
+    if account_id and account_id not in ("all", "live", "demo"):
+        filters.append("account_id = ?")
+        params.append(account_id)
+    account_filter = "".join(f" AND {clause}" for clause in filters)
+    return period, account_type, account_filter, params, since, until, include_open
+
+
+def _closed_bounds(params: List[Any], since: Optional[str], until: Optional[str]) -> Tuple[str, List[Any]]:
+    """SQL fragment and parameters keeping the trades closed inside the window.
+
+    A closed row without an exit time falls back to its entry time. Spelled out rather than
+    COALESCE(exit_time, entry_time) so each branch can use its column's index.
+    """
+    closed_params = list(params)
+    bounds = [(op, value) for op, value in ((">=", since), ("<", until)) if value]
+    if not bounds:
+        return "", closed_params
+    by_exit = " AND ".join(f"exit_time {op} ?" for op, _ in bounds)
+    by_entry = " AND ".join(f"entry_time {op} ?" for op, _ in bounds)
+    closed_params += [value for _, value in bounds] * 2
+    return f" AND (({by_exit}) OR (exit_time IS NULL AND {by_entry}))", closed_params
+
+
+def _epoch_ms(value: Any) -> Optional[int]:
+    """A positions-table UTC timestamp ('YYYY-MM-DD HH:MM:SS') as epoch milliseconds.
+
+    None when the row carries no usable time: the chart then skips that trade rather than
+    placing it at an arbitrary moment.
+    """
+    if not value:
+        return None
+    text = str(value).strip().replace("T", " ")[:19]
+    try:
+        parsed = datetime.datetime.strptime(text, _DB_TIME_FORMAT)
+    except ValueError:
+        return None
+    return int(parsed.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+
+
+def _curve_points(trades: List[Dict[str, Any]], basis: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """[{'t': ms, 'v': cumulative}] for one bot's closed trades, oldest first, plus the basis used.
+
+    "usd" walks the closed P&L in account currency; "lot" walks the size-neutral result (see
+    _size_neutral_trade_units), so the line measures the edge rather than the lot size.
+    """
+    ordered = _oldest_first(trades)
+    if basis == "usd":
+        used = "usd"
+        values: List[Tuple[Dict[str, Any], float]] = [(t, float(t.get("pnl") or 0.0)) for t in ordered]
+    else:
+        used, values = _size_neutral_trade_units(ordered)
+    cum = 0.0
+    points: List[Dict[str, Any]] = []
+    for trade, value in values:
+        at = _epoch_ms(trade.get("exit_time") or trade.get("entry_time"))
+        if at is None:
+            continue
+        cum += value
+        points.append({"t": at, "v": round(cum, 2)})
+    return used, points
+
+
+def _downsample(points: List[Dict[str, Any]], limit: int = MAX_CURVE_POINTS) -> List[Dict[str, Any]]:
+    """At most `limit` points, evenly spaced, always keeping the first and the last.
+
+    A long-running bot's full trade list would bloat the payload and the canvas; the shape of
+    the curve survives the thinning, and the final cumulative value is never lost.
+    """
+    if limit < 2 or len(points) <= limit:
+        return points
+    step = (len(points) - 1) / (limit - 1)
+    return [points[round(i * step)] for i in range(limit)]
+
+
 def _rank(rows: List[Dict[str, Any]], tiebreak: str) -> Optional[Dict[str, Any]]:
     """Sort in place (bots with closed trades first, then score, then `tiebreak`), number the
     ranks, and return the top bot that has closed trades, if any."""
@@ -346,38 +459,13 @@ def compute_bot_leaderboard(
     ranking under "rankings" and the lot-neutral one under "lot_neutral".
     Raises InvalidDateRange on a malformed custom range.
     """
-    if account_type not in ("live", "demo"):
-        account_type = account_id if account_id in ("live", "demo") else None
-    if period == "custom" or date_from or date_to:
-        period = "custom"
-        since, until, include_open = date_range_bounds(date_from, date_to)
-    else:
-        if period not in LEADERBOARD_PERIODS:
-            period = "all"
-        since, until, include_open = period_start(period), None, True
+    period, account_type, account_filter, params, since, until, include_open = _resolve_scope(
+        account_id, account_type, period, date_from, date_to)
     conn = get_db_connection(db_path)
     try:
-        # Build account filter clause(s): mode scope first, then optional account narrowing
-        filters: List[str] = []
-        params: List[Any] = []
-        if account_type:
-            filters.append("account_id IN (SELECT account_id FROM accounts WHERE account_type = ? AND is_configured = 1)")
-            params.append(account_type)
-        if account_id and account_id not in ("all", "live", "demo"):
-            filters.append("account_id = ?")
-            params.append(account_id)
-        account_filter = "".join(f" AND {clause}" for clause in filters)
-
-        # 1. Fetch closed trades (closed inside the look-back window or range, if any). Spelled out
-        # rather than COALESCE(exit_time, entry_time) so each branch can use its column's index.
-        closed_filter, closed_params = "", list(params)
+        # 1. Fetch closed trades (closed inside the look-back window or range, if any)
+        closed_filter, closed_params = _closed_bounds(params, since, until)
         open_filter, open_params = "", list(params)
-        bounds = [(op, value) for op, value in ((">=", since), ("<", until)) if value]
-        if bounds:
-            by_exit = " AND ".join(f"exit_time {op} ?" for op, _ in bounds)
-            by_entry = " AND ".join(f"entry_time {op} ?" for op, _ in bounds)
-            closed_filter = f" AND (({by_exit}) OR (exit_time IS NULL AND {by_entry}))"
-            closed_params += [value for _, value in bounds] * 2
         if since:
             open_filter = " AND entry_time >= ?"
             open_params.append(since)
@@ -543,3 +631,82 @@ def compute_bot_leaderboard(
         }
     finally:
         conn.close()
+
+
+def compute_bot_pnl_curves(
+    account_id: str = "all",
+    db_path: Optional[Path] = None,
+    account_type: Optional[str] = None,
+    period: str = "1w",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    basis: str = "usd",
+) -> Dict[str, Any]:
+    """Cumulative closed P&L per bot over the same window as compute_bot_leaderboard.
+
+    One series per bot with at least one closed trade in the window, each a list of
+    {'t': epoch milliseconds, 'v': cumulative result}, oldest first and starting at 0 at the
+    window's start. ``basis`` picks the unit: "usd" (the ranking's USD P&L tab) or "lot" (its
+    lot-neutral tab, walking each trade over the risk it took, or per lot when a stop distance is
+    missing). The payload's ``unit`` says which one the series are actually in, since bots that
+    lack stop distances fall back to "lot" while the others walk "risk".
+
+    Series are ordered by final result, best first, matching the ranking table on screen. A
+    window that ends before today keeps its open positions out, as the ranking does, so the
+    curve stops at the last close inside the range. Raises InvalidDateRange on a bad custom range.
+    """
+    requested = "lot" if basis == "lot" else "usd"
+    period, account_type, account_filter, params, since, until, include_open = _resolve_scope(
+        account_id, account_type, period, date_from, date_to)
+    conn = get_db_connection(db_path)
+    try:
+        closed_filter, closed_params = _closed_bounds(params, since, until)
+        cursor = conn.execute(f"""
+            SELECT id, bot_id, symbol, volume, pnl, sl_pips, entry_time, exit_time
+            FROM positions
+            WHERE status = 'closed'{account_filter}{closed_filter}
+            ORDER BY exit_time DESC
+        """, tuple(closed_params))
+        closed_trades = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    by_bot: Dict[str, List[Dict[str, Any]]] = {}
+    for trade in closed_trades:
+        by_bot.setdefault(str(trade["bot_id"]), []).append(trade)
+
+    start_ms = _epoch_ms(since) if since else None
+    series: List[Dict[str, Any]] = []
+    units = set()
+    for bot_id, bot_trades in by_bot.items():
+        used, points = _curve_points(bot_trades, requested)
+        if start_ms is not None and points and start_ms < points[0]["t"]:
+            points.insert(0, {"t": start_ms, "v": 0.0})
+        if requested != "usd":
+            units.add(used)
+        series.append({
+            "bot_id": bot_id,
+            "bot_name": str(bot_id).replace("_", " ").title(),
+            "total_trades": len(bot_trades),
+            "net": points[-1]["v"] if points else 0.0,
+            "basis": used,
+            "points": _downsample(points),
+        })
+
+    series.sort(key=lambda s: (-s["net"], s["bot_id"]))
+    unit = requested if requested == "usd" else ("risk" if units == {"risk"} else "lot")
+
+    return {
+        "calculated_at": datetime.datetime.now().isoformat(),
+        "account_id": account_id,
+        "account_type": account_type,
+        "period": period,
+        "period_start": since,
+        "period_end": until,
+        "includes_open_positions": include_open,
+        "basis": requested,
+        "unit": unit,
+        "total_trades": len(closed_trades),
+        "total_bots": len(series),
+        "series": series,
+    }

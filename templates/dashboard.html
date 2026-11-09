@@ -596,6 +596,31 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- Cumulative P&L per bot; follows the ranking's account scope, period and tab -->
+                <section class="panel lb-chart-panel" id="lb-chart-panel">
+                    <div class="panel-header lb-panel-header">
+                        <div>
+                            <span class="panel-title"><i data-lucide="trending-up" class="panel-icon text-green"></i> Bot P&amp;L Curves</span>
+                            <span id="lb-chart-subtitle" class="lb-chart-subtitle">Cumulative closed P&amp;L over the ranking's period and account scope</span>
+                        </div>
+                        <div class="lb-toolbar">
+                            <label class="lb-chart-focus" for="lb-chart-bot">Focus
+                                <select id="lb-chart-bot" class="log-select lb-chart-bot">
+                                    <option value="">All bots</option>
+                                </select>
+                            </label>
+                            <button type="button" id="lb-chart-toggle" class="log-btn" aria-expanded="true" aria-controls="lb-chart-body">
+                                <i data-lucide="chevron-up" class="btn-icon lb-chart-caret"></i>
+                                <span id="lb-chart-toggle-label">Hide chart</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-body panel-body--chart lb-chart-body" id="lb-chart-body">
+                        <canvas id="lb-pnl-chart" role="img" aria-label="Cumulative P&amp;L per bot"></canvas>
+                        <div id="lb-chart-empty" class="lb-chart-empty" hidden>No closed trades in this period</div>
+                    </div>
+                </section>
             </div>
             
             <!-- Backtest View (static/js/backtest.js) -->
@@ -2615,6 +2640,7 @@
                 if (query === lbQuery()) {
                     lbShownQuery = query;
                     renderLeaderboard(data);
+                    fetchBotPnlCurves();
                 }
             } catch (e) {
                 console.error("Error fetching leaderboard", e);
@@ -2833,12 +2859,236 @@
             }
         }
 
+        // --- Bot P&L curves: one cumulative line per bot, over the ranking's own filters ---
+        // Same account scope, period and USD/Lot basis as the table above it; the focus picker
+        // (and the legend) narrows a crowded chart down to one bot.
+        const LB_CURVE_COLORS = ['#38bdf8', '#f59e0b', '#10b981', '#8b5cf6', '#f472b6', '#f87171',
+                                 '#22d3ee', '#a3e635', '#fb923c', '#c084fc', '#34d399', '#facc15',
+                                 '#60a5fa', '#fda4af'];
+        const LB_CURVE_EMPTY = 'No closed trades in this period';
+        let lbChartExpanded = true;
+        try { lbChartExpanded = localStorage.getItem('lb-chart-open') !== '0'; } catch (e) { /* default */ }
+        let lbChartBot = '';          // '' = every bot
+        let lbCurveUnit = 'usd';      // usd | risk | lot, as the server reports it
+        let lbCurveSpan = 0;          // width of the visible window, for the x-axis tick format
+        let lbCurveChart = null;
+        let lbCurveData = null;
+        let lbShownCurveKey = null;   // the selection the curve on screen was fetched for
+        let lbCurveInFlight = false;
+
+        function lbChartOpen() {
+            const body = document.getElementById('lb-chart-body');
+            return !!(body && !body.hidden);
+        }
+
+        function lbChartVisible() {
+            return lbViewActive() && lbChartOpen();
+        }
+
+        // The chart's selection: the ranking's own query plus the unit its tab asks for
+        function lbCurveKey() {
+            return `${lbQuery()}&basis=${lbTab === 'lot' ? 'lot' : 'usd'}`;
+        }
+
+        async function fetchBotPnlCurves() {
+            if (!lbChartVisible()) return;
+            if (lbCurveInFlight) return;
+            const key = lbCurveKey();
+            lbCurveInFlight = true;
+            try {
+                const res = await fetch(`/api/leaderboard/pnl-curves?${key}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                // The selection changed meanwhile: the next poll fetches the new one
+                if (key === lbCurveKey()) {
+                    lbShownCurveKey = key;
+                    lbCurveData = data;
+                    renderBotPnlCurves(data);
+                }
+            } catch (e) {
+                console.error("Error fetching bot P&L curves", e);
+                if (key !== lbShownCurveKey) {
+                    lbCurveEmpty(true, 'Could not load the P&L curves, retrying…');
+                }
+            } finally {
+                lbCurveInFlight = false;
+            }
+        }
+
+        function lbCurveEmpty(show, message) {
+            const canvas = document.getElementById('lb-pnl-chart');
+            const note = document.getElementById('lb-chart-empty');
+            if (canvas) canvas.hidden = !!show;
+            if (note) {
+                note.textContent = show ? (message || LB_CURVE_EMPTY) : LB_CURVE_EMPTY;
+                note.hidden = !show;
+            }
+        }
+
+        // Chart times are the browser's, which the dashboard runs in Vietnam time (GMT+7)
+        function lbCurveTime(ms, withDay) {
+            const d = new Date(Number(ms));
+            if (isNaN(d.getTime())) return '';
+            const pad = n => String(n).padStart(2, '0');
+            const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            return withDay ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${time}` : time;
+        }
+
+        // A figure in the chart's own unit: $ for USD, R for risk units, /lot for per-lot
+        function lbCurveMoney(value, unit, compact) {
+            const n = Number(value) || 0;
+            const sign = n < 0 ? '-' : '';
+            const abs = Math.abs(n);
+            let text;
+            if (compact && abs >= 1000) text = `${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
+            else text = abs.toFixed(compact ? 0 : 2);
+            if (unit === 'usd') return `${sign}$${text}`;
+            if (unit === 'risk') return `${sign}${text}R`;
+            return `${sign}${text}/lot`;
+        }
+
+        function lbEnsureCurveChart() {
+            if (lbCurveChart) return lbCurveChart;
+            const canvas = document.getElementById('lb-pnl-chart');
+            if (!canvas || typeof Chart === 'undefined' || !canvas.getContext) return null;
+            lbCurveChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    elements: { line: { borderWidth: 2, tension: 0.15 } },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { boxWidth: 9, boxHeight: 9, padding: 10, usePointStyle: true,
+                                      color: '#a0a0a0', font: { size: 10 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1e293b', titleColor: '#f0f0f0', bodyColor: '#a0a0a0',
+                            callbacks: {
+                                title: items => items.length ? lbCurveTime(items[0].parsed.x, true) : '',
+                                label: item => `${item.dataset.label}: ${lbCurveMoney(item.parsed.y, lbCurveUnit)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            grid: { display: false },
+                            ticks: {
+                                color: '#a0a0a0', maxRotation: 0, autoSkip: true, maxTicksLimit: 6,
+                                callback: value => lbCurveTime(value, lbCurveSpan > 86400e3)
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(64,64,64,0.3)' },
+                            ticks: { color: '#a0a0a0', callback: value => lbCurveMoney(value, lbCurveUnit, true) }
+                        }
+                    }
+                }
+            });
+            return lbCurveChart;
+        }
+
+        function renderBotPnlCurves(data) {
+            const series = (data && data.series) || [];
+            lbCurveUnit = (data && data.unit) || 'usd';
+            // Focus list mirrors the chart: every plotted bot with its final result
+            const select = document.getElementById('lb-chart-bot');
+            if (select) {
+                const options = ['<option value="">All bots</option>'].concat(series.map(s =>
+                    `<option value="${escapeHtml(s.bot_id)}">${escapeHtml(s.bot_name)} · ${escapeHtml(lbCurveMoney(s.net, lbCurveUnit))}</option>`));
+                select.innerHTML = options.join('');
+                // A focus that no longer has a curve (another account or period) falls back to all
+                lbChartBot = series.some(s => s.bot_id === lbChartBot) ? lbChartBot : '';
+                select.value = lbChartBot;
+            }
+            const subtitle = document.getElementById('lb-chart-subtitle');
+            if (subtitle) {
+                subtitle.textContent = lbCurveUnit === 'usd'
+                    ? 'Cumulative closed P&L in USD · same account scope and period as the ranking'
+                    : `Cumulative closed P&L per ${lbCurveUnit === 'risk' ? 'lot per stop pip' : 'lot'} · position size taken out`;
+            }
+            const chart = lbEnsureCurveChart();
+            const plotted = series.filter(s => s.points && s.points.length);
+            const shown = lbChartBot ? plotted.filter(s => s.bot_id === lbChartBot) : plotted;
+            if (!chart || !shown.length) {
+                if (chart) {
+                    chart.data.datasets = [];
+                    chart.update();
+                }
+                // No canvas means the CDN script never loaded, not that the period was empty
+                lbCurveEmpty(true, chart ? undefined : 'Chart library could not load');
+                return;
+            }
+            lbCurveEmpty(false);
+            let firstT = Infinity, lastT = -Infinity;
+            shown.forEach(s => {
+                firstT = Math.min(firstT, s.points[0].t);
+                lastT = Math.max(lastT, s.points[s.points.length - 1].t);
+            });
+            lbCurveSpan = lastT - firstT;
+            chart.data.datasets = shown.map(s => {
+                // The colour follows the bot's place on the full curve list, so focusing one does
+                // not change the hue it had among the others
+                const color = LB_CURVE_COLORS[Math.max(0, series.indexOf(s)) % LB_CURVE_COLORS.length];
+                return {
+                    label: s.bot_name || s.bot_id,
+                    data: s.points.map(p => ({ x: p.t, y: p.v })),
+                    borderColor: color,
+                    backgroundColor: color,
+                    pointBackgroundColor: color,
+                    pointBorderColor: color,
+                    pointRadius: s.points.length === 1 ? 3 : 0,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                    tension: 0.15,
+                    fill: false
+                };
+            });
+            chart.update();
+        }
+
+        function lbApplyChartState() {
+            const body = document.getElementById('lb-chart-body');
+            const btn = document.getElementById('lb-chart-toggle');
+            const label = document.getElementById('lb-chart-toggle-label');
+            if (body) body.hidden = !lbChartExpanded;
+            if (btn) btn.setAttribute('aria-expanded', lbChartExpanded ? 'true' : 'false');
+            if (label) label.textContent = lbChartExpanded ? 'Hide chart' : 'Show chart';
+        }
+
+        const lbChartToggle = document.getElementById('lb-chart-toggle');
+        const lbChartSelect = document.getElementById('lb-chart-bot');
+        if (lbChartToggle) {
+            lbChartToggle.addEventListener('click', () => {
+                lbChartExpanded = !lbChartExpanded;
+                try { localStorage.setItem('lb-chart-open', lbChartExpanded ? '1' : '0'); } catch (e) { /* not persisted */ }
+                lbApplyChartState();
+                if (!lbChartExpanded) return;
+                // Reopening: the cached curve for this selection paints at once, a fresh one follows
+                if (lbCurveData && lbShownCurveKey === lbCurveKey()) renderBotPnlCurves(lbCurveData);
+                fetchBotPnlCurves();
+            });
+        }
+        if (lbChartSelect) {
+            lbChartSelect.addEventListener('change', () => {
+                lbChartBot = lbChartSelect.value;
+                if (lbCurveData) renderBotPnlCurves(lbCurveData);
+            });
+        }
+        lbApplyChartState();
+
         document.querySelectorAll('#lb-tab-group [data-lb-tab]').forEach(btn => {
             btn.addEventListener('click', () => {
                 lbTab = btn.dataset.lbTab;
                 try { localStorage.setItem('lb-tab', lbTab); } catch (e) { /* not persisted */ }
                 // Both rankings are already loaded: switching tabs needs no request
                 if (lbData) renderLeaderboard(lbData); else applyLbControls();
+                // The chart reads its unit from the tab (USD vs size-neutral), so it reloads
+                fetchBotPnlCurves();
             });
         });
         function lbSetPeriod(period) {
