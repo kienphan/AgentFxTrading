@@ -60,6 +60,7 @@ RENDERERS = [
     "lbHas", "lbVnToday", "lbAddDays", "lbIsoDay", "lbRangeFor", "lbShortDay", "lbRangeText", "lbPeriodLabel",
     "applyLbControls", "lbRankCell", "lbBotCells", "lbWinRateCell", "lbProfitFactorCell", "lbTradesCell",
     "lbScoreCell", "lbReturnDdCell", "lbEmptyRow", "renderLeaderboard",
+    "lbCurveEmpty", "lbCurveTime", "lbCurveMoney", "lbEnsureCurveChart", "renderBotPnlCurves",
     "renderBots", "updateNewsShieldStatus", "renderNewsClusters",
 ]
 
@@ -79,6 +80,10 @@ function fetchTradeHistory() {}
 const closingPositions = new Set();
 const LB_WEIGHT_HINTS = {usd: '', lot: ''}, LB_ROLLING = {all: 'All time'}, LB_CALENDAR = {};
 let lbTab = 'usd', lbPeriod = 'all', lbDateFrom = '', lbDateTo = '', lbData = null;
+const LB_CURVE_COLORS = ['#38bdf8'];
+const LB_CURVE_EMPTY = 'No closed trades in this period';
+let lbChartBot = '', lbCurveUnit = 'usd', lbCurveSpan = 0, lbCurveChart = null, lbCurveData = null;
+let lbShownCurveKey = null, lbCurveInFlight = false;
 let rawAiDecisions = [];
 const aiFeedList = document.getElementById('ai-feed-list');
 const aiFeedCount = document.getElementById('ai-feed-count');
@@ -118,6 +123,11 @@ const lbBot = {rank: 4, bot_id: H, bot_name: H, symbol_display: H, tier_badge: '
 renderLeaderboard({rankings: [lbBot], lot_neutral: {top_performer: null, rankings: [lbBot]}});
 out.leaderboard = els['leaderboard-table-body'].innerHTML;
 out.leaderboard_lot = els['leaderboard-lot-table-body'].innerHTML;
+
+// The P&L chart's focus list is drawn from the curve payload's bot ids
+renderBotPnlCurves({unit: 'usd', series: [{bot_id: H, bot_name: H, net: 1, basis: 'usd',
+    points: [{t: 1, v: 1}]}]});
+out.bot_curves = els['lb-chart-bot'].innerHTML;
 
 // A running, not-polling bot and a stuck, paused one, so both status branches and every button are drawn.
 renderBots([
@@ -166,7 +176,7 @@ def rendered(tmp_path_factory):
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("table", [
     "positions", "history", "ai_feed", "ai_feed_empty", "leaderboard", "leaderboard_lot",
-    "bots", "news_shield", "news_table", "news_grid", "news_empty",
+    "bot_curves", "bots", "news_shield", "news_table", "news_grid", "news_empty",
 ])
 def test_js_renderers_escape_external_strings(rendered, table):
     out = rendered[table].lower()

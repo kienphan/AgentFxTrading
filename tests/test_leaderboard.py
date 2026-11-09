@@ -13,8 +13,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.leaderboard as leaderboard_module
-from app.leaderboard import (FULL_SAMPLE_TRADES, InvalidDateRange, calculate_quant_score,
-                             compute_bot_leaderboard, date_range_bounds, period_start)
+from app.leaderboard import (FULL_SAMPLE_TRADES, MAX_CURVE_POINTS, InvalidDateRange,
+                             calculate_quant_score, compute_bot_leaderboard, compute_bot_pnl_curves,
+                             date_range_bounds, period_start)
 from app.server import app
 
 
@@ -704,6 +705,158 @@ def test_same_second_exits_walk_in_id_order(temp_db):
     assert [t["id"] for t in leaderboard_module._oldest_first(tied)] == [9, 3, 4]
 
 
+def test_bot_pnl_curves_walk_closed_trades_in_exit_order(temp_db):
+    """Each bot gets a cumulative series, oldest first, ending on its closed P&L."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    # Out of order, one close-all tie, and a second bot so the series are per bot
+    _add_closed(conn, "CurveBot", 30.0, exit_time="2026-09-03 10:00:00")
+    _add_closed(conn, "CurveBot", 10.0, exit_time="2026-09-01 10:00:00")
+    _add_closed(conn, "CurveBot", -5.0, exit_time="2026-09-02 10:00:00")
+    _add_closed(conn, "OtherBot", 7.0, exit_time="2026-09-01 11:00:00")
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all")
+    assert res["period"] == "all"
+    assert res["unit"] == "usd" and res["basis"] == "usd"
+    assert res["total_trades"] == 4 and res["total_bots"] == 2
+    by_id = {s["bot_id"]: s for s in res["series"]}
+    assert [p["v"] for p in by_id["CurveBot"]["points"]] == [10.0, 5.0, 35.0]
+    assert [p["v"] for p in by_id["OtherBot"]["points"]] == [7.0]
+    assert by_id["CurveBot"]["net"] == 35.0
+    # The best final result is first, matching the ranking table
+    assert [s["bot_id"] for s in res["series"]] == ["CurveBot", "OtherBot"]
+    # x is epoch milliseconds in exit order
+    stamps = [p["t"] for p in by_id["CurveBot"]["points"]]
+    assert stamps == sorted(stamps) and all(isinstance(t, int) for t in stamps)
+    assert stamps[0] == leaderboard_module._epoch_ms("2026-09-01 10:00:00")
+    # The curve's final value is the ranking's Closed PnL for that bot
+    closed = {r["bot_id"]: r["closed_pnl_usd"]
+              for r in compute_bot_leaderboard(account_id="demo", db_path=temp_db)["rankings"]}
+    assert {b_id: s["net"] for b_id, s in by_id.items()} == closed
+
+
+def test_bot_pnl_curves_follow_the_shared_period_and_account_filters(temp_db):
+    """The curves take the ranking's window, mode and account scope, and start at 0 at the
+    window's start so the line reads from the left edge of the period."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    conn.execute("INSERT INTO accounts VALUES ('acc_live_1', 'live', 'Live 1', 1)")
+    for ago in (dict(hours=2), dict(days=3), dict(days=20)):
+        _add_closed(conn, "PeriodBot", 10.0, exit_time=_utc_ago(**ago))
+    _add_closed(conn, "LiveOnlyBot", 50.0, exit_time=_utc_ago(hours=3), account_id="acc_live_1")
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_pnl_curves(account_id="all", db_path=temp_db, account_type="demo", period="1w")
+    assert res["total_trades"] == 2
+    bot = res["series"][0]
+    assert bot["bot_id"] == "PeriodBot"
+    assert bot["net"] == 20.0
+    # Prepended at the window's UTC start (as epoch ms) with a flat 0
+    assert bot["points"][0] == {"t": leaderboard_module._epoch_ms(res["period_start"]), "v": 0.0}
+    assert bot["points"][1]["v"] == 10.0
+    assert len(bot["points"]) == 3
+
+    # One account narrows inside its mode; the default window is the ranking's 1w
+    live = compute_bot_pnl_curves(account_id="acc_live_1", db_path=temp_db, account_type="live")
+    assert [s["bot_id"] for s in live["series"]] == ["LiveOnlyBot"]
+    assert live["period_start"] and live["period_end"] is None
+
+    with pytest.raises(InvalidDateRange):
+        compute_bot_pnl_curves(account_id="all", db_path=temp_db,
+                               date_from="2024-03-20", date_to="2024-03-01")
+
+
+def test_bot_pnl_curves_lot_basis_takes_the_position_size_out(temp_db):
+    """On the lot tab the line walks size-neutral results: risk units when every trade has a
+    stop distance, per lot when one does not, never a mix of both."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RiskBot", 200.0, volume=1.0, sl_pips=10.0, exit_time="2026-09-01 10:00:00")
+    _add_closed(conn, "RiskBot", -100.0, volume=0.25, sl_pips=40.0, exit_time="2026-09-02 10:00:00")
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all", basis="lot")
+    assert res["unit"] == "risk"
+    bot = res["series"][0]
+    assert bot["basis"] == "risk"
+    # P&L over lots x stop pips: +200/(1x10) = +20, then -100/(0.25x40) = -10
+    assert [p["v"] for p in bot["points"]] == [20.0, 10.0]
+    assert bot["net"] == 10.0
+
+    # A trade without a stop distance drops the whole bot back to per lot
+    conn = sqlite3.connect(str(temp_db))
+    _add_closed(conn, "RiskBot", 50.0, volume=0.5, sl_pips=None, exit_time="2026-09-03 10:00:00")
+    conn.commit()
+    conn.close()
+    res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all", basis="lot")
+    assert res["unit"] == "lot"
+    assert [p["v"] for p in res["series"][0]["points"]] == [200.0, -200.0, -100.0]
+    # The USD curve of the same trades is untouched by the basis
+    usd = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all")
+    assert [p["v"] for p in usd["series"][0]["points"]] == [200.0, 100.0, 150.0]
+
+
+def test_bot_pnl_curves_thin_long_series_but_keep_the_ends():
+    points = [{"t": i * 1000, "v": float(i)} for i in range(MAX_CURVE_POINTS * 3)]
+    thinned = leaderboard_module._downsample(points)
+    assert len(thinned) == MAX_CURVE_POINTS
+    assert thinned[0] == points[0]
+    assert thinned[-1] == points[-1]
+    assert leaderboard_module._downsample(points[:5]) == points[:5]
+
+
+def test_epoch_ms_reads_utc_text_and_skips_junk():
+    assert leaderboard_module._epoch_ms("2026-09-01 10:00:00") == \
+        int(datetime(2026, 9, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert leaderboard_module._epoch_ms("2026-09-01T10:00:00Z") == \
+        leaderboard_module._epoch_ms("2026-09-01 10:00:00")
+    assert leaderboard_module._epoch_ms(None) is None
+    assert leaderboard_module._epoch_ms("not a time") is None
+
+
+def test_api_leaderboard_pnl_curves(temp_db, monkeypatch):
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "CurveBot", 20.0, sl_pips=20.0, exit_time=_utc_ago(days=2))
+    _add_closed(conn, "CurveBot", -5.0, sl_pips=20.0, exit_time=_utc_ago(days=1))
+    conn.commit()
+    conn.close()
+    _use_leaderboard_db(monkeypatch, temp_db)
+
+    client = TestClient(app)
+    resp = client.get("/api/leaderboard/pnl-curves?account_id=all&account_type=demo&period=1w")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["unit"] == "usd" and data["period"] == "1w"
+    assert data["series"][0]["bot_id"] == "CurveBot"
+    assert data["series"][0]["points"][-1]["v"] == 15.0
+
+    # The dashboard alias, and the lot-neutral basis the ranking tab asks for
+    lot = client.get("/api/dashboard/leaderboard/pnl-curves?account_id=all&account_type=demo"
+                     "&period=1w&basis=lot")
+    assert lot.status_code == 200
+    assert lot.json()["unit"] == "risk"
+    # +20 over 2 risk units, then -5 over the same: 10 - 2.5
+    assert lot.json()["series"][0]["points"][-1]["v"] == 7.5
+
+    for query in ("date_from=2024-03-31&date_to=2024-03-01", "date_from=bogus", "date_to=2024-02-30"):
+        resp = client.get(f"/api/leaderboard/pnl-curves?account_id=all&account_type=demo&period=custom&{query}")
+        assert resp.status_code == 400, query
+
+
+def test_dashboard_page_renders_bot_pnl_chart():
+    html = TestClient(app).get("/demo/dashboard").text
+    assert 'id="lb-chart-panel"' in html
+    assert 'id="lb-pnl-chart"' in html and 'aria-label="Cumulative P&amp;L per bot"' in html
+    assert 'id="lb-chart-bot"' in html
+    assert 'id="lb-chart-toggle"' in html and 'aria-controls="lb-chart-body"' in html
+    assert 'id="lb-chart-empty"' in html
+
+
 def test_portfolio_summary_profit_factor_without_losses(temp_db, monkeypatch):
     """The Overview's PF follows the leaderboard: no loss yet is unbounded (None), not the gross profit."""
     import app.dashboard as dashboard_module
@@ -720,3 +873,99 @@ def test_portfolio_summary_profit_factor_without_losses(temp_db, monkeypatch):
     summary = dashboard_module.get_portfolio_summary("acc_demo_1")
     assert summary["total_trades"] == 3
     assert summary["profit_factor"] is None
+
+
+CURVE_HARNESS = """
+const els = {};
+function fakeEl(id) {
+    return els[id] = els[id] || { id, innerHTML: '', textContent: '', value: '', hidden: false,
+        className: '', style: {}, classList: {toggle() {}, add() {}, remove() {}, contains: () => false},
+        getContext: () => ({}) };
+}
+const document = {getElementById: fakeEl, querySelectorAll: () => []};
+let built = null;
+class Chart {
+    constructor(ctx, config) {
+        built = this;
+        this.data = config.data;
+        this.options = config.options;
+        this.updates = 0;
+    }
+    update() { this.updates += 1; }
+}
+const LB_CURVE_COLORS = ['#38bdf8', '#f59e0b'];
+const LB_CURVE_EMPTY = 'No closed trades in this period';
+let lbCurveUnit = 'usd', lbCurveSpan = 0, lbCurveChart = null, lbChartBot = '';
+%(functions)s
+const data = %(data)s;
+const out = {};
+renderBotPnlCurves(data);
+out.datasets = built.data.datasets.map(d => ({label: d.label, x: d.data.map(p => p.x),
+    y: d.data.map(p => p.y), color: d.borderColor}));
+out.select = els['lb-chart-bot'].innerHTML;
+out.subtitle = els['lb-chart-subtitle'].textContent;
+out.canvasHidden = els['lb-pnl-chart'].hidden;
+out.emptyHidden = els['lb-chart-empty'].hidden;
+out.y40 = built.options.scales.y.ticks.callback(40);
+out.yNeg5 = built.options.scales.y.ticks.callback(-5);
+out.tooltip = built.options.plugins.tooltip.callbacks.label({dataset: {label: 'Bot A'}, parsed: {x: 0, y: 12.3}});
+out.xtick = built.options.scales.x.ticks.callback(Date.parse('2026-09-01T03:00:00Z'));
+lbChartBot = 'A';
+renderBotPnlCurves(data);
+out.focused = built.data.datasets.map(d => d.label);
+renderBotPnlCurves({unit: 'risk', series: [data.series[0]]});
+out.riskY = built.options.scales.y.ticks.callback(12);
+out.riskSubtitle = els['lb-chart-subtitle'].textContent;
+renderBotPnlCurves({unit: 'usd', series: []});
+out.emptyDatasets = built.data.datasets.length;
+out.emptyCanvasHidden = els['lb-pnl-chart'].hidden;
+out.emptyNoteHidden = els['lb-chart-empty'].hidden;
+out.emptyNote = els['lb-chart-empty'].textContent;
+out.updates = built.updates;
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_pnl_chart_maps_series_to_datasets(tmp_path):
+    """The chart draws the payload's per-bot curves, follows the focus picker, and formats the
+    axes and tooltip in the unit the server reported."""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    functions = [_dashboard_function(html, name) for name in
+                 ("escapeHtml", "lbCurveEmpty", "lbCurveTime", "lbCurveMoney",
+                  "lbEnsureCurveChart", "renderBotPnlCurves")]
+    data = {"unit": "usd", "series": [
+        {"bot_id": "A", "bot_name": "Bot A", "net": 20.0, "basis": "usd",
+         "points": [{"t": 1788231600000, "v": 0.0}, {"t": 1788318000000, "v": 20.0}]},
+        {"bot_id": "B", "bot_name": "Bot B", "net": -5.0, "basis": "usd",
+         "points": [{"t": 1788231600000, "v": 0.0}, {"t": 1788318000000, "v": -5.0}]},
+    ]}
+    script = tmp_path / "curve.js"
+    script.write_text(CURVE_HARNESS % {"functions": "\n".join(functions), "data": json.dumps(data)},
+                      encoding="utf-8")
+    run = subprocess.run([shutil.which("node"), str(script)], capture_output=True, text=True, timeout=30,
+                         env={**os.environ, "TZ": "Asia/Saigon"})
+    assert run.returncode == 0, run.stderr
+    out = json.loads(run.stdout)
+
+    assert [d["label"] for d in out["datasets"]] == ["Bot A", "Bot B"]
+    assert out["datasets"][0]["x"] == [1788231600000, 1788318000000]
+    assert out["datasets"][0]["y"] == [0.0, 20.0]
+    assert [d["color"] for d in out["datasets"]] == ["#38bdf8", "#f59e0b"]
+    # The focus picker lists every bot with its final result
+    assert "Bot A · $20.00" in out["select"] and "Bot B · -$5.00" in out["select"]
+    assert out["canvasHidden"] is False and out["emptyHidden"] is True
+    # USD axis, tooltip and x ticks (Vietnam time, no date while the span fits in a day)
+    assert out["y40"] == "$40" and out["yNeg5"] == "-$5"
+    assert out["tooltip"] == "Bot A: $12.30"
+    assert out["xtick"] == "10:00"
+    # Focusing one bot narrows the chart to its line
+    assert out["focused"] == ["Bot A"]
+    # The lot-neutral tab reads in risk units and says so
+    assert out["riskY"] == "12R"
+    assert "lot per stop pip" in out["riskSubtitle"]
+    # Nothing closed: the canvas gives way to the empty note
+    assert out["emptyDatasets"] == 0
+    assert out["emptyCanvasHidden"] is True and out["emptyNoteHidden"] is False
+    assert out["emptyNote"] == "No closed trades in this period"
+    assert out["updates"] >= 4
