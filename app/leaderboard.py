@@ -48,6 +48,8 @@ LEADERBOARD_PERIODS: Dict[str, Optional[int]] = {
 # A custom range is picked as whole days in Vietnam time, the time the dashboard shows. Vietnam
 # has no DST, so a fixed offset is exact.
 VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
+VN_OFFSET_MS = 7 * 3_600_000
+DAY_MS = 86_400_000
 
 _DB_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -389,8 +391,33 @@ def _epoch_ms(value: Any) -> Optional[int]:
     return int(parsed.replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
 
 
-def _curve_points(trades: List[Dict[str, Any]], basis: str) -> Tuple[str, List[Dict[str, Any]]]:
-    """[{'t': ms, 'v': cumulative}] for one bot's closed trades, oldest first, plus the basis used.
+def _vn_day_index(ms: int) -> int:
+    """The Vietnam-time day a UTC epoch-ms instant falls in, as a day number since the epoch.
+
+    The dashboard's calendar filters count whole Vietnam-time days (GMT+7), so the chart's day
+    buckets use the same boundary; Vietnam has no DST, so the fixed offset is exact.
+    """
+    return (int(ms) + VN_OFFSET_MS) // DAY_MS
+
+
+def _vn_day_end_ms(day_index: int) -> int:
+    """The UTC instant a Vietnam-time day ends (the midnight after it), in epoch ms."""
+    return (int(day_index) + 1) * DAY_MS - VN_OFFSET_MS
+
+
+def _curve_points(
+    trades: List[Dict[str, Any]],
+    basis: str,
+    start_ms: int,
+    end_ms: int,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """One cumulative point per Vietnam-time day for one bot, oldest first, plus the basis used.
+
+    Trades are summed by the day they closed in, so a busy session becomes a single day step
+    instead of a spike per trade. Days without a trade carry the previous total forward and the
+    line still ends at the window's end, which keeps every bot comparable over the same days.
+    Each point sits at the day's close (the next Vietnam midnight), clamped to ``end_ms`` for a
+    day that is still open or cut short by the window.
 
     "usd" walks the closed P&L in account currency; "lot" walks the size-neutral result (see
     _size_neutral_trade_units), so the line measures the edge rather than the lot size.
@@ -401,14 +428,35 @@ def _curve_points(trades: List[Dict[str, Any]], basis: str) -> Tuple[str, List[D
         values: List[Tuple[Dict[str, Any], float]] = [(t, float(t.get("pnl") or 0.0)) for t in ordered]
     else:
         used, values = _size_neutral_trade_units(ordered)
-    cum = 0.0
-    points: List[Dict[str, Any]] = []
+
+    first_ms: Optional[int] = None
+    daily: Dict[int, float] = {}
     for trade, value in values:
         at = _epoch_ms(trade.get("exit_time") or trade.get("entry_time"))
         if at is None:
             continue
-        cum += value
-        points.append({"t": at, "v": round(cum, 2)})
+        first_ms = at if first_ms is None else min(first_ms, at)
+        day = _vn_day_index(at)
+        daily[day] = daily.get(day, 0.0) + value
+
+    if first_ms is None:
+        return used, []
+    # Start at the window's own clock; all time starts at the midnight before the first trade,
+    # so the line leaves 0 on a day boundary like every other point
+    start = start_ms if start_ms is not None else _vn_day_end_ms(_vn_day_index(first_ms) - 1)
+    if start > end_ms:
+        return used, []
+
+    points: List[Dict[str, Any]] = [{"t": start, "v": 0.0}]
+    cum = 0.0
+    for day in range(_vn_day_index(start), _vn_day_index(end_ms) + 1):
+        cum += daily.get(day, 0.0)
+        at = min(_vn_day_end_ms(day), end_ms)
+        if at <= start:
+            # The window starts on this day's close: the baseline already sits there
+            points[-1] = {"t": at, "v": round(cum, 2)}
+        else:
+            points.append({"t": at, "v": round(cum, 2)})
     return used, points
 
 
@@ -642,18 +690,22 @@ def compute_bot_pnl_curves(
     date_to: Optional[str] = None,
     basis: str = "usd",
 ) -> Dict[str, Any]:
-    """Cumulative closed P&L per bot over the same window as compute_bot_leaderboard.
+    """Cumulative closed P&L per bot, one point per Vietnam-time day, over the ranking's window.
 
     One series per bot with at least one closed trade in the window, each a list of
-    {'t': epoch milliseconds, 'v': cumulative result}, oldest first and starting at 0 at the
-    window's start. ``basis`` picks the unit: "usd" (the ranking's USD P&L tab) or "lot" (its
-    lot-neutral tab, walking each trade over the risk it took, or per lot when a stop distance is
-    missing). The payload's ``unit`` says which one the series are actually in, since bots that
-    lack stop distances fall back to "lot" while the others walk "risk".
+    {'t': epoch milliseconds, 'v': cumulative result}, oldest first. Trades are summed by the
+    day they closed in (GMT+7, the calendar filters' days) and every day of the window carries a
+    point, so a bot's line is a daily equity curve that ends on the same day as the others: the
+    last close is clamped to the window's end (or to this moment for an open window). ``basis``
+    picks the unit: "usd" (the ranking's USD P&L tab) or "lot" (its lot-neutral tab, walking each
+    trade over the risk it took, or per lot when a stop distance is missing). The payload's
+    ``unit`` says which one the series are actually in, since bots that lack stop distances fall
+    back to "lot" while the others walk "risk".
 
     Series are ordered by final result, best first, matching the ranking table on screen. A
     window that ends before today keeps its open positions out, as the ranking does, so the
-    curve stops at the last close inside the range. Raises InvalidDateRange on a bad custom range.
+    curve stops at the range's last included instant. Raises InvalidDateRange on a bad custom
+    range.
     """
     requested = "lot" if basis == "lot" else "usd"
     period, account_type, account_filter, params, since, until, include_open = _resolve_scope(
@@ -675,13 +727,16 @@ def compute_bot_pnl_curves(
     for trade in closed_trades:
         by_bot.setdefault(str(trade["bot_id"]), []).append(trade)
 
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     start_ms = _epoch_ms(since) if since else None
+    until_ms = _epoch_ms(until) if until else None
+    # A range that ended keeps its last included instant; an open one runs to this moment, so
+    # every bot's daily line stops on the same day instead of on its own last trade
+    end_ms = min(until_ms - 1, now_ms) if until_ms else now_ms
     series: List[Dict[str, Any]] = []
     units = set()
     for bot_id, bot_trades in by_bot.items():
-        used, points = _curve_points(bot_trades, requested)
-        if start_ms is not None and points and start_ms < points[0]["t"]:
-            points.insert(0, {"t": start_ms, "v": 0.0})
+        used, points = _curve_points(bot_trades, requested, start_ms, end_ms)
         if requested != "usd":
             units.add(used)
         series.append({
@@ -706,6 +761,7 @@ def compute_bot_pnl_curves(
         "includes_open_positions": include_open,
         "basis": requested,
         "unit": unit,
+        "granularity": "day",
         "total_trades": len(closed_trades),
         "total_bots": len(series),
         "series": series,
