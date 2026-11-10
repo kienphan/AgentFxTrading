@@ -60,7 +60,7 @@ RENDERERS = [
     "lbHas", "lbVnToday", "lbAddDays", "lbIsoDay", "lbRangeFor", "lbShortDay", "lbRangeText", "lbPeriodLabel",
     "applyLbControls", "lbRankCell", "lbBotCells", "lbWinRateCell", "lbProfitFactorCell", "lbTradesCell",
     "lbScoreCell", "lbReturnDdCell", "lbEmptyRow", "renderLeaderboard",
-    "lbCurveEmpty", "lbCurveTime", "lbCurveMoney", "lbEnsureCurveChart", "renderBotPnlCurves",
+    "lbCurveEmpty", "lbCurveDay", "lbCurveDayFull", "lbCurveMoney", "lbEnsureCurveChart", "renderBotPnlCurves",
     "renderBots", "updateNewsShieldStatus", "renderNewsClusters",
 ]
 

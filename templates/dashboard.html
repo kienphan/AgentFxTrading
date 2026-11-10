@@ -622,7 +622,7 @@
                     <div class="panel-header lb-panel-header">
                         <div>
                             <span class="panel-title"><i data-lucide="trending-up" class="panel-icon text-green"></i> Bot P&amp;L Curves</span>
-                            <span id="lb-chart-subtitle" class="lb-chart-subtitle">Cumulative closed P&amp;L over the ranking's period and account scope</span>
+                            <span id="lb-chart-subtitle" class="lb-chart-subtitle">Daily cumulative closed P&amp;L over the ranking's period and account scope</span>
                         </div>
                         <div class="lb-toolbar">
                             <label class="lb-chart-focus" for="lb-chart-bot">Focus
@@ -2881,9 +2881,10 @@
             }
         }
 
-        // --- Bot P&L curves: one cumulative line per bot, over the ranking's own filters ---
-        // Same account scope, period and USD/Lot basis as the table above it; the focus picker
-        // (and the legend) narrows a crowded chart down to one bot.
+        // --- Bot P&L curves: one daily cumulative line per bot, over the ranking's filters ---
+        // The server buckets closed trades by Vietnam-time day, so each line steps once a day
+        // instead of spiking per trade. Same account scope, period and USD/Lot basis as the table
+        // above it; the focus picker (and the legend) narrows a crowded chart down to one bot.
         const LB_CURVE_COLORS = ['#38bdf8', '#f59e0b', '#10b981', '#8b5cf6', '#f472b6', '#f87171',
                                  '#22d3ee', '#a3e635', '#fb923c', '#c084fc', '#34d399', '#facc15',
                                  '#60a5fa', '#fda4af'];
@@ -2892,7 +2893,6 @@
         try { lbChartExpanded = localStorage.getItem('lb-chart-open') !== '0'; } catch (e) { /* default */ }
         let lbChartBot = '';          // '' = every bot
         let lbCurveUnit = 'usd';      // usd | risk | lot, as the server reports it
-        let lbCurveSpan = 0;          // width of the visible window, for the x-axis tick format
         let lbCurveChart = null;
         let lbCurveData = null;
         let lbShownCurveKey = null;   // the selection the curve on screen was fetched for
@@ -2947,13 +2947,20 @@
             }
         }
 
-        // Chart times are the browser's, which the dashboard runs in Vietnam time (GMT+7)
-        function lbCurveTime(ms, withDay) {
+        // The curve is daily: ticks read dd/MM, the tooltip the full day. The browser's clock is
+        // Vietnam time, the days the server buckets by (GMT+7).
+        function lbCurveDay(ms) {
             const d = new Date(Number(ms));
             if (isNaN(d.getTime())) return '';
             const pad = n => String(n).padStart(2, '0');
-            const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-            return withDay ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${time}` : time;
+            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+        }
+
+        function lbCurveDayFull(ms) {
+            const d = new Date(Number(ms));
+            if (isNaN(d.getTime())) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
         }
 
         // A figure in the chart's own unit: $ for USD, R for risk units, /lot for per-lot
@@ -2980,7 +2987,6 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: 'nearest', axis: 'x', intersect: false },
-                    elements: { line: { borderWidth: 2, tension: 0.15 } },
                     plugins: {
                         legend: {
                             position: 'bottom',
@@ -2990,8 +2996,17 @@
                         tooltip: {
                             backgroundColor: '#1e293b', titleColor: '#f0f0f0', bodyColor: '#a0a0a0',
                             callbacks: {
-                                title: items => items.length ? lbCurveTime(items[0].parsed.x, true) : '',
-                                label: item => `${item.dataset.label}: ${lbCurveMoney(item.parsed.y, lbCurveUnit)}`
+                                title: items => items.length ? lbCurveDayFull(items[0].parsed.x) : '',
+                                label: item => `${item.dataset.label}: ${lbCurveMoney(item.parsed.y, lbCurveUnit)}`,
+                                // The step since the previous day is that day's own closed P&L
+                                afterLabel: item => {
+                                    const points = item.dataset.data;
+                                    const previous = item.dataIndex > 0 ? points[item.dataIndex - 1] : null;
+                                    if (!previous) return '';
+                                    const delta = item.parsed.y - previous.y;
+                                    if (!delta) return '';
+                                    return `Δ ${delta > 0 ? '+' : ''}${lbCurveMoney(delta, lbCurveUnit)}`;
+                                }
                             }
                         }
                     },
@@ -3001,11 +3016,15 @@
                             grid: { display: false },
                             ticks: {
                                 color: '#a0a0a0', maxRotation: 0, autoSkip: true, maxTicksLimit: 6,
-                                callback: value => lbCurveTime(value, lbCurveSpan > 86400e3)
+                                callback: value => lbCurveDay(value)
                             }
                         },
                         y: {
-                            grid: { color: 'rgba(64,64,64,0.3)' },
+                            // A brighter line at zero makes profit and loss read at a glance
+                            grid: {
+                                color: ctx => (ctx.tick && ctx.tick.value === 0
+                                    ? 'rgba(148,163,184,0.45)' : 'rgba(64,64,64,0.28)')
+                            },
                             ticks: { color: '#a0a0a0', callback: value => lbCurveMoney(value, lbCurveUnit, true) }
                         }
                     }
@@ -3030,8 +3049,8 @@
             const subtitle = document.getElementById('lb-chart-subtitle');
             if (subtitle) {
                 subtitle.textContent = lbCurveUnit === 'usd'
-                    ? 'Cumulative closed P&L in USD · same account scope and period as the ranking'
-                    : `Cumulative closed P&L per ${lbCurveUnit === 'risk' ? 'lot per stop pip' : 'lot'} · position size taken out`;
+                    ? 'Daily cumulative closed P&L in USD · same account scope and period as the ranking'
+                    : `Daily cumulative closed P&L per ${lbCurveUnit === 'risk' ? 'lot per stop pip' : 'lot'} · position size taken out`;
             }
             const chart = lbEnsureCurveChart();
             const plotted = series.filter(s => s.points && s.points.length);
@@ -3046,12 +3065,6 @@
                 return;
             }
             lbCurveEmpty(false);
-            let firstT = Infinity, lastT = -Infinity;
-            shown.forEach(s => {
-                firstT = Math.min(firstT, s.points[0].t);
-                lastT = Math.max(lastT, s.points[s.points.length - 1].t);
-            });
-            lbCurveSpan = lastT - firstT;
             chart.data.datasets = shown.map(s => {
                 // The colour follows the bot's place on the full curve list, so focusing one does
                 // not change the hue it had among the others
@@ -3060,14 +3073,21 @@
                     label: s.bot_name || s.bot_id,
                     data: s.points.map(p => ({ x: p.t, y: p.v })),
                     borderColor: color,
-                    backgroundColor: color,
+                    backgroundColor: color + '22',
                     pointBackgroundColor: color,
-                    pointBorderColor: color,
-                    pointRadius: s.points.length === 1 ? 3 : 0,
-                    pointHoverRadius: 4,
+                    pointBorderColor: '#0b1220',
+                    pointBorderWidth: 1,
+                    pointRadius: 0,
+                    pointHitRadius: 10,
+                    pointHoverRadius: 5,
                     borderWidth: 2,
-                    tension: 0.15,
-                    fill: false
+                    // Monotone interpolation smooths the daily steps without overshooting below a
+                    // drawdown or above a peak: the curve stays true to the numbers
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.4,
+                    // A single line gets a soft area under it; many lines stay unfilled
+                    fill: shown.length === 1,
+                    spanGaps: true
                 };
             });
             chart.update();
