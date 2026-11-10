@@ -705,8 +705,23 @@ def test_same_second_exits_walk_in_id_order(temp_db):
     assert [t["id"] for t in leaderboard_module._oldest_first(tied)] == [9, 3, 4]
 
 
-def test_bot_pnl_curves_walk_closed_trades_in_exit_order(temp_db):
-    """Each bot gets a cumulative series, oldest first, ending on its closed P&L."""
+VN = timezone(timedelta(hours=7))
+
+
+def _vn_day_close_ms(year, month, day):
+    """Epoch ms of the Vietnam-time midnight that closes the given VN day."""
+    return int(datetime(year, month, day, tzinfo=VN).timestamp() * 1000) + 86_400_000
+
+
+def _curve_at(points, year, month, day):
+    """The curve's cumulative value at the close of a Vietnam-time day."""
+    at = _vn_day_close_ms(year, month, day)
+    return next(p["v"] for p in points if p["t"] == at)
+
+
+def test_bot_pnl_curves_step_once_per_day(temp_db):
+    """Each bot gets one point per Vietnam-time day, so a day's trades add up to a single step,
+    and the rolling total still ends on the ranking's Closed PnL."""
     conn = sqlite3.connect(str(temp_db))
     conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
     # Out of order, one close-all tie, and a second bot so the series are per bot
@@ -719,18 +734,29 @@ def test_bot_pnl_curves_walk_closed_trades_in_exit_order(temp_db):
 
     res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all")
     assert res["period"] == "all"
+    assert res["granularity"] == "day"
     assert res["unit"] == "usd" and res["basis"] == "usd"
     assert res["total_trades"] == 4 and res["total_bots"] == 2
     by_id = {s["bot_id"]: s for s in res["series"]}
-    assert [p["v"] for p in by_id["CurveBot"]["points"]] == [10.0, 5.0, 35.0]
-    assert [p["v"] for p in by_id["OtherBot"]["points"]] == [7.0]
+    points = by_id["CurveBot"]["points"]
+    # 0 at the midnight before the first trade, then one close per day (31/08 17:00 UTC is
+    # midnight on 01/09 in Vietnam)
+    assert points[0] == {"t": leaderboard_module._epoch_ms("2026-08-31 17:00:00"), "v": 0.0}
+    assert _curve_at(points, 2026, 9, 1) == 10.0
+    assert _curve_at(points, 2026, 9, 2) == 5.0
+    assert _curve_at(points, 2026, 9, 3) == 35.0
+    assert _curve_at(by_id["OtherBot"]["points"], 2026, 9, 1) == 7.0
     assert by_id["CurveBot"]["net"] == 35.0
     # The best final result is first, matching the ranking table
     assert [s["bot_id"] for s in res["series"]] == ["CurveBot", "OtherBot"]
-    # x is epoch milliseconds in exit order
-    stamps = [p["t"] for p in by_id["CurveBot"]["points"]]
-    assert stamps == sorted(stamps) and all(isinstance(t, int) for t in stamps)
-    assert stamps[0] == leaderboard_module._epoch_ms("2026-09-01 10:00:00")
+    # One close per day from 01/09 to today, plus the baseline before the first day
+    vn_today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    assert len(points) == (vn_today - datetime(2026, 9, 1).date()).days + 2
+    # Interior points sit on a Vietnam-time midnight; the last is clamped to now
+    for point in points[1:-1]:
+        assert (point["t"] + 7 * 3_600_000) % 86_400_000 == 0, point
+    stamps = [p["t"] for p in points]
+    assert stamps == sorted(stamps) and len(set(stamps)) == len(stamps)
     # The curve's final value is the ranking's Closed PnL for that bot
     closed = {r["bot_id"]: r["closed_pnl_usd"]
               for r in compute_bot_leaderboard(account_id="demo", db_path=temp_db)["rankings"]}
@@ -754,10 +780,10 @@ def test_bot_pnl_curves_follow_the_shared_period_and_account_filters(temp_db):
     bot = res["series"][0]
     assert bot["bot_id"] == "PeriodBot"
     assert bot["net"] == 20.0
-    # Prepended at the window's UTC start (as epoch ms) with a flat 0
+    # Baseline at the window's UTC start, then one close per Vietnam-time day up to today
     assert bot["points"][0] == {"t": leaderboard_module._epoch_ms(res["period_start"]), "v": 0.0}
-    assert bot["points"][1]["v"] == 10.0
-    assert len(bot["points"]) == 3
+    assert len(bot["points"]) == 9  # the window's 8 VN days, plus the baseline
+    assert bot["points"][-1]["v"] == 20.0
 
     # One account narrows inside its mode; the default window is the ranking's 1w
     live = compute_bot_pnl_curves(account_id="acc_live_1", db_path=temp_db, account_type="live")
@@ -784,7 +810,8 @@ def test_bot_pnl_curves_lot_basis_takes_the_position_size_out(temp_db):
     bot = res["series"][0]
     assert bot["basis"] == "risk"
     # P&L over lots x stop pips: +200/(1x10) = +20, then -100/(0.25x40) = -10
-    assert [p["v"] for p in bot["points"]] == [20.0, 10.0]
+    assert _curve_at(bot["points"], 2026, 9, 1) == 20.0
+    assert _curve_at(bot["points"], 2026, 9, 2) == 10.0
     assert bot["net"] == 10.0
 
     # A trade without a stop distance drops the whole bot back to per lot
@@ -794,10 +821,14 @@ def test_bot_pnl_curves_lot_basis_takes_the_position_size_out(temp_db):
     conn.close()
     res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all", basis="lot")
     assert res["unit"] == "lot"
-    assert [p["v"] for p in res["series"][0]["points"]] == [200.0, -200.0, -100.0]
+    points = res["series"][0]["points"]
+    assert (_curve_at(points, 2026, 9, 1), _curve_at(points, 2026, 9, 2),
+            _curve_at(points, 2026, 9, 3)) == (200.0, -200.0, -100.0)
     # The USD curve of the same trades is untouched by the basis
     usd = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="all")
-    assert [p["v"] for p in usd["series"][0]["points"]] == [200.0, 100.0, 150.0]
+    points = usd["series"][0]["points"]
+    assert (_curve_at(points, 2026, 9, 1), _curve_at(points, 2026, 9, 2),
+            _curve_at(points, 2026, 9, 3)) == (200.0, 100.0, 150.0)
 
 
 def test_bot_pnl_curves_thin_long_series_but_keep_the_ends():
@@ -832,6 +863,7 @@ def test_api_leaderboard_pnl_curves(temp_db, monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["unit"] == "usd" and data["period"] == "1w"
+    assert data["granularity"] == "day"
     assert data["series"][0]["bot_id"] == "CurveBot"
     assert data["series"][0]["points"][-1]["v"] == 15.0
 
@@ -895,13 +927,14 @@ class Chart {
 }
 const LB_CURVE_COLORS = ['#38bdf8', '#f59e0b'];
 const LB_CURVE_EMPTY = 'No closed trades in this period';
-let lbCurveUnit = 'usd', lbCurveSpan = 0, lbCurveChart = null, lbChartBot = '';
+let lbCurveUnit = 'usd', lbCurveChart = null, lbChartBot = '';
 %(functions)s
 const data = %(data)s;
 const out = {};
 renderBotPnlCurves(data);
 out.datasets = built.data.datasets.map(d => ({label: d.label, x: d.data.map(p => p.x),
-    y: d.data.map(p => p.y), color: d.borderColor}));
+    y: d.data.map(p => p.y), color: d.borderColor, fill: d.fill,
+    interp: d.cubicInterpolationMode, tension: d.tension}));
 out.select = els['lb-chart-bot'].innerHTML;
 out.subtitle = els['lb-chart-subtitle'].textContent;
 out.canvasHidden = els['lb-pnl-chart'].hidden;
@@ -909,10 +942,16 @@ out.emptyHidden = els['lb-chart-empty'].hidden;
 out.y40 = built.options.scales.y.ticks.callback(40);
 out.yNeg5 = built.options.scales.y.ticks.callback(-5);
 out.tooltip = built.options.plugins.tooltip.callbacks.label({dataset: {label: 'Bot A'}, parsed: {x: 0, y: 12.3}});
+out.delta = built.options.plugins.tooltip.callbacks.afterLabel(
+    {dataset: {data: [{y: 0}, {y: 10}]}, dataIndex: 1, parsed: {y: 10}});
+out.zeroGrid = built.options.scales.y.grid.color({tick: {value: 0}});
+out.otherGrid = built.options.scales.y.grid.color({tick: {value: 5}});
 out.xtick = built.options.scales.x.ticks.callback(Date.parse('2026-09-01T03:00:00Z'));
+out.xtickFull = built.options.plugins.tooltip.callbacks.title([{parsed: {x: Date.parse('2026-09-01T03:00:00Z')}}]);
 lbChartBot = 'A';
 renderBotPnlCurves(data);
 out.focused = built.data.datasets.map(d => d.label);
+out.focusedFill = built.data.datasets[0].fill;
 renderBotPnlCurves({unit: 'risk', series: [data.series[0]]});
 out.riskY = built.options.scales.y.ticks.callback(12);
 out.riskSubtitle = els['lb-chart-subtitle'].textContent;
@@ -932,7 +971,7 @@ def test_pnl_chart_maps_series_to_datasets(tmp_path):
     axes and tooltip in the unit the server reported."""
     html = DASHBOARD.read_text(encoding="utf-8")
     functions = [_dashboard_function(html, name) for name in
-                 ("escapeHtml", "lbCurveEmpty", "lbCurveTime", "lbCurveMoney",
+                 ("escapeHtml", "lbCurveEmpty", "lbCurveDay", "lbCurveDayFull", "lbCurveMoney",
                   "lbEnsureCurveChart", "renderBotPnlCurves")]
     data = {"unit": "usd", "series": [
         {"bot_id": "A", "bot_name": "Bot A", "net": 20.0, "basis": "usd",
@@ -952,15 +991,22 @@ def test_pnl_chart_maps_series_to_datasets(tmp_path):
     assert out["datasets"][0]["x"] == [1788231600000, 1788318000000]
     assert out["datasets"][0]["y"] == [0.0, 20.0]
     assert [d["color"] for d in out["datasets"]] == ["#38bdf8", "#f59e0b"]
+    # Daily points are smoothed with a monotone spline, unfilled while several bots share the chart
+    assert {d["interp"] for d in out["datasets"]} == {"monotone"}
+    assert {d["fill"] for d in out["datasets"]} == {False}
     # The focus picker lists every bot with its final result
     assert "Bot A · $20.00" in out["select"] and "Bot B · -$5.00" in out["select"]
     assert out["canvasHidden"] is False and out["emptyHidden"] is True
-    # USD axis, tooltip and x ticks (Vietnam time, no date while the span fits in a day)
+    # USD axis, tooltip, day ticks (Vietnam time) and the zero line
     assert out["y40"] == "$40" and out["yNeg5"] == "-$5"
     assert out["tooltip"] == "Bot A: $12.30"
-    assert out["xtick"] == "10:00"
-    # Focusing one bot narrows the chart to its line
+    assert out["delta"] == "Δ +$10.00"
+    assert out["xtick"] == "01/09" and out["xtickFull"] == "01/09/2026"
+    assert "148,163,184" in out["zeroGrid"] and "64,64,64" in out["otherGrid"]
+    assert "Daily cumulative" in out["subtitle"]
+    # Focusing one bot narrows the chart to its line, with a soft area under it
     assert out["focused"] == ["Bot A"]
+    assert out["focusedFill"] is True
     # The lot-neutral tab reads in risk units and says so
     assert out["riskY"] == "12R"
     assert "lot per stop pip" in out["riskSubtitle"]
