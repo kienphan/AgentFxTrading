@@ -59,7 +59,8 @@ RENDERERS = [
     "updateDashboard", "updateTradeHistory", "renderAiDecisionsFeed",
     "lbHas", "lbVnToday", "lbAddDays", "lbIsoDay", "lbRangeFor", "lbShortDay", "lbRangeText", "lbPeriodLabel",
     "applyLbControls", "lbRankCell", "lbBotCells", "lbWinRateCell", "lbProfitFactorCell", "lbTradesCell",
-    "lbScoreCell", "lbReturnDdCell", "lbEmptyRow", "renderLeaderboard",
+    "lbScoreCell", "lbReturnDdCell", "lbEmptyRow",
+    "lbSortValue", "lbSortedRows", "renderLeaderboard",
     "lbCurveEmpty", "lbCurveDay", "lbCurveDayFull", "lbCurveMoney", "lbEnsureCurveChart", "renderBotPnlCurves",
     "renderBots", "updateNewsShieldStatus", "renderNewsClusters",
 ]
@@ -80,6 +81,8 @@ function fetchTradeHistory() {}
 const closingPositions = new Set();
 const LB_WEIGHT_HINTS = {usd: '', lot: ''}, LB_ROLLING = {all: 'All time'}, LB_CALENDAR = {};
 let lbTab = 'usd', lbPeriod = 'all', lbDateFrom = '', lbDateTo = '', lbData = null;
+const LB_TIER_ORDER = {TIER_S: 5, TIER_A: 4, TIER_B: 3, TIER_C: 2, UNRATED: 1};
+let lbSorts = {usd: null, lot: null};
 const LB_CURVE_COLORS = ['#38bdf8'];
 const LB_CURVE_EMPTY = 'No closed trades in this period';
 let lbChartBot = '', lbCurveUnit = 'usd', lbCurveSpan = 0, lbCurveChart = null, lbCurveData = null;

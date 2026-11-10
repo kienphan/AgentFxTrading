@@ -30,6 +30,16 @@ class DockerManager:
             self.is_available = False
             self.client = None
 
+    def running_container_names(self) -> set:
+        """Names of the containers Docker reports running right now.
+
+        One `containers.list()` (running only) instead of an inspect per bot, so callers that
+        only need "is it on?" (the leaderboard's running-bots filter) stay cheap on a poll.
+        """
+        if not self.is_available:
+            return set()
+        return {container.name for container in self.client.containers.list()}
+
     def get_container_status(self, name: str) -> Dict:
         if not self.is_available:
             return {"status": "error", "message": "Docker not available"}

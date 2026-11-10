@@ -13,7 +13,7 @@ from app.db import get_db_connection
 import json
 import asyncio
 from datetime import datetime, date, timedelta, timezone
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from app.accounts import get_account_registry
 from app.leaderboard import (InvalidDateRange, compute_bot_leaderboard, compute_bot_pnl_curves,
                              compute_profit_factor)
@@ -645,7 +645,10 @@ async def dashboard_page(request: Request):
     positions = get_active_positions(filter_acc)
     history = get_trade_history(filter_acc)
     pnl_history = get_daily_pnl_history(30, filter_acc)
-    leaderboard = compute_bot_leaderboard(filter_acc, period="1w")  # the leaderboard's default period
+    # Only bots whose container is running are ranked, and the page ships that same payload as
+    # the screen's initial data (lbInitial), so a stopped bot never shows before the first poll
+    leaderboard = compute_bot_leaderboard(filter_acc, period="1w",
+                                          bot_ids=_running_bot_ids())  # leaderboard's default period
     
     registry = get_account_registry()
     all_accounts = registry.list_accounts(include_unconfigured=False)
@@ -719,9 +722,11 @@ async def api_dashboard_pnl_history(days: int = 30, account_id: str = "all"):
 
 @router.get("/api/leaderboard")
 @router.get("/api/dashboard/leaderboard")
-async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None,
-                                    period: str = "1w", date_from: Optional[str] = None,
-                                    date_to: Optional[str] = None):
+# sync on purpose: the running-bots filter lists Docker containers and the ranking reads the DB;
+# both block, and an `async def` would pin them to the event loop (/trade, /ws/cbot stall)
+def api_dashboard_leaderboard(account_id: str = "all", account_type: Optional[str] = None,
+                              period: str = "1w", date_from: Optional[str] = None,
+                              date_to: Optional[str] = None):
     """API endpoint for bot performance leaderboard and quant tier ranking.
 
     ``account_type`` (live|demo) keeps the ranking inside the active trading mode.
@@ -731,16 +736,18 @@ async def api_dashboard_leaderboard(account_id: str = "all", account_type: Optio
     """
     try:
         return compute_bot_leaderboard(account_id, account_type=account_type, period=period,
-                                       date_from=date_from, date_to=date_to)
+                                       date_from=date_from, date_to=date_to,
+                                       bot_ids=_running_bot_ids())
     except InvalidDateRange as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/api/leaderboard/pnl-curves")
 @router.get("/api/dashboard/leaderboard/pnl-curves")
-async def api_leaderboard_pnl_curves(account_id: str = "all", account_type: Optional[str] = None,
-                                     period: str = "1w", date_from: Optional[str] = None,
-                                     date_to: Optional[str] = None, basis: str = "usd"):
+# sync on purpose, as above: one Docker list plus the DB read belong in the threadpool
+def api_leaderboard_pnl_curves(account_id: str = "all", account_type: Optional[str] = None,
+                               period: str = "1w", date_from: Optional[str] = None,
+                               date_to: Optional[str] = None, basis: str = "usd"):
     """Cumulative closed P&L per bot for the leaderboard's chart.
 
     Takes the same account, mode, period and custom-range filters as /api/leaderboard, plus
@@ -749,7 +756,8 @@ async def api_leaderboard_pnl_curves(account_id: str = "all", account_type: Opti
     """
     try:
         return compute_bot_pnl_curves(account_id, account_type=account_type, period=period,
-                                      date_from=date_from, date_to=date_to, basis=basis)
+                                      date_from=date_from, date_to=date_to, basis=basis,
+                                      bot_ids=_running_bot_ids())
     except InvalidDateRange as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1255,6 +1263,26 @@ def api_restart_bot(name: str):
 from app import bot_commands
 from app.bot_commands import command_queue, CommandNotFound, CommandNotOwned
 from app.bot_controls import bot_id_for_config, sanitize_bot_id
+
+
+def _running_bot_ids() -> Optional[Set[str]]:
+    """Bot ids whose cBot container is running right now, or None when Docker cannot tell.
+
+    The leaderboard ranks only bots that are still on: a stopped container keeps its bot_id in
+    the trade history and its row in cbot_configs, so without this filter it would hold a seat
+    (often a zero-trade one) forever. One `containers.list()` per request, not one inspect per
+    bot, keeps the polling endpoints cheap. None means "unknown", so a Docker hiccup falls back
+    to the unfiltered table instead of an empty one.
+    """
+    if not docker_manager.is_available:
+        return None
+    try:
+        running = docker_manager.running_container_names()
+    except Exception as e:
+        logger.warning(f"Could not list running containers for the leaderboard: {e}")
+        return None
+    return {bot_id_for_config(cfg) for cfg in get_portfolio_manager().get_cbot_configs()
+            if cfg["name"] in running}
 
 
 class CommandResultRequest(BaseModel):

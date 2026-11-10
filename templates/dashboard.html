@@ -574,17 +574,17 @@
                             <table class="data-table">
                                 <thead>
                                     <tr>
-                                        <th class="rank-cell">Rank</th>
-                                        <th>Bot Strategy</th>
-                                        <th>Symbols</th>
-                                        <th>Tier Badge</th>
-                                        <th>Win Rate</th>
-                                        <th>Profit Factor</th>
-                                        <th>Trades</th>
-                                        <th>Net P&amp;L</th>
-                                        <th>Closed PnL</th>
-                                        <th>Floating PnL</th>
-                                        <th>Quant Score</th>
+                                        <th class="rank-cell" data-lb-sort="rank" tabindex="0" title="Sort by rank">Rank</th>
+                                        <th data-lb-sort="bot_name" tabindex="0" title="Sort by bot name">Bot Strategy</th>
+                                        <th data-lb-sort="symbol_display" tabindex="0" title="Sort by symbol">Symbols</th>
+                                        <th data-lb-sort="tier_badge" tabindex="0" title="Sort by tier badge">Tier Badge</th>
+                                        <th data-lb-sort="win_rate" tabindex="0" title="Sort by win rate">Win Rate</th>
+                                        <th data-lb-sort="profit_factor" tabindex="0" title="Sort by profit factor">Profit Factor</th>
+                                        <th data-lb-sort="total_trades" tabindex="0" title="Sort by closed trades">Trades</th>
+                                        <th data-lb-sort="total_pnl_usd" tabindex="0" title="Sort by net P&amp;L">Net P&amp;L</th>
+                                        <th data-lb-sort="closed_pnl_usd" tabindex="0" title="Sort by closed P&amp;L">Closed PnL</th>
+                                        <th data-lb-sort="floating_pnl_usd" tabindex="0" title="Sort by floating P&amp;L">Floating PnL</th>
+                                        <th data-lb-sort="composite_score" tabindex="0" title="Sort by quant score">Quant Score</th>
                                     </tr>
                                 </thead>
                                 <tbody id="leaderboard-table-body">
@@ -597,16 +597,16 @@
                             <table class="data-table">
                                 <thead>
                                     <tr>
-                                        <th class="rank-cell">Rank</th>
-                                        <th>Bot Strategy</th>
-                                        <th>Symbols</th>
-                                        <th>Tier Badge</th>
-                                        <th>Win Rate</th>
-                                        <th title="Gross profit / gross loss, each closed trade taken over its risk at entry (lots × stop pips)">Profit Factor</th>
-                                        <th title="Average win / average loss, over the risk at entry">Payoff</th>
-                                        <th title="Net result / max drawdown of the equity curve, both over the risk at entry">Return / DD</th>
-                                        <th>Trades</th>
-                                        <th>Quant Score</th>
+                                        <th class="rank-cell" data-lb-sort="rank" tabindex="0" title="Sort by rank">Rank</th>
+                                        <th data-lb-sort="bot_name" tabindex="0" title="Sort by bot name">Bot Strategy</th>
+                                        <th data-lb-sort="symbol_display" tabindex="0" title="Sort by symbol">Symbols</th>
+                                        <th data-lb-sort="tier_badge" tabindex="0" title="Sort by tier badge">Tier Badge</th>
+                                        <th data-lb-sort="win_rate" tabindex="0" title="Sort by win rate">Win Rate</th>
+                                        <th data-lb-sort="profit_factor" tabindex="0" title="Sort by profit factor; gross profit / gross loss, each closed trade taken over its risk at entry (lots × stop pips)">Profit Factor</th>
+                                        <th data-lb-sort="payoff_ratio" tabindex="0" title="Sort by payoff; average win / average loss, over the risk at entry">Payoff</th>
+                                        <th data-lb-sort="return_dd" tabindex="0" title="Sort by return/drawdown; net result / max drawdown of the equity curve, both over the risk at entry">Return / DD</th>
+                                        <th data-lb-sort="total_trades" tabindex="0" title="Sort by closed trades">Trades</th>
+                                        <th data-lb-sort="composite_score" tabindex="0" title="Sort by quant score">Quant Score</th>
                                     </tr>
                                 </thead>
                                 <tbody id="leaderboard-lot-table-body">
@@ -2805,6 +2805,100 @@
             return `<tr><td colspan="${colspan}" class="empty-state">${msg}</td></tr>`;
         }
 
+        // --- Column sorting: click a header to sort by it, click again to flip ---
+        // The row order changes; the Rank column keeps the server's rank, so re-sorting by P&L
+        // does not relabel a bot as #1. Missing metrics (a bot with no closed trade) sort after
+        // real values in either direction instead of landing on a made-up 0.
+        const LB_SORT_ASC_FIRST = ['rank', 'bot_name', 'symbol_display', 'tier_badge'];
+        const LB_TIER_ORDER = {TIER_S: 5, TIER_A: 4, TIER_B: 3, TIER_C: 2, UNRATED: 1};
+        let lbSorts = {usd: null, lot: null};
+
+        function lbSortValue(bot, key) {
+            switch (key) {
+                case 'rank': return bot.rank;
+                case 'bot_name': return String(bot.bot_name || bot.bot_id || '').toLowerCase();
+                case 'symbol_display': return String(bot.symbol_display || '').toLowerCase();
+                case 'tier_badge': return LB_TIER_ORDER[bot.tier_badge] || 0;
+                case 'win_rate': return bot.total_trades ? bot.win_rate : null;
+                case 'profit_factor':
+                    if (!bot.total_trades) return null;
+                    return bot.profit_factor === null ? Infinity : bot.profit_factor;
+                case 'payoff_ratio':
+                    if (!bot.total_trades) return null;
+                    return bot.payoff_ratio === null ? Infinity : bot.payoff_ratio;
+                case 'return_dd':
+                    if (!bot.total_trades) return null;
+                    if (bot.return_dd !== null) return bot.return_dd;
+                    return bot.net_units > 0 ? Infinity : 0;
+                case 'composite_score': return bot.total_trades ? bot.composite_score : null;
+                default: return Number(bot[key]) || 0;
+            }
+        }
+
+        function lbSortedRows(rows, tab) {
+            const sort = lbSorts[tab];
+            if (!sort) return rows;
+            const dir = sort.dir === 'asc' ? 1 : -1;
+            return rows.slice().sort((a, b) => {
+                const av = lbSortValue(a, sort.key);
+                const bv = lbSortValue(b, sort.key);
+                if (av === null || bv === null) {
+                    if (av === bv) return a.rank - b.rank;
+                    return av === null ? 1 : -1;   // missing values stay last
+                }
+                let cmp;
+                if (typeof av === 'string' || typeof bv === 'string') {
+                    cmp = String(av).localeCompare(String(bv));
+                } else {
+                    cmp = av === bv ? 0 : (av < bv ? -1 : 1);
+                }
+                // Equal values keep the server's ranking order, in either direction
+                if (cmp === 0) {
+                    return (a.rank - b.rank) || String(a.bot_id).localeCompare(String(b.bot_id));
+                }
+                return cmp * dir;
+            });
+        }
+
+        function lbSortTab(th) {
+            return th.closest('#lb-pane-lot') ? 'lot' : 'usd';
+        }
+
+        function lbSyncSortHeaders() {
+            document.querySelectorAll('th[data-lb-sort]').forEach(th => {
+                const sort = lbSorts[lbSortTab(th)];
+                const active = !!(sort && sort.key === th.dataset.lbSort);
+                th.setAttribute('aria-sort',
+                    active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+                if (active) th.dataset.sortDir = sort.dir;
+                else delete th.dataset.sortDir;
+            });
+        }
+
+        function lbToggleSort(th) {
+            const tab = lbSortTab(th);
+            const key = th.dataset.lbSort;
+            const current = lbSorts[tab];
+            if (current && current.key === key) {
+                current.dir = current.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                lbSorts[tab] = {key, dir: LB_SORT_ASC_FIRST.includes(key) ? 'asc' : 'desc'};
+            }
+            lbSyncSortHeaders();
+            if (lbData) renderLeaderboard(lbData);
+        }
+
+        document.querySelectorAll('th[data-lb-sort]').forEach(th => {
+            th.addEventListener('click', () => lbToggleSort(th));
+            th.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    lbToggleSort(th);
+                }
+            });
+        });
+        lbSyncSortHeaders();
+
         function renderLeaderboard(data) {
             if (!data) return;
             lbData = data;
@@ -2832,12 +2926,13 @@
                 totalBotsEl.textContent = data.total_bots || 0;
             }
 
+            const usdRows = lbSortedRows(data.rankings || [], 'usd');
             const tbody = document.getElementById('leaderboard-table-body');
             if (tbody) {
-                if (!data.rankings || data.rankings.length === 0) {
+                if (usdRows.length === 0) {
                     tbody.innerHTML = lbEmptyRow(11);
                 } else {
-                    tbody.innerHTML = data.rankings.map(bot => {
+                    tbody.innerHTML = usdRows.map(bot => {
                         const closedPnlClass = bot.closed_pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative';
                         const floatingPnlClass = bot.floating_pnl_usd > 0 ? 'pnl-positive' : (bot.floating_pnl_usd < 0 ? 'pnl-negative' : 'td-dim');
                         return `<tr>
@@ -2858,12 +2953,13 @@
                 }
             }
 
+            const lotRows = lbSortedRows(lot.rankings || [], 'lot');
             const lotBody = document.getElementById('leaderboard-lot-table-body');
             if (lotBody) {
-                if (!lot.rankings || lot.rankings.length === 0) {
+                if (lotRows.length === 0) {
                     lotBody.innerHTML = lbEmptyRow(10);
                 } else {
-                    lotBody.innerHTML = lot.rankings.map(bot => {
+                    lotBody.innerHTML = lotRows.map(bot => {
                         const payoff = bot.total_trades === 0 ? '<span class="td-dim">--</span>'
                             : bot.payoff_ratio === null ? '<span class="font-mono pnl-positive" title="No losing trades yet">∞</span>'
                             : `<span class="font-mono">${bot.payoff_ratio.toFixed(2)}</span>`;

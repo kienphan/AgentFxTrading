@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Set, Tuple, Union
 from app.db import get_db_connection as _get_unified_db
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "portfolio.db"
@@ -52,6 +52,11 @@ VN_OFFSET_MS = 7 * 3_600_000
 DAY_MS = 86_400_000
 
 _DB_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Manual trades carry this bot_id. They have no container to be "running", but the leaderboard
+# keeps them: they are the account's own trading record, which the running-bots filter must not
+# erase from the P&L statistics.
+MANUAL_BOT_ID = "manual"
 
 
 class InvalidDateRange(ValueError):
@@ -460,6 +465,21 @@ def _curve_points(
     return used, points
 
 
+def _flat_curve(start_ms: int, end_ms: int) -> List[Dict[str, Any]]:
+    """A zero line on the same daily grid as _curve_points, from ``start_ms`` to ``end_ms``.
+
+    Used for the manual comparison when no manual trade closed in the window: the line (and
+    its place in the focus picker) stays, so the user's own trading reads as $0 next to the
+    bots instead of vanishing from the chart.
+    """
+    points: List[Dict[str, Any]] = [{"t": int(start_ms), "v": 0.0}]
+    for day in range(_vn_day_index(start_ms), _vn_day_index(end_ms) + 1):
+        at = min(_vn_day_end_ms(day), int(end_ms))
+        if at > points[-1]["t"]:
+            points.append({"t": at, "v": 0.0})
+    return points
+
+
 def _downsample(points: List[Dict[str, Any]], limit: int = MAX_CURVE_POINTS) -> List[Dict[str, Any]]:
     """At most `limit` points, evenly spaced, always keeping the first and the last.
 
@@ -488,6 +508,7 @@ def compute_bot_leaderboard(
     period: str = "all",
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    bot_ids: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes historical trade outcomes and active positions across all cBots
@@ -505,6 +526,13 @@ def compute_bot_leaderboard(
     either may be left open) replace it with a custom range, reported as period "custom"; see
     date_range_bounds, which also says when open positions stay out. The result carries the USD
     ranking under "rankings" and the lot-neutral one under "lot_neutral".
+
+    ``bot_ids``, when given, restricts the ranking to those bots: the caller passes the bot ids
+    whose container is still running, so a stopped bot's zero-trade row and its history drop
+    out of the table (and the P&L chart). Manual trades are the exception: "manual" has no
+    container to be running, so it stays whenever it traded in the window, keeping the account's
+    own entries in the statistics. None ranks every known bot, the unfiltered shape the tests and
+    a Docker-less install use.
     Raises InvalidDateRange on a malformed custom range.
     """
     period, account_type, account_filter, params, since, until, include_open = _resolve_scope(
@@ -541,19 +569,26 @@ def compute_bot_leaderboard(
             cursor = conn.execute(query_open, tuple(open_params))
             open_positions = [dict(r) for r in cursor.fetchall()]
 
-        # 3. Fetch any registered bot names from cbot_configs or distinct bot_ids
-        known_bots = set()
-        try:
-            cfg_cur = conn.execute("SELECT name FROM cbot_configs")
-            for r in cfg_cur.fetchall():
-                known_bots.add(r[0])
-        except Exception:
-            pass
+        # 3. Known bots: the caller's running set when it filters, else every registered bot and
+        # traded bot_id (a stopped container keeps its old trades, so it would linger forever)
+        if bot_ids is not None:
+            known_bots = set(bot_ids)
+            if any(str(t["bot_id"]) == MANUAL_BOT_ID for t in closed_trades) or \
+                    any(str(p["bot_id"]) == MANUAL_BOT_ID for p in open_positions):
+                known_bots.add(MANUAL_BOT_ID)
+        else:
+            known_bots = set()
+            try:
+                cfg_cur = conn.execute("SELECT name FROM cbot_configs")
+                for r in cfg_cur.fetchall():
+                    known_bots.add(r[0])
+            except Exception:
+                pass
 
-        for t in closed_trades:
-            known_bots.add(t["bot_id"])
-        for p in open_positions:
-            known_bots.add(p["bot_id"])
+            for t in closed_trades:
+                known_bots.add(t["bot_id"])
+            for p in open_positions:
+                known_bots.add(p["bot_id"])
 
         bot_rankings: List[Dict[str, Any]] = []
         lot_neutral_rankings: List[Dict[str, Any]] = []
@@ -689,6 +724,7 @@ def compute_bot_pnl_curves(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     basis: str = "usd",
+    bot_ids: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """Cumulative closed P&L per bot, one point per Vietnam-time day, over the ranking's window.
 
@@ -704,8 +740,11 @@ def compute_bot_pnl_curves(
 
     Series are ordered by final result, best first, matching the ranking table on screen. A
     window that ends before today keeps its open positions out, as the ranking does, so the
-    curve stops at the range's last included instant. Raises InvalidDateRange on a bad custom
-    range.
+    curve stops at the range's last included instant. ``bot_ids``, when given, keeps only those
+    bots (the ones whose container is still running), so the chart drops the lines of bots that
+    are off; the "manual" line is always present, since manual trades have no container and are
+    still part of the account's record — flat at $0 when none closed in the window, so it stays
+    comparable. Raises InvalidDateRange on a bad custom range.
     """
     requested = "lot" if basis == "lot" else "usd"
     period, account_type, account_filter, params, since, until, include_open = _resolve_scope(
@@ -726,6 +765,9 @@ def compute_bot_pnl_curves(
     by_bot: Dict[str, List[Dict[str, Any]]] = {}
     for trade in closed_trades:
         by_bot.setdefault(str(trade["bot_id"]), []).append(trade)
+    if bot_ids is not None:
+        by_bot = {bot_id: trades for bot_id, trades in by_bot.items()
+                  if bot_id in bot_ids or bot_id == MANUAL_BOT_ID}
 
     now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     start_ms = _epoch_ms(since) if since else None
@@ -748,6 +790,30 @@ def compute_bot_pnl_curves(
             "points": _downsample(points),
         })
 
+    # Manual is always on the chart when a running-bot filter is active: it has no container,
+    # and a window where no manual trade closed still gets a flat $0 line, so the user's own
+    # trading stays comparable with the bots instead of vanishing for that period.
+    if bot_ids is not None and MANUAL_BOT_ID not in by_bot and by_bot:
+        manual_start = start_ms
+        if manual_start is None:
+            first_ms: Optional[int] = None
+            for trades in by_bot.values():
+                for trade in trades:
+                    at = _epoch_ms(trade.get("exit_time") or trade.get("entry_time"))
+                    if at is not None:
+                        first_ms = at if first_ms is None else min(first_ms, at)
+            if first_ms is not None:
+                manual_start = _vn_day_end_ms(_vn_day_index(first_ms) - 1)
+        if manual_start is not None and manual_start <= end_ms:
+            series.append({
+                "bot_id": MANUAL_BOT_ID,
+                "bot_name": "Manual",
+                "total_trades": 0,
+                "net": 0.0,
+                "basis": requested,
+                "points": _downsample(_flat_curve(manual_start, end_ms)),
+            })
+
     series.sort(key=lambda s: (-s["net"], s["bot_id"]))
     unit = requested if requested == "usd" else ("risk" if units == {"risk"} else "lot")
 
@@ -762,7 +828,7 @@ def compute_bot_pnl_curves(
         "basis": requested,
         "unit": unit,
         "granularity": "day",
-        "total_trades": len(closed_trades),
+        "total_trades": sum(len(trades) for trades in by_bot.values()),
         "total_bots": len(series),
         "series": series,
     }

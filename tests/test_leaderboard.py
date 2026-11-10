@@ -237,6 +237,9 @@ def test_dashboard_page_renders_leaderboard():
     assert "cBot Performance &amp; Quant Ranking" in html
     assert "leaderboard-table-body" in html
     assert "Fleet Win Rate" in html
+    # Every column of both rankings is a sort target (11 USD + 10 lot-neutral headers)
+    assert html.count('data-lb-sort="') == 21
+    assert 'data-lb-sort="total_pnl_usd"' in html and 'data-lb-sort="payoff_ratio"' in html
 
 
 def _utc_ago(**delta) -> str:
@@ -488,9 +491,15 @@ def test_bots_without_closed_trades_rank_last(temp_db):
 
 
 def _use_leaderboard_db(monkeypatch, db_file):
-    """Point the leaderboard (API and page) at a test database."""
+    """Point the leaderboard (API and page) at a test database.
+
+    The running-bots filter is switched off too: the temp DB's bot ids have no containers, so a
+    live Docker lookup would hide every test bot. Tests that exercise the filter set it back.
+    """
+    import app.dashboard as dashboard_module
     real = leaderboard_module.get_db_connection
     monkeypatch.setattr(leaderboard_module, "get_db_connection", lambda db_path=None: real(db_file))
+    monkeypatch.setattr(dashboard_module, "_running_bot_ids", lambda: None)
 
 
 def test_api_leaderboard_period_and_lot_neutral(temp_db, monkeypatch):
@@ -514,6 +523,132 @@ def test_api_leaderboard_period_and_lot_neutral(temp_db, monkeypatch):
     assert lot["profit_factor"] is None and lot["payoff_ratio"] is None
     assert lot["basis"] == "risk"
     assert data["lot_neutral"]["top_performer"]["bot_id"] == "WinnerBot"
+
+
+def test_leaderboard_ranks_only_bots_the_caller_marks_running(temp_db):
+    """A stopped bot disappears from both rankings, the fleet totals and the top performer: it
+    keeps its trades and its cbot_configs row, so only the caller's running set can hide it."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RunningBot", 30.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "StoppedBot", 500.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "manual", 40.0, exit_time=_utc_ago(days=1))
+    conn.commit()
+    conn.close()
+
+    # IdleRunning has no trade but its container is on, so it keeps an UNRATED row; manual has
+    # no container at all but still traded, so it stays for the manual-trading statistics
+    res = compute_bot_leaderboard(account_id="demo", db_path=temp_db,
+                                  bot_ids={"RunningBot", "IdleRunning"})
+    for rankings in (res["rankings"], res["lot_neutral"]["rankings"]):
+        assert {r["bot_id"] for r in rankings} == {"RunningBot", "manual", "IdleRunning"}
+        assert rankings[-1]["bot_id"] == "IdleRunning" and rankings[-1]["total_trades"] == 0
+    assert res["fleet_total_trades"] == 2
+    assert res["fleet_total_pnl_usd"] == 70.0
+    assert res["top_performer"]["bot_id"] == "manual"
+
+    # Nothing running and nothing manual: an empty leaderboard, not every bot that ever traded
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("DELETE FROM positions WHERE bot_id = 'manual'")
+    conn.commit()
+    conn.close()
+    empty = compute_bot_leaderboard(account_id="demo", db_path=temp_db, bot_ids=set())
+    assert empty["rankings"] == [] and empty["lot_neutral"]["rankings"] == []
+    assert empty["top_performer"] is None and empty["fleet_total_pnl_usd"] == 0.0
+
+
+def test_bot_pnl_curves_keep_only_running_bots(temp_db):
+    """The chart follows the table: a stopped bot's line leaves the payload, and the trade
+    count the panel reports counts only the plotted bots."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RunningBot", 20.0, exit_time=_utc_ago(days=2))
+    _add_closed(conn, "RunningBot", 5.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "StoppedBot", -9.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "manual", 7.0, exit_time=_utc_ago(days=1))
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="1w",
+                                 bot_ids={"RunningBot"})
+    # StoppedBot is off; manual stays despite having no container
+    assert {s["bot_id"]: s["net"] for s in res["series"]} == {"RunningBot": 25.0, "manual": 7.0}
+    assert res["total_trades"] == 3 and res["total_bots"] == 2
+
+
+def test_bot_pnl_curves_always_show_manual_for_comparison(temp_db):
+    """A window with no manual trade keeps a Manual line at $0, on the same daily grid as the
+    bots; the unfiltered call (no running filter) does not invent one."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RunningBot", 20.0, exit_time=_utc_ago(days=2))
+    conn.commit()
+    conn.close()
+
+    res = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="1w",
+                                 bot_ids={"RunningBot"})
+    by_id = {s["bot_id"]: s for s in res["series"]}
+    assert set(by_id) == {"RunningBot", "manual"}
+    manual, bot = by_id["manual"], by_id["RunningBot"]
+    assert manual["total_trades"] == 0 and manual["net"] == 0.0
+    assert [p["t"] for p in manual["points"]] == [p["t"] for p in bot["points"]]
+    assert all(p["v"] == 0.0 for p in manual["points"])
+
+    plain = compute_bot_pnl_curves(account_id="demo", db_path=temp_db, period="1w")
+    assert [s["bot_id"] for s in plain["series"]] == ["RunningBot"]
+
+
+def test_leaderboard_api_hides_bots_that_are_not_running(temp_db, monkeypatch):
+    """Both leaderboard endpoints take the running set, so the table and its chart agree."""
+    conn = sqlite3.connect(str(temp_db))
+    conn.execute("INSERT INTO accounts VALUES ('acc_demo_1', 'demo', 'Demo 1', 1)")
+    _add_closed(conn, "RunningBot", 20.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "StoppedBot", 90.0, exit_time=_utc_ago(days=1))
+    _add_closed(conn, "manual", 11.0, exit_time=_utc_ago(days=1))
+    conn.commit()
+    conn.close()
+    _use_leaderboard_db(monkeypatch, temp_db)
+    import app.dashboard as dashboard_module
+    monkeypatch.setattr(dashboard_module, "_running_bot_ids", lambda: {"RunningBot"})
+
+    client = TestClient(app)
+    ranking = client.get("/api/leaderboard?account_id=all&account_type=demo&period=1w").json()
+    assert [r["bot_id"] for r in ranking["rankings"]] == ["RunningBot", "manual"]
+    assert ranking["fleet_total_pnl_usd"] == 31.0
+    curve = client.get("/api/leaderboard/pnl-curves?account_id=all&account_type=demo"
+                       "&period=1w").json()
+    assert {s["bot_id"] for s in curve["series"]} == {"RunningBot", "manual"}
+
+
+def test_running_bot_ids_map_containers_to_bot_ids(monkeypatch):
+    """Only running containers count, and the id is the container's --BotId (not its name);
+    without Docker the filter says "unknown" so the full table still renders."""
+    import app.dashboard as dashboard_module
+
+    class FakeDocker:
+        is_available = True
+
+        @staticmethod
+        def running_container_names():
+            return {"cbot-running"}
+
+    class FakePortfolio:
+        @staticmethod
+        def get_cbot_configs():
+            return [
+                {"name": "cbot-running", "run_command": "ctrader-cli --BotId=orb_xauusd --x"},
+                {"name": "cbot-stopped", "run_command": "ctrader-cli --BotId=orb_gbpjpy --x"},
+            ]
+
+    monkeypatch.setattr(dashboard_module, "docker_manager", FakeDocker())
+    monkeypatch.setattr(dashboard_module, "get_portfolio_manager", lambda: FakePortfolio())
+    assert dashboard_module._running_bot_ids() == {"orb_xauusd"}
+
+    class NoDocker:
+        is_available = False
+
+    monkeypatch.setattr(dashboard_module, "docker_manager", NoDocker())
+    assert dashboard_module._running_bot_ids() is None
 
 
 def test_dashboard_page_embeds_leaderboard_escaped(temp_db, monkeypatch):
@@ -1015,3 +1150,63 @@ def test_pnl_chart_maps_series_to_datasets(tmp_path):
     assert out["emptyCanvasHidden"] is True and out["emptyNoteHidden"] is False
     assert out["emptyNote"] == "No closed trades in this period"
     assert out["updates"] >= 4
+
+
+SORT_HARNESS = """
+const LB_TIER_ORDER = {TIER_S: 5, TIER_A: 4, TIER_B: 3, TIER_C: 2, UNRATED: 1};
+let lbSorts = {usd: null, lot: null};
+%(functions)s
+const bots = [
+    {bot_id: 'A', bot_name: 'Alpha', rank: 1, total_trades: 5, win_rate: 60, profit_factor: 2, total_pnl_usd: 50, payoff_ratio: 2.5, return_dd: 3, net_units: 10, tier_badge: 'TIER_B'},
+    {bot_id: 'B', bot_name: 'Bravo', rank: 2, total_trades: 0, win_rate: 0, profit_factor: 1, total_pnl_usd: 0, payoff_ratio: 0, return_dd: null, net_units: 0, tier_badge: 'UNRATED'},
+    {bot_id: 'C', bot_name: 'Charlie', rank: 3, total_trades: 3, win_rate: 80, profit_factor: null, total_pnl_usd: -10, payoff_ratio: null, return_dd: null, net_units: 4, tier_badge: 'TIER_A'},
+    {bot_id: 'D', bot_name: 'delta', rank: 4, total_trades: 2, win_rate: 40, profit_factor: 1.5, total_pnl_usd: 20, payoff_ratio: 1.25, return_dd: -1, net_units: -2, tier_badge: 'TIER_B'},
+    {bot_id: 'E', bot_name: 'Echo', rank: 5, total_trades: 4, win_rate: 55, profit_factor: 1.8, total_pnl_usd: 50, payoff_ratio: 1.9, return_dd: 2, net_units: 8, tier_badge: 'TIER_B'},
+];
+const ids = rows => rows.map(b => b.bot_id);
+const out = {};
+out.default = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'total_pnl_usd', dir: 'desc'};
+out.pnlDesc = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'total_pnl_usd', dir: 'asc'};
+out.pnlAsc = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'profit_factor', dir: 'desc'};
+out.pfDesc = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'profit_factor', dir: 'asc'};
+out.pfAsc = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'win_rate', dir: 'desc'};
+out.winDesc = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'bot_name', dir: 'asc'};
+out.byName = ids(lbSortedRows(bots, 'usd'));
+lbSorts.usd = {key: 'tier_badge', dir: 'desc'};
+out.byTier = ids(lbSortedRows(bots, 'usd'));
+lbSorts.lot = {key: 'payoff_ratio', dir: 'desc'};
+out.payoffDesc = ids(lbSortedRows(bots, 'lot'));
+lbSorts.usd = {key: 'return_dd', dir: 'asc'};
+out.rddAsc = ids(lbSortedRows(bots, 'usd'));
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_leaderboard_column_sorting(tmp_path):
+    """Headers sort by value, flip direction, keep the server's rank order for ties, put a
+    bot without closed trades after real metrics, and rank unbounded PF as the best."""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    functions = [_dashboard_function(html, name) for name in ("lbSortValue", "lbSortedRows")]
+    script = tmp_path / "sort.js"
+    script.write_text(SORT_HARNESS % {"functions": "\n".join(functions)}, encoding="utf-8")
+    run = subprocess.run([shutil.which("node"), str(script)], capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stderr
+
+    out = json.loads(run.stdout)
+    assert out["default"] == ["A", "B", "C", "D", "E"]          # no sort = server ranking
+    assert out["pnlDesc"] == ["A", "E", "D", "B", "C"]          # tie keeps rank 1 before rank 5
+    assert out["pnlAsc"] == ["C", "B", "D", "A", "E"]
+    assert out["pfDesc"] == ["C", "A", "E", "D", "B"]           # null PF (no losses) is best
+    assert out["pfAsc"] == ["D", "E", "A", "C", "B"]            # ... and B (no trades) is last
+    assert out["winDesc"] == ["C", "A", "E", "D", "B"]
+    assert out["byName"] == ["A", "B", "C", "D", "E"]
+    assert out["byTier"] == ["C", "A", "D", "E", "B"]           # TIER_A, TIER_B by rank, UNRATED
+    assert out["payoffDesc"] == ["C", "A", "E", "D", "B"]
+    assert out["rddAsc"] == ["D", "E", "A", "C", "B"]           # no drawdown yet counts as +∞
