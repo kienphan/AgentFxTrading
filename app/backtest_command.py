@@ -36,8 +36,9 @@ STRATEGY_BY_ALGO = {
     "AiAgentBot.algo": "tms_orb",
     "TurtleBot.algo": "turtle",
     "OrbBot.algo": "orb",
+    "OrbRe2Bot.algo": "orb_re2",
 }
-SUPPORTED_STRATEGIES = {"flowrsi", "turtle", "orb"}
+SUPPORTED_STRATEGIES = {"flowrsi", "turtle", "orb", "orb_re2"}
 UNSUPPORTED_REASON = "Judas/TMS+ORB enter only through the AI; backtest mode not implemented yet"
 DATA_MODES = ("ticks", "m1")
 
@@ -73,6 +74,12 @@ LOCKED_PARAMS: Dict[str, Dict[str, str]] = {
     # ORB is pure rules too, and it is the reason the Backtest page can finally test an opening
     # range breakout without the AI layer AiAgentBot wraps around its own ORB.
     "orb": {
+        "ApiUrl": DISABLED_URL,
+        "AiReportUrl": DISABLED_URL,
+    },
+    # ORB-RE2 (cBot/OrbRe2Bot.cs) is the tick-break + daily-trend-filter variant. Also pure rules,
+    # so the same two endpoints are all there is to lock away.
+    "orb_re2": {
         "ApiUrl": DISABLED_URL,
         "AiReportUrl": DISABLED_URL,
     },
