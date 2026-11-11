@@ -188,7 +188,12 @@ class AnthropicClient(LLMClient):
                 messages=user_msgs,
                 **merged
             )
-            return response.content[0].text
+            # Models with adaptive thinking on by default (Sonnet 5, Opus 5) put a thinking
+            # block first; only the text blocks carry the answer.
+            text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
+            if not text:
+                raise ValueError(f"Anthropic response had no text block (stop_reason={response.stop_reason})")
+            return text
         except Exception as e:
             logger.warning(f"Anthropic chat error ({self.model}): {describe_llm_error(e)}")
             raise
@@ -196,6 +201,9 @@ class AnthropicClient(LLMClient):
 
 class GeminiClient(LLMClient):
     """Client for Google Gemini API."""
+
+    RATE_LIMIT_DELAYS = (10, 20, 40)
+    _sleep = staticmethod(asyncio.sleep)
 
     def __init__(
         self,
@@ -238,12 +246,24 @@ class GeminiClient(LLMClient):
             timeout_val = call_timeout if call_timeout is not None else self.timeout_val
             if timeout_val is not None:
                 request_options["timeout"] = timeout_val
-        try:
-            response = await self.model.generate_content_async(prompt, request_options=request_options, **merged)
-            return response.text
-        except Exception as e:
-            logger.warning(f"Gemini chat error: {describe_llm_error(e)}")
-            raise
+        from google.api_core.exceptions import ResourceExhausted
+
+        # The free tier answers 429 as soon as its per-minute quota is used up. Waiting a
+        # little lets a burst (a cTrader backtest) slow down to the quota instead of turning
+        # every bar into WAIT; 10+20+40 s stays under the MTF cBot's 120 s timeout.
+        for attempt, delay in enumerate((*self.RATE_LIMIT_DELAYS, None)):
+            try:
+                response = await self.model.generate_content_async(prompt, request_options=request_options, **merged)
+                return response.text
+            except ResourceExhausted as e:
+                if delay is None:
+                    logger.warning(f"Gemini chat error after {attempt} rate-limit retries: {describe_llm_error(e)}")
+                    raise
+                logger.info(f"Gemini rate limited (429), retrying in {delay}s")
+                await self._sleep(delay)
+            except Exception as e:
+                logger.warning(f"Gemini chat error: {describe_llm_error(e)}")
+                raise
 
 def create_llm_client(provider: Optional[str] = None, **kwargs) -> LLMClient:
     """

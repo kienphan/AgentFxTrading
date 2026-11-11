@@ -1,4 +1,6 @@
+import asyncio
 import os
+from types import SimpleNamespace
 from unittest.mock import patch
 import pytest
 from app.llm_client import (
@@ -153,3 +155,85 @@ async def test_trade_thinking_can_be_switched_back_on(monkeypatch, tmp_path):
     monkeypatch.setattr(server_mod, "TRADE_LLM_ENABLE_THINKING", True)
     kwargs = await _trade_kwargs(monkeypatch, tmp_path)
     assert kwargs.get("extra_body") == {"enable_thinking": True}
+
+
+class _FakeMessages:
+    def __init__(self, content, stop_reason="end_turn"):
+        self.response = SimpleNamespace(content=content, stop_reason=stop_reason)
+
+    async def create(self, **kwargs):
+        return self.response
+
+
+def _anthropic_with(content, stop_reason="end_turn"):
+    client = AnthropicClient(api_key="k", model="claude-sonnet-5")
+    client.client = SimpleNamespace(messages=_FakeMessages(content, stop_reason))
+    return client
+
+
+def test_anthropic_chat_skips_thinking_blocks_and_returns_the_text():
+    # Sonnet 5 runs adaptive thinking by default: the first block is a ThinkingBlock with no .text
+    content = [SimpleNamespace(type="thinking", thinking="", signature="s"),
+               SimpleNamespace(type="text", text='{"decision": {"action": "WAIT"}}')]
+    out = asyncio.run(_anthropic_with(content).chat([{"role": "user", "content": "x"}]))
+    assert out == '{"decision": {"action": "WAIT"}}'
+
+
+def test_anthropic_chat_without_any_text_block_fails_with_the_stop_reason():
+    content = [SimpleNamespace(type="thinking", thinking="", signature="s")]
+    with pytest.raises(ValueError, match="max_tokens"):
+        asyncio.run(_anthropic_with(content, stop_reason="max_tokens").chat([{"role": "user", "content": "x"}]))
+
+
+class _FlakyGemini:
+    """Fake genai model: raises `errors` in order, then answers."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.calls = 0
+
+    async def generate_content_async(self, prompt, **kwargs):
+        self.calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return SimpleNamespace(text='{"decision": {"action": "WAIT"}}')
+
+
+def _gemini_with(errors):
+    from app.llm_client import GeminiClient
+    client = GeminiClient(api_key="k", model="gemini-3.5-flash-lite")
+    client.model = _FlakyGemini(errors)
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    client._sleep = fake_sleep
+    return client, slept
+
+
+def test_gemini_waits_and_retries_when_the_free_quota_answers_429():
+    from google.api_core.exceptions import ResourceExhausted
+    client, slept = _gemini_with([ResourceExhausted("429 quota"), ResourceExhausted("429 quota")])
+    out = asyncio.run(client.chat([{"role": "user", "content": "x"}]))
+    assert out == '{"decision": {"action": "WAIT"}}'
+    assert slept == [10, 20]
+    assert client.model.calls == 3
+
+
+def test_gemini_gives_up_after_three_rate_limit_retries_within_the_bot_timeout():
+    from google.api_core.exceptions import ResourceExhausted
+    client, slept = _gemini_with([ResourceExhausted("429 quota")] * 10)
+    with pytest.raises(ResourceExhausted):
+        asyncio.run(client.chat([{"role": "user", "content": "x"}]))
+    assert slept == [10, 20, 40]          # 70 s of waiting, under the cBot's 120 s timeout
+    assert client.model.calls == 4
+
+
+def test_gemini_does_not_retry_other_errors():
+    from google.api_core.exceptions import InvalidArgument
+    client, slept = _gemini_with([InvalidArgument("400 bad request")])
+    with pytest.raises(InvalidArgument):
+        asyncio.run(client.chat([{"role": "user", "content": "x"}]))
+    assert slept == []
+    assert client.model.calls == 1
