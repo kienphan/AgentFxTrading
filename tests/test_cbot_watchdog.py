@@ -120,6 +120,31 @@ def test_check_cbot_health_not_running():
     assert health["healthy"] is False
     assert health["stuck"] is False
 
+def test_check_cbot_health_does_not_restart_when_blips_already_recovered():
+    # 2026-11-11 broker outage: 5 lost lines in a 40-line tail were enough to restart five bots,
+    # even though every earlier blip had a "restored" line and the check simply ran during the
+    # 2-4 s gap before the last reconnect finished.
+    dm = DockerManager()
+    dm.is_available = True
+    dm.get_container_status = MagicMock(return_value={"status": "running", "id": "12345"})
+
+    blips = """
+11/11/2026 17:47:13.085 | The connection has been lost. Reconnecting...
+11/11/2026 17:47:18.346 | The connection has been restored.
+11/11/2026 18:01:16.998 | The connection has been lost. Reconnecting...
+11/11/2026 18:01:19.903 | The connection has been restored.
+11/11/2026 18:13:56.096 | The connection has been lost. Reconnecting...
+11/11/2026 18:13:58.699 | The connection has been restored.
+11/11/2026 18:20:00.000 | The connection has been lost. Reconnecting...
+11/11/2026 18:20:03.000 | The connection has been restored.
+11/11/2026 18:27:17.100 | The connection has been lost. Reconnecting...
+"""
+    dm.get_container_logs = MagicMock(return_value=blips)
+    health = dm.check_cbot_health("cbot-live-gbpjpy-fix-gotobi")
+    assert health["healthy"] is True
+    assert health["stuck"] is False
+
+
 def test_check_cbot_health_stopped_by_user_is_stuck():
     dm = DockerManager()
     dm.is_available = True

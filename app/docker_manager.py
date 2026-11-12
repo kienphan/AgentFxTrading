@@ -16,10 +16,12 @@ class CbotConfig(BaseModel):
     run_command: str
 
 class DockerManager:
-    # Lost-connection lines in the tail before a container counts as a reconnect loop. The loop
-    # cycles every ~300 ms, so a rejected login fills the 40-line tail within seconds; a real
-    # 1-2 s outage stays below this and, once "restored", is ignored anyway.
+    # A reconnect loop is >=5 lost-connection lines *since the last successful reconnect* inside
+    # RECONNECT_LOOP_WINDOW_SECONDS. A rejected login cycles every ~300 ms, so it crosses both bars
+    # within seconds; isolated blips that each end with "restored" reset the count and can never
+    # add up to a loop, even when the health check lands in the 2-4 s gap before a normal reconnect.
     RECONNECT_LOOP_MIN_LOSSES = 5
+    RECONNECT_LOOP_WINDOW_SECONDS = 300
 
     def __init__(self):
         try:
@@ -155,6 +157,14 @@ class DockerManager:
         except Exception:
             return None
 
+    @staticmethod
+    def _log_line_time(line: str) -> Optional[datetime.datetime]:
+        """Timestamp of a cTrader log line, or None. Logs are UTC, so comparisons stay relative."""
+        try:
+            return datetime.datetime.strptime(line[:19], "%d/%m/%Y %H:%M:%S")
+        except (TypeError, ValueError):
+            return None
+
     def check_cbot_health(self, name: str) -> Dict:
         status_info = self.get_container_status(name)
         status = status_info.get("status", "unknown")
@@ -259,22 +269,39 @@ class DockerManager:
 
         # cTrader CLI 5.10+ prints no "Login failed" when the cTID is rejected (e.g. "Password was
         # not set for this cTID"): it alternates lost/establishing ~3x per second forever. A short
-        # outage looks the same but ends with "restored"/"established", so only flag a loop that
-        # has not recovered after its last "lost" line.
-        lost_idx = [i for i, l in enumerate(lines) if "the connection has been lost" in l.lower()]
-        if len(lost_idx) >= self.RECONNECT_LOOP_MIN_LOSSES:
-            after_last_lost = (l.lower() for l in lines[lost_idx[-1] + 1:])
-            recovered = any(
-                "connection has been established" in l or "connection has been restored" in l or "logged in" in l
-                for l in after_last_lost
-            )
-            if not recovered:
+        # outage looks the same but ends with "restored"/"established", so only losses accumulated
+        # since the last successful reconnect count. Older losses spread over hours must not add up
+        # to a loop either: the health check can run in the couple of seconds between a normal
+        # "lost" and its "restored", and the old line-based count restarted bots for that (e.g.
+        # cbot-live-gbpjpy-fix-gotobi at 2026-11-11 18:27 UTC).
+        lost_times: List[Optional[datetime.datetime]] = []
+        for l in lines:
+            l_low = l.lower()
+            if "the connection has been lost" in l_low:
+                lost_times.append(self._log_line_time(l))
+            elif (
+                "connection has been established" in l_low
+                or "connection has been restored" in l_low
+                or "logged in" in l_low
+            ):
+                lost_times = []
+        if lost_times:
+            known = [t for t in lost_times if t is not None]
+            if known:
+                cutoff = max(known) - datetime.timedelta(seconds=self.RECONNECT_LOOP_WINDOW_SECONDS)
+                recent = [t for t in lost_times if t is None or t >= cutoff]
+            else:
+                recent = lost_times
+            if len(recent) >= self.RECONNECT_LOOP_MIN_LOSSES:
                 return {
                     "name": name,
                     "status": status,
                     "healthy": False,
                     "stuck": True,
-                    "reason": f"Reconnect loop: {len(lost_idx)} 'connection has been lost' in the last {len(lines)} lines without re-establishing"
+                    "reason": (
+                        f"Reconnect loop: {len(recent)} 'connection has been lost' since the last "
+                        f"successful reconnect without re-establishing"
+                    )
                 }
 
         return {
