@@ -77,6 +77,8 @@ backups/
 # (HolyBot carries its order-tag secret, see cBot/HolyBot.cs)
 cBot/HolyBot.cs
 
+research/
+
 # Superpowers SDD scratch workspace
 .superpowers/
 
