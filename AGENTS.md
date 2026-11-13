@@ -4,8 +4,8 @@
 - **Backend**: FastAPI server running under systemd as `agentfx.service` (`/root/AgentFxTrading/.venv/bin/uvicorn app.server:app --host 127.0.0.1 --port 8000`).
 - **Bots**: Spotware cTrader CLI containers running in Docker with `--network host`:
   - `cbot-usdjpy` (Tokyo session M15 TMS+ORB)
-  - `cbot-gbpjpy`, `cbot-gbpusd`, `cbot-de40` (London session)
-  - `cbot-xauusd`, `cbot-us30`, `cbot-ustec` (New York session)
+  - `cbot-gbpjpy-tms-orb`, `cbot-gbpusd`, `cbot-de40-orb-re2` (London session)
+  - `cbot-xauusd-tms-orb`, `cbot-us30-orb-re2`, `cbot-ustec-orb-re2`, `cbot-us500-tms-orb` (New York session)
   - `cbot-xauusd-judas`, `cbot-gbpusd-judas` (Judas sweep SMC bots)
 - **Watchdog**: Background auto-healing loop in `app/cbot_watchdog.py` monitoring cBot login state and auto-restarting stuck containers.
 - **Database**: PostgreSQL 17.11 (Production) via `DATABASE_URL` with automated daily backup cron job (`scripts/backup_postgres.sh`); fallback to SQLite WAL mode (`portfolio.db`) for testing.
