@@ -23,9 +23,11 @@
 //   * The D1-ATR source is not carried over. The Python study concluded it does not fit a
 //     0.4R bracket (test PF 1.08–1.09, win rate ~49%); M15 ATR is the only risk source here.
 //
-// XAUUSD M15 defaults: EMA 20/50/200, ATR14, 1R stop with a $3 floor / $30 cap, NY session
-// 13:00–20:30 UTC (winter clock, US DST aware), flatten 20:45 UTC, 0.03 lots or 0.5% risk.
-// Pip = $0.01 on gold, so 300 pips = $3.00 and 120 pips = the 0.4R TP1.
+// XAUUSD M15 defaults: EMA 20/50/200, ATR14, 1R stop clamped by MinSlPips/MaxSlPips, NY
+// session 13:00–20:30 UTC winter / 12:00–19:30 UTC summer (winter clock, US DST aware),
+// flatten 20:45 winter / 19:45 summer, 0.03 lots or 0.5% risk.
+// The pip is the broker's Symbol.PipSize: 0.01 on a cent-pip symbol (300 pips = $3.00), but
+// 0.10 on this server (300 pips = $30.00). Check the SYMBOL line before choosing the clamps.
 
 using System;
 using System.Collections.Generic;
@@ -102,8 +104,9 @@ namespace cAlgo.Robots
         [Parameter("SL = ATR Multiple", Group = "Risk", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Step = 0.05)]
         public double SlAtrMultiple { get; set; }
 
-        // Gold is quoted in cents: 300 pips = $3.00. The Python bot's 12-point floor existed
-        // to keep a 0.4R bracket above noise and costs; scale it by instrument, not by lot.
+        // These are broker pips. On a 0.01-pip gold symbol 300 pips = $3.00; on the 0.10-pip
+        // symbol used by this server 300 pips = $30.00. The floor exists to keep a 0.4R bracket
+        // above noise and costs; scale it by the instrument, not by the lot.
         [Parameter("Min SL (pips, 0=off)", Group = "Risk", DefaultValue = 300.0, MinValue = 0.0)]
         public double MinSlPips { get; set; }
 
@@ -306,11 +309,12 @@ namespace cAlgo.Robots
         }
 
         /// <summary>Session-local clock: parameters are winter UTC, so during US DST the UTC
-        /// timeline is shifted back one hour and the local clock time never moves.</summary>
+        /// timeline is shifted forward one hour and the local clock time never moves. This is
+        /// the same convention as OrbBot.cs and AiAgentBot.cs.</summary>
         private DateTime SessionClock(DateTime utc)
         {
             if (DstRule == MatrixDstRule.None) return utc;
-            return utc.AddHours(IsUsDst(utc) ? -1 : 0);
+            return utc.AddHours(IsUsDst(utc) ? 1 : 0);
         }
 
         private DateTime FlattenTime(DateTime anyTimeInSession)

@@ -434,7 +434,7 @@ build_algos() {
   step "Building cBot .algo packages (this pulls ${CTRADER_IMAGE})"
   docker pull -q "$CTRADER_IMAGE"
   local name
-  for name in AiAgentBot AsianRangeJudasSweepBot FlowRsiBot TurtleBot OrbBot MatrixBot; do
+  for name in AiAgentBot AsianRangeJudasSweepBot FlowRsiBot TurtleBot OrbBot MatrixBot SnakeBot; do
     build_algo "$name"
   done
   # The console container runs as root, so hand everything back to forge.
